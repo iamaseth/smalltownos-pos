@@ -1,93 +1,94 @@
-# SmalltownOS POS — Project Foundation
+# SmalltownOS POS — Durable Project Checkpoint
 
 ## Status
-Active development foundation established from the FloCafe fork.
+Active.
 
-## Repository
+## Critical architecture decision
+
+There are TWO codebases with different roles.
+
+### 1. Actual SmalltownOS POS application
+Lovable project:
+https://lovable.dev/projects/d80fe793-ea84-405a-800a-aba630890128
+
+This existing Lovable POS is the application Seth will see, test, and develop interactively.
+
+Development workflow:
+Seth tests visually in Lovable -> changes are made to the SmalltownOS POS -> Seth tests again.
+
+Do NOT abandon this Lovable project merely because FloCafe cannot be imported directly into Lovable.
+
+### 2. FloCafe reference / source library
+GitHub fork:
 https://github.com/iamaseth/smalltownos-pos
 
-## Upstream foundation
-FloCafe
+Upstream:
 https://github.com/FreeOpenSourcePOS/FloCafe
 
-FloCafe remains the operational POS foundation. Preserve its MIT license and attribution.
+This repository preserves the complete FloCafe open-source code so its proven POS architecture and implementations can be studied and selectively adapted into the actual SmalltownOS POS.
 
-## Product direction
-SmalltownOS POS is a modern, offline-first POS for bars, cafes, restaurants, and hybrid venues.
+FloCafe is NOT the user-facing SmalltownOS application and does not need to be forced into Lovable.
 
-The first priority is not accounting or back-office configuration. The first priority is extremely fast service during busy periods using one main register and multiple staff phones.
+Preserve FloCafe's MIT license and attribution when reusing applicable code.
 
-## First operational target
-1 bar + 1 main register + 2 server phones.
-
-Required behavior:
-1. Server opens phone interface and enters PIN.
-2. Server creates or opens a tab/table/order.
-3. Server adds items using large, fast product buttons.
-4. Server sends the order with minimal taps.
-5. Main register sees the order immediately over the local network.
-6. A second server phone can open the same active tab/order and add more items.
-7. Kitchen/bar tickets are generated where applicable.
-8. Cash is finalized at the main register.
-9. Authorized staff may finalize confirmed electronic/KHQR payment on phone later.
-10. Internet can be disconnected and local ordering must continue over Wi-Fi/LAN.
-11. Reconnection must sync without duplicate sales.
-
-## Fast phone UX
-Target interaction:
-PIN -> Open Orders / Tables -> select order -> tap products -> Send.
-
-Design principles:
-- phone-first
-- very large touch targets
-- favorites/recent items near the top
-- category switching without deep navigation
-- current order always visible
-- common drink in roughly 2–3 taps
-- no repeated table/order selection
-- no unnecessary confirmation screens
-- multiple phones share the same live order state
-- each order/item retains staff attribution
-
-## FloCafe capabilities to preserve and reuse
-- local SQLite database
-- local HTTP/WebSocket services
-- server/waiter application
-- table and held-order workflows
+## What to reuse/adapt from FloCafe
+Use FloCafe as the blueprint/parts library for:
+- local/offline POS operation
+- multiple server/waiter devices
+- shared/open orders and tabs
+- tables
+- staff/PIN/permissions
 - modifiers/add-ons
 - KDS
 - printing
-- staff permissions/PINs
-- offline-first local operation
-- payment and order infrastructure
-- existing tests, including phone-oriented behavior
+- payment workflows
+- WebSocket/local-network synchronization
+- held orders
+- phone-oriented workflows
+- inventory/recipe concepts where useful
 
-## Architecture boundary
-SmalltownOS POS owns operational POS state:
-- open orders
-- checks/tabs/tables
-- line items and modifiers
-- payment attempts
-- tender/register/device/staff attribution
-- receipts
-- refunds and void requests
-- local/offline state
-- finalized sale events
+Do not copy UI blindly. SmalltownOS should have its own simpler, modern, phone-first interface.
 
-Emerald Ledger remains the accounting system of record:
+## First SmalltownOS POS priority
+Make order entry extremely fast and easy during busy service.
+
+Initial proof:
+1 bar + 1 main register + 2 server phones.
+
+Target server flow:
+PIN -> Open Orders / Tables -> select or create order -> tap products -> Send.
+
+Requirements:
+- large touch targets
+- favorites/recent items
+- quick category switching
+- current order always visible
+- common drink in roughly 2–3 taps
+- no repeated order/table selection
+- no unnecessary confirmation screens
+- multiple phones share the same live order
+- staff attribution retained
+- register sees changes quickly
+- cash finalized at main register
+- authorized electronic/KHQR closing later after confirmed payment
+
+## Accounting boundary
+SmalltownOS POS owns operational POS state.
+
+Emerald Ledger remains the accounting system of record for:
 - general ledger
-- financial statements
+- statements
 - AP
 - cash/bank/KHQR clearing
 - accounting-side inventory/COGS
 - reconciliation
 - periods
-- audit trail
+- audit
 
-Do not move accounting complexity into the ordering interface.
+Do not burden the ordering UI with accounting complexity.
 
-## Event integration direction
-POS finalized transactions will later emit durable, idempotent events toward SmalltownOS / Emerald Ledger.
+## Later integration direction
+Verified/finalized POS transactions should eventually emit durable idempotent events toward SmalltownOS/Emerald Ledger.
 
 Initial event families:
 - sale.finalized
@@ -97,22 +98,22 @@ Initial event families:
 - inventory.demand_recorded
 - register.cash_movement_recorded
 
-## Offline sync rule
-The main register/local service is the local authority during outages.
-
-Phones/KDS -> local Wi-Fi -> main register/local service -> durable local store/outbox -> cloud when internet returns.
-
-Only acknowledged events are considered synchronized. Stable IDs and idempotency keys are required to prevent duplicate accounting entries.
-
-## Deferred until core flow works
-- voice ordering
+## Deferred until core ordering works
+- Voice Capture ordering
 - deeper KHQR integration
 - Khmer localization enhancements
-- SmalltownOS universal-login integration
+- SmalltownOS universal login
 - Emerald Ledger event posting
 - advanced multi-location/cloud features
+
+## Important history
+An earlier checkpoint incorrectly described the FloCafe fork as the implementation foundation itself. The decision was clarified on 2026-09-26: the existing visible Lovable POS is the actual SmalltownOS POS application; FloCafe is the open-source reference/source library used to accelerate and strengthen it.
 
 ## Resume command
 $continue dev smalltownOS POS
 
-When resuming, start from this repository and this checkpoint. Do not return to the old generated `my-pos-system` POS as the implementation foundation.
+On resume:
+1. Restore the existing Lovable POS project above.
+2. Use this FloCafe fork as the reference/source library.
+3. Continue the fast multi-phone server/waiter workflow.
+4. Do not require Seth to import FloCafe into Lovable.
