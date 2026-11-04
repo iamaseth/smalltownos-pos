@@ -98,8 +98,8 @@ export default function ProductGrid({
 
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      <div className="shrink-0 mb-3">
-        <div className="relative mb-2">
+      <div className="shrink-0 mb-4">
+        <div className="relative mb-4">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
             type="text"
@@ -119,31 +119,31 @@ export default function ProductGrid({
               }
             }}
             placeholder={t('searchProducts')}
-            className="w-full ps-9 pe-4 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
+            className="w-full ps-10 pe-4 py-3 bg-card border border-border rounded-2xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
         </div>
         {!activeGroup ? (
-          <div className="grid grid-cols-3 gap-2 pb-1">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 pb-2">
             {groupLabels.map((label) => {
               const Icon = groupIcons[label];
               return <button key={label} type="button" onClick={() => { setOpenGroup(label); setSelectedCategory(null); }}
-                className="flex items-center gap-2 min-h-16 px-3 py-3 rounded-xl bg-card border border-border hover:border-brand hover:bg-muted/50 text-start touch-manipulation">
-                <Icon size={19} className="text-brand shrink-0" />
-                <span className="font-semibold text-sm leading-tight">{label}</span>
-                <ChevronRight size={14} className="ms-auto text-muted-foreground shrink-0" />
+                className="group flex flex-col items-start justify-between gap-4 min-h-32 px-5 py-4 rounded-2xl bg-card border border-border hover:border-brand hover:shadow-md active:scale-[0.99] transition-all text-start touch-manipulation">
+                <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-brand/10 text-brand"><Icon size={23} /></span>
+                <span className="font-semibold text-base leading-tight">{label}</span>
+                <ChevronRight size={17} className="self-end text-muted-foreground group-hover:text-brand shrink-0" />
               </button>;
             })}
           </div>
         ) : (
           <div className="pb-1">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-3 mb-4">
               <button type="button" onClick={() => { setOpenGroup(null); setSelectedCategory(null); }}
-                className="px-3 py-2 rounded-lg text-sm bg-card border border-border hover:bg-muted inline-flex items-center gap-2">
+                className="px-4 py-2.5 rounded-xl text-sm bg-card border border-border hover:bg-muted inline-flex items-center gap-2 font-medium">
                 <ArrowLeft size={16} /> Back
               </button>
               <span className="font-semibold text-sm">{activeGroup}</span>
             </div>
-            {activeGroup !== 'Favorites' && <div className="flex flex-wrap gap-2">
+            {activeGroup !== 'Favorites' && <div className="flex flex-wrap gap-2.5">
               <button type="button" onClick={() => setSelectedCategory(null)}
                 className={`px-3 py-2 rounded-lg text-sm border ${!selectedCategory ? 'bg-brand text-white border-brand' : 'bg-card border-border hover:bg-muted'}`}>
                 All {activeGroup}
@@ -163,8 +163,8 @@ export default function ProductGrid({
         )}
         <div className={`grid gap-3 ${
           sidebarOpen 
-            ? 'grid-cols-4' 
-            : 'grid-cols-5'
+            ? 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' 
+            : 'grid-cols-2 lg:grid-cols-4 xl:grid-cols-5'
         }`}>
           {filtered.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
@@ -176,7 +176,7 @@ export default function ProductGrid({
                 data-testid="pos-product-card"
                 type="button"
                 onClick={() => onProductClick(product)}
-                className="min-h-28 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                className="min-h-32 bg-card rounded-2xl p-3.5 border border-border hover:border-brand/50 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 {!!product.track_inventory && (
                   <>
