@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { ArrowLeft, ChevronRight, Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Sunrise, Sandwich, Salad, Fish, Soup, GlassWater, Flame } from 'lucide-react';
+import { Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -78,17 +78,6 @@ export default function ProductGrid({
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [favorites] = useState<string[]>([]);
   // Bundled illustrations load locally, including when Flo is offline.
-  const groupArtwork: Record<string, string> = {
-    Favorites: '☕', Food: '🍜', Cocktails: '🍹', Spirits: '🥃', 'Beer & Wine': '🍷', 'Non-Alcoholic': '🥭',
-  };
-  const groupBackgrounds: Record<string, string> = {
-    Favorites: 'from-[#3a2418] via-[#765038] to-[#160e0a]',
-    Food: 'from-[#74421b] via-[#b67a3a] to-[#302014]',
-    Cocktails: 'from-[#9c2649] via-[#e55b62] to-[#51183a]',
-    Spirits: 'from-[#7c3c18] via-[#bb742f] to-[#2d160e]',
-    'Beer & Wine': 'from-[#55283b] via-[#9e5365] to-[#281722]',
-    'Non-Alcoholic': 'from-[#8b5813] via-[#e8a72f] to-[#40551d]',
-  };
   const groupLabels = ['Favorites', 'Food', 'Cocktails', 'Spirits', 'Beer & Wine', 'Non-Alcoholic'] as const;
   const groups = useMemo(() => {
     const result = new Map<string, Category[]>();
@@ -134,7 +123,7 @@ export default function ProductGrid({
     } catch { toast.error('Could not save order. Refresh and retry.'); }
     finally { setSaving(false); }
   };
-  const groupIcons = { Favorites: Star, Food: UtensilsCrossed, Cocktails: Martini, Spirits: Wine, 'Beer & Wine': Beer, 'Non-Alcoholic': Coffee };
+  const groupIcons: Record<(typeof groupLabels)[number], typeof Star> = { Favorites: Star, Food: UtensilsCrossed, Cocktails: Martini, Spirits: Wine, 'Beer & Wine': Beer, 'Non-Alcoholic': Coffee };
 
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
