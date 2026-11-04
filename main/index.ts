@@ -1191,9 +1191,13 @@ async function initialize(): Promise<void> {
     await startServer();
     if (isShutdownRequested()) return;
 
-    cloudSync.start();
-    telemetry.start();
-    googleDrive.start();
+    if (process.env.FLO_DEMO_MODE !== '1') {
+      cloudSync.start();
+      telemetry.start();
+      googleDrive.start();
+    } else {
+      log.warn('[DEMO MODE] Cloud synchronization, telemetry and Google Drive disabled.');
+    }
 
     console.log('[Flo] Starting KDS server on port 3002...');
     await startKdsServer();
