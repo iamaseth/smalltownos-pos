@@ -1226,7 +1226,7 @@ export default function POSPage() {
                             const selected = cart.tableId === table.id;
                             const unavailable = table.status === 'cleaning';
                             const color = held ? 'bg-slate-500 text-white' : occupied ? 'bg-amber-500 text-white' :
-                              unavailable ? 'bg-gray-300 text-gray-600 dark:bg-gray-700' : 'bg-emerald-600 text-white';
+                              unavailable ? 'bg-gray-300 text-gray-600 dark:bg-gray-700' : 'border border-slate-700/40 bg-slate-800/20 text-slate-500 dark:bg-slate-900/20 dark:text-slate-500';
                             return (
                               <button key={table.id} type="button" disabled={unavailable}
                                 title={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
@@ -1238,7 +1238,7 @@ export default function POSPage() {
                                     ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
                                     : null);
                                 }}
-                                className={`min-h-14 rounded-lg p-1 text-center text-xs font-semibold transition-all ${color} ${selected ? 'ring-2 ring-brand ring-offset-2' : ''} ${unavailable ? 'cursor-not-allowed' : 'hover:brightness-110'}`}>
+                                className={`min-h-14 rounded-lg p-1 text-center text-xs font-semibold transition-all ${color} ${selected ? 'ring-2 ring-brand ring-offset-2' : ''} ${unavailable ? 'cursor-not-allowed' : 'hover:brightness-110 hover:bg-slate-700/40 hover:text-slate-100'}`}>
                                 <span className="block truncate">{table.name}</span>
                                 <span className="block text-[10px] opacity-90">{held ? 'Hold' : occupied ? 'Ordered' : unavailable ? 'Cleaning' : 'Free'}</span>
                               </button>
