@@ -1114,6 +1114,7 @@ export function resolvePrinterContext(
 }
 
 async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
+  if (process.env.FLO_DEMO_MODE === '1') return { ok: false, detail: 'Printing disabled in Demo Mode' };
   switch (printer.connection_type) {
     case 'network':
       return await printViaNetwork(printer.ip_address, printer.port || 9100, data, signal);
@@ -2350,6 +2351,7 @@ export const NETWORK_PRINT_CHUNK_SIZE = 4096;
 export const NETWORK_PRINT_CHUNK_DELAY_MS = 10;
 
 export async function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
+  if (process.env.FLO_DEMO_MODE === '1') return { ok: false, detail: 'Printing disabled in Demo Mode' };
   return new Promise((resolve) => {
     const client = new net.Socket();
     let settled = false;
@@ -2437,6 +2439,7 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
 }
 
 export async function printViaUSB(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
+  if (process.env.FLO_DEMO_MODE === '1') return { ok: false, detail: 'Printing disabled in Demo Mode' };
   console.log('[Printer] printViaUSB called, platform:', process.platform, 'printer:', printerName);
 
   if (process.platform === 'darwin' || process.platform === 'linux') {
