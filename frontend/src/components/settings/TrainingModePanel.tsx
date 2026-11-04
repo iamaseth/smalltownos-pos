@@ -34,6 +34,19 @@ export default function TrainingModePanel() {
         }}>
         {busy ? 'Switching…' : demo ? 'Return to Live Mode…' : 'Enter Demo Mode…'}
       </button>
+      {demo === false && (
+        <button type="button" disabled={busy} className="ml-3 mt-4 rounded-lg border border-border px-4 py-2 text-sm font-medium disabled:opacity-50"
+          onClick={async () => {
+            if (!window.electronAPI?.refreshTrainingData) return;
+            setBusy(true); setError('');
+            try {
+              const result = await window.electronAPI.refreshTrainingData();
+              if (result.error) setError(result.error);
+              else if (result.success) setError('Demo refreshed successfully. Enter Demo Mode to train with the latest live setup.');
+            } catch (e) { setError(e instanceof Error ? e.message : 'Refresh failed.'); }
+            finally { setBusy(false); }
+          }}>Refresh Demo from Live…</button>
+      )}
       <p className="mt-2 text-xs text-muted-foreground">Switching requires confirmation and restarts the app. Do not use printers or payment devices for training until demo isolation is verified.</p>
     </section>
   );
