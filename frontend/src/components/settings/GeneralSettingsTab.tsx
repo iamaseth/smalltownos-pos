@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Building2, Hash, CreditCard, Lock } from 'lucide-react';
 import { useTranslations, useLocale } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -24,6 +24,57 @@ import { useAuthStore } from '@/store/auth';
 import { LANGUAGES, TENANT_STATUS_LABEL_KEYS, type Language } from '@/lib/i18n';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+
+function UsdKhrExchangeRate({ canEdit }: { canEdit: boolean }) {
+  const [rate, setRate] = useState('4100');
+  const [savedRate, setSavedRate] = useState('4100');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let active = true;
+    api.get('/settings/usd_khr_exchange_rate').then(({ data }) => {
+      if (active) {
+        const value = String(data.setting?.value ?? '4100');
+        setRate(value);
+        setSavedRate(value);
+      }
+    }).catch(() => { /* Retain default when no setting is saved. */ });
+    return () => { active = false; };
+  }, []);
+  const valid = Number.isInteger(Number(rate)) && Number(rate) >= 1000 && Number(rate) <= 10000;
+  const save = async () => {
+    if (!valid || saving) return;
+    setSaving(true);
+    try {
+      await api.put('/settings/usd_khr_exchange_rate', { value: rate });
+      setSavedRate(rate);
+      toast.success('USD/KHR exchange rate saved');
+    } catch {
+      toast.error('Could not save exchange rate');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="bg-card rounded-xl border border-border p-6 space-y-3">
+      <h2 className="font-semibold text-foreground">Currency & Exchange Rate</h2>
+      <p className="text-sm text-muted-foreground">Cash conversion rate: Cambodian riel per 1 US dollar. Set the rate used at the bar, not a live market quote.</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-sm font-medium">1 USD =
+          <input type="number" min="1000" max="10000" step="1" value={rate}
+            disabled={!canEdit} onChange={(e) => setRate(e.target.value)}
+            className="block mt-1 w-40 px-3 py-2 border border-border rounded-lg bg-card" />
+        </label>
+        <span className="pb-2 text-sm">KHR</span>
+        {canEdit && <button type="button" onClick={save} disabled={!valid || saving || rate === savedRate}
+          className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+          {saving ? 'Saving…' : 'Save rate'}
+        </button>}
+      </div>
+      {!valid && <p className="text-sm text-red-500">Enter a whole-number rate between 1,000 and 10,000.</p>}
+      <p className="text-xs text-muted-foreground">Saved rate: {Number(savedRate).toLocaleString('en-US')} KHR per USD</p>
+    </div>
+  );
+}
 
 const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
   (lang) => LANGUAGES[lang].selectable,
@@ -705,6 +756,8 @@ export function GeneralSettingsTab({
           </div>
         </div>
       </div>
+
+      <UsdKhrExchangeRate canEdit={isAdmin} />
 
       {/* Subscription */}
       <div className="bg-card rounded-xl border border-border p-6">
