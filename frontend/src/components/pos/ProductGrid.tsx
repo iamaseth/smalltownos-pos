@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
 import { ArrowLeft, ChevronRight, Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Sunrise, Sandwich, Salad, Fish, Soup, GlassWater, Flame } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
@@ -49,13 +50,19 @@ interface Props {
   currency: string;
   onProductClick: (product: Product) => void;
   sidebarOpen?: boolean;
+  canArrange?: boolean;
+  onOrderSaved?: () => Promise<void>;
 }
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, onProductClick, sidebarOpen = true,
+  search, setSearch, onProductClick, sidebarOpen = true, canArrange = false, onOrderSaved,
 }: Props) {
   const cart = useCartStore();
+  const [arranging, setArranging] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [ids, setIds] = useState<string[]>([]);
+  const [dragId, setDragId] = useState<string | null>(null);
   const { showProductImages } = usePosSettingsStore();
   const t = useTranslations('pos');
   const fmt = useFormatCurrency();
@@ -114,11 +121,31 @@ export default function ProductGrid({
       : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
     return matchCat && (!search || p.name.toLowerCase().includes(search.toLowerCase()));
   });
+  const ordered = [...filtered].sort((a,b) => (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name));
+  const displayed = arranging ? [...ordered].sort((a,b) => ids.indexOf(String(a.id))-ids.indexOf(String(b.id))) : ordered;
+  const saveOrder = async () => {
+    setSaving(true);
+    try {
+      const base = Math.max(0,...products.map(p => p.sort_order || 0)) + 1;
+      for (let i=0;i<ids.length;i++) await api.put('/products/'+ids[i], {sort_order:base+i});
+      await onOrderSaved?.();
+      setArranging(false);
+      toast.success('Menu order saved');
+    } catch { toast.error('Could not save order. Refresh and retry.'); }
+    finally { setSaving(false); }
+  };
   const groupIcons = { Favorites: Star, Food: UtensilsCrossed, Cocktails: Martini, Spirits: Wine, 'Beer & Wine': Beer, 'Non-Alcoholic': Coffee };
 
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <div className="shrink-0 mb-4">
+        {canArrange && selectedCategory && <div className="mb-2 flex justify-end gap-2">
+          {arranging ? <>
+            <span className="mr-auto text-xs">Drag pictures to reorder</span>
+            <button type="button" disabled={saving} onClick={() => setArranging(false)}>Cancel</button>
+            <button type="button" disabled={saving} onClick={() => void saveOrder()} className="rounded bg-brand px-3 py-1 text-white">Save Order</button>
+          </> : <button type="button" onClick={() => {setIds(ordered.map(p=>String(p.id)));setArranging(true);}} className="rounded border px-3 py-1">Arrange Menu</button>}
+        </div>}
         <div className="relative mb-4">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
@@ -197,7 +224,7 @@ export default function ProductGrid({
             ? 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' 
             : 'grid-cols-2 lg:grid-cols-4 xl:grid-cols-5'
         }`}>
-          {filtered.map((product) => {
+          {displayed.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
             
 
@@ -206,7 +233,12 @@ export default function ProductGrid({
                 key={product.id}
                 data-testid="pos-product-card"
                 type="button"
-                onClick={() => onProductClick(product)}
+                draggable={arranging}
+                onDragStart={e => {setDragId(String(product.id));e.dataTransfer.effectAllowed='move';}}
+                onDragOver={e => {if(arranging)e.preventDefault();}}
+                onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
+                onDragEnd={() => setDragId(null)}
+                onClick={() => {if(!arranging)onProductClick(product);}}
                 className="min-h-32 bg-card rounded-2xl p-3.5 border border-border hover:border-brand/50 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 {!!product.track_inventory && (
