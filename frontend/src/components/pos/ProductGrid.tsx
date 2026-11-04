@@ -86,6 +86,8 @@ export default function ProductGrid({
   const groups = useMemo(() => {
     const result = new Map<string, Category[]>();
     groupLabels.forEach((label) => result.set(label, []));
+    // Some imported menus place burgers inside a broad Food category.
+    // Expose Burgers as a virtual submenu without changing stored category IDs.
     for (const cat of categories) {
       const name = cat.name.toLowerCase();
       const group = /^spirits(?:\s|$|[—–-])/.test(name) ? 'Spirits'
@@ -99,10 +101,14 @@ export default function ProductGrid({
   }, [categories]);
   const activeGroup = openGroup && groups.has(openGroup) ? openGroup : null;
   const children = activeGroup ? groups.get(activeGroup) ?? [] : [];
+  const burgerProducts = useMemo(() => products.filter((p) => /burger/i.test(p.name)), [products]);
+  const hasBurgerCategory = (groups.get('Food') ?? []).some((cat) => /burger/i.test(cat.name));
+  const showVirtualBurgers = activeGroup === 'Food' && burgerProducts.length > 0 && !hasBurgerCategory;
+  const burgerFilterSelected = selectedCategory === '__virtual_burgers__';
   const filtered = products.filter((p) => {
     // The landing screen is navigation only; show products after selecting a group.
     if (!activeGroup && !search.trim()) return false;
-    const matchCat = selectedCategory ? p.category_id === selectedCategory
+    const matchCat = burgerFilterSelected ? /burger/i.test(p.name)\n      : selectedCategory ? p.category_id === selectedCategory
       : activeGroup === 'Favorites' ? favorites.includes(String(p.id))
       : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
     return matchCat && (!search || p.name.toLowerCase().includes(search.toLowerCase()));
@@ -161,6 +167,10 @@ export default function ProductGrid({
               <>
                 <button type="button" onClick={() => setSelectedCategory(null)}
                   className={`px-3 py-2 rounded-xl text-sm border ${!selectedCategory ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>All {activeGroup}</button>
+                {showVirtualBurgers && <button type="button" onClick={() => setSelectedCategory('__virtual_burgers__')}
+                  className={`px-3 py-2 rounded-xl text-sm border ${burgerFilterSelected ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>
+                  Burgers
+                </button>}
                 {children.map((cat) => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
                   className={`px-3 py-2 rounded-xl text-sm border ${selectedCategory === cat.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>
                   {cat.name.replace(/^Spirits\s*[—–-]\s*/i, '')}
