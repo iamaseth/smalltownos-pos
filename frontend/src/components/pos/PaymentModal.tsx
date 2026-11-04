@@ -20,7 +20,6 @@ import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currenc
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
-import { CurrencyTouchNumberPad } from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -796,21 +795,6 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               </div>
               <p className="px-1 text-[11px] text-muted-foreground text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
-          )}
-          {amountTarget && (
-            <CurrencyTouchNumberPad
-              value={activeAmountValue}
-              onChange={updateActiveAmount}
-              ariaLabel={t('numericKeypad')}
-              clearLabel={t('clearAmount')}
-              backspaceLabel={t('backspaceAmount')}
-              // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
-              currencyMaxDecimals={unitAdapter.maxDecimals}
-              amountTarget={amountTarget.kind}
-              discountType={discountType}
-              max={activeAmountMax}
-              quickValues={activeAmountQuickValues}
-            />
           )}
           </div>
         </div>
