@@ -165,7 +165,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
     <div className={
       isDrawer
         ? 'flex flex-col w-full'
-        : 'w-full h-full bg-card rounded-xl border border-border dark:border-border flex flex-col shadow-sm'
+        : 'w-full h-full bg-[#0f172a] text-slate-100 rounded-xl border border-slate-800 flex flex-col shadow-sm'
     }>
       {/* Order Type */}
       <div className="p-4 border-b border-border dark:border-border space-y-2">
@@ -242,6 +242,14 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         )}
       </div>
 
+      {!isDrawer && (
+        <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+            {cart.orderType === 'takeaway' ? 'Quick Bar Sale' : cart.tableId ? tables.find(table => table.id === cart.tableId)?.name || 'Table Order' : 'Order'}
+          </span>
+          <span className="text-xs text-slate-400">{cart.itemCount()} items</span>
+        </div>
+      )}
       {/* Cart Items */}
       <div className={isDrawer ? 'overflow-y-auto p-4 max-h-[40vh]' : 'flex-1 overflow-y-auto p-4'}>
         {/* Previously ordered items (add-items mode) */}
