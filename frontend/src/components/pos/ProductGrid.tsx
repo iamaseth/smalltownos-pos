@@ -169,48 +169,29 @@ export default function ProductGrid({
             className="w-full ps-10 pe-4 py-3 bg-card border border-border rounded-2xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
         </div>
-        <div className="grid grid-cols-3 xl:grid-cols-6 gap-2.5 pb-3">
-          {groupLabels.map((label) => {
+        {/* Preview layout A: compact horizontal categories and contextual subcategories. */}
+        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto pb-2">
+          {groupLabels.map(label => {
             const selected = activeGroup === label;
-            return (
-              <button key={label} type="button"
-                onClick={() => { setOpenGroup(label); setSelectedCategory(null); }}
-                aria-pressed={selected}
-                className={`group relative isolate overflow-hidden rounded-2xl min-h-28 xl:min-h-36 text-start shadow-sm border-2 transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] ${selected ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-transparent'}`}>
-                <span className={`absolute inset-0 bg-gradient-to-br ${groupBackgrounds[label]}`} />
-                <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center text-[56px] xl:text-[68px] group-hover:scale-110 transition-transform duration-300 drop-shadow-xl">{groupArtwork[label]}</span>
-                <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/5 to-transparent" />
-                <span className="absolute bottom-2.5 start-3 end-2 text-white font-bold text-sm xl:text-base leading-tight drop-shadow">{label}</span>
-              </button>
-            );
+            const Icon = groupIcons[label];
+            return <button key={label} type="button"
+              onClick={() => { setOpenGroup(label); setSelectedCategory(null); setArranging(false); }}
+              aria-pressed={selected}
+              className={`shrink-0 inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${selected ? 'border-brand bg-brand text-white' : 'border-border bg-card hover:bg-muted'}`}>
+              <Icon size={16} />{label}
+            </button>;
           })}
-        </div>
-        {activeGroup && (
-          <div className="pb-3">
-            <button type="button" onClick={() => { setOpenGroup(null); setSelectedCategory(null); }}
-              className="px-3 py-2 rounded-xl text-sm bg-card border border-border hover:bg-muted inline-flex items-center gap-1.5">
-              <ArrowLeft size={15} /> All groups
-            </button>
-            {activeGroup !== 'Favorites' && (
-              <>
-                <div className={selectedCategory ? "flex flex-wrap gap-2" : "grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 mt-3"}>
-                  {[
-                    ...(showVirtualBurgers ? [{ id: '__virtual_burgers__', name: 'Burgers' }] : []),
-                    ...children.map((cat) => ({ id: cat.id, name: activeGroup === 'Cocktails' ? cat.name.replace(/\s+Cocktails?$/i, '') : cat.name.replace(/^Spirits\s*[—–-]\s*/i, '') })),
-                  ].map((cat) => {
-                    const name = cat.name.toLowerCase();
-                    const Icon = /breakfast|egg/.test(name) ? Sunrise : /burger|sandwich/.test(name) ? Sandwich : /salad/.test(name) ? Salad : /fish|seafood/.test(name) ? Fish : /soup|noodle/.test(name) ? Soup : /grill|steak/.test(name) ? Flame : /cocktail|gin|vodka|rum|wine|beer/.test(name) ? GlassWater : UtensilsCrossed;
-                    const color = /breakfast|egg/.test(name) ? 'bg-amber-500' : /burger|sandwich/.test(name) ? 'bg-orange-600' : /salad/.test(name) ? 'bg-emerald-600' : /fish|seafood/.test(name) ? 'bg-sky-600' : /soup|noodle/.test(name) ? 'bg-rose-600' : /cocktail|gin|vodka|rum|wine|beer/.test(name) ? 'bg-violet-600' : 'bg-indigo-600';
-                    return <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
-                      className={`flex items-center border transition-all hover:shadow-md ${selectedCategory ? 'gap-2 rounded-xl px-3 py-2' : 'flex-col justify-center gap-3 min-h-28 rounded-2xl p-3'} ${selectedCategory === cat.id ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/30 ring-2 ring-blue-500/20' : 'border-border bg-card hover:border-blue-400'}`}>
-                      <span className={`flex items-center justify-center rounded-xl text-white ${color} ${selectedCategory ? 'w-8 h-8' : 'w-12 h-12'}`}><Icon size={selectedCategory ? 18 : 25} /></span>
-                      <span className="font-semibold text-sm text-center">{cat.name}</span>
-                    </button>;
-                  })}
-                </div>
-              </>
-            )}
-          </div>
+        </nav>
+        {activeGroup && activeGroup !== 'Favorites' && (
+          <nav aria-label="Menu subcategories" className="flex gap-2 overflow-x-auto py-2">
+            <button type="button" onClick={() => setSelectedCategory(null)}
+              className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold ${!selectedCategory ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card'}`}>All {activeGroup}</button>
+            {[
+              ...(showVirtualBurgers ? [{ id: '__virtual_burgers__', name: 'Burgers' }] : []),
+              ...children.map(cat => ({ id: cat.id, name: activeGroup === 'Cocktails' ? cat.name.replace(/\\s+Cocktails?$/i, '') : cat.name.replace(/^Spirits\\s*[—–-]\\s*/i, '') })),
+            ].map(cat => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
+              className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold ${selectedCategory === cat.id ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card hover:bg-muted'}`}>{cat.name}</button>)}
+          </nav>
         )}
       </div>
 
@@ -219,7 +200,7 @@ export default function ProductGrid({
         {!activeGroup && !search.trim() && (
           <p className="text-sm text-muted-foreground py-4 text-center">Select a menu category above to browse products.</p>
         )}
-        {(!activeGroup || !!selectedCategory || !!search.trim() || activeGroup === 'Favorites') && <div className={`grid gap-3 ${
+        {(!!activeGroup || !!search.trim()) && <div className={`grid gap-3 ${
           sidebarOpen 
             ? 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' 
             : 'grid-cols-2 lg:grid-cols-4 xl:grid-cols-5'
@@ -239,7 +220,7 @@ export default function ProductGrid({
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
                 onClick={() => {if(!arranging)onProductClick(product);}}
-                className="min-h-32 bg-card rounded-2xl p-3.5 border border-border hover:border-brand/50 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                className="min-h-24 bg-card rounded-xl p-2.5 border border-border hover:border-brand/50 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 {!!product.track_inventory && (
                   <>
@@ -261,7 +242,7 @@ export default function ProductGrid({
                 )}
 
                 {showProductImages && (
-                  <div className="w-full aspect-[5/3] rounded-lg mb-2 relative overflow-hidden">
+                  <div className="w-full aspect-[5/3] rounded-lg mb-1.5 relative overflow-hidden">
                     {/* Always-visible background tile — no flash when image loads */}
                     <div
                       className="absolute inset-0 flex items-center justify-center"
