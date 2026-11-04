@@ -8,7 +8,7 @@ import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
-import { ShoppingCart, X } from 'lucide-react';
+import { ShoppingCart, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
@@ -115,6 +115,7 @@ export default function POSPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
+  const [tableRailOpen, setTableRailOpen] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -1180,6 +1181,55 @@ export default function POSPage() {
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
+        {/* Collapsible desktop table rail; reuses the same table actions as the picker. */}
+        {isRestaurant && tablesRequired && (
+          <aside className={`hidden lg:flex shrink-0 flex-col rounded-xl border border-border bg-card ${tableRailOpen ? 'w-44 xl:w-48' : 'w-12'}`}>
+            <div className="flex items-center justify-between gap-1 border-b border-border p-2">
+              {tableRailOpen && <span className="text-sm font-semibold">Tables</span>}
+              <button type="button" onClick={() => setTableRailOpen(v => !v)}
+                className="rounded-md p-2 hover:bg-muted" aria-label={tableRailOpen ? 'Collapse tables' : 'Expand tables'}
+                title={tableRailOpen ? 'Collapse tables' : 'Expand tables'}>
+                {tableRailOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+              </button>
+            </div>
+            {tableRailOpen && (
+              <>
+                <div className="grid grid-cols-2 gap-2 overflow-y-auto p-2 content-start">
+                  {tables.map(table => {
+                    const held = heldOrders.hasHeldOrder(table.id) || table.status === 'held';
+                    const occupied = table.status === 'occupied';
+                    const selected = cart.tableId === table.id;
+                    const unavailable = table.status === 'cleaning';
+                    const color = held ? 'bg-slate-500 text-white' : occupied ? 'bg-amber-500 text-white' :
+                      unavailable ? 'bg-gray-300 text-gray-600 dark:bg-gray-700' : 'bg-emerald-600 text-white';
+                    return (
+                      <button key={table.id} type="button" disabled={unavailable}
+                        title={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
+                        aria-label={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
+                        onClick={() => {
+                          if (held) void handleSelectHeldTable(table.id);
+                          else if (occupied) void handleSelectOccupiedTable(table);
+                          else handleSelectAvailableTable(table.id, table.status === 'reserved' && table.reservation_customer_id
+                            ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
+                            : null);
+                        }}
+                        className={`min-h-14 rounded-lg p-1 text-center text-xs font-semibold transition-all ${color} ${selected ? 'ring-2 ring-brand ring-offset-2' : ''} ${unavailable ? 'cursor-not-allowed' : 'hover:brightness-110'}`}>
+                        <span className="block truncate">{table.name}</span>
+                        <span className="block text-[10px] opacity-90">{held ? 'Hold' : occupied ? 'Ordered' : unavailable ? 'Cleaning' : 'Free'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-auto border-t border-border p-2 text-[10px] text-muted-foreground">
+                  <div>🟢 Free · ◼ Hold</div>
+                  <div>🟠 Ordered</div>
+                  <button type="button" onClick={() => setShowTablePicker(true)}
+                    className="mt-2 w-full rounded-md border border-border px-2 py-2 text-xs font-medium text-foreground hover:bg-muted">All tables</button>
+                </div>
+              </>
+            )}
+          </aside>
+        )}
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
           <ProductGrid
