@@ -1194,29 +1194,45 @@ export default function POSPage() {
             </div>
             {tableRailOpen && (
               <>
-                <div className="grid grid-cols-2 gap-2 overflow-y-auto p-2 content-start">
-                  {tables.map(table => {
-                    const held = heldOrders.hasHeldOrder(table.id) || table.status === 'held';
-                    const occupied = table.status === 'occupied';
-                    const selected = cart.tableId === table.id;
-                    const unavailable = table.status === 'cleaning';
-                    const color = held ? 'bg-slate-500 text-white' : occupied ? 'bg-amber-500 text-white' :
-                      unavailable ? 'bg-gray-300 text-gray-600 dark:bg-gray-700' : 'bg-emerald-600 text-white';
+                <div className="flex-1 overflow-y-auto p-2 space-y-3">
+                  {['Front', 'Middle', 'Back', 'Upstairs', 'Unassigned'].map(area => {
+                    const sectionTables = tables.filter(table => {
+                      const section = (table.section || '').trim().toLowerCase();
+                      return area === 'Unassigned'
+                        ? !['front', 'middle', 'back', 'upstairs'].includes(section)
+                        : section === area.toLowerCase();
+                    });
+                    if (!sectionTables.length) return null;
                     return (
-                      <button key={table.id} type="button" disabled={unavailable}
-                        title={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
-                        aria-label={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
-                        onClick={() => {
-                          if (held) void handleSelectHeldTable(table.id);
-                          else if (occupied) void handleSelectOccupiedTable(table);
-                          else handleSelectAvailableTable(table.id, table.status === 'reserved' && table.reservation_customer_id
-                            ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
-                            : null);
-                        }}
-                        className={`min-h-14 rounded-lg p-1 text-center text-xs font-semibold transition-all ${color} ${selected ? 'ring-2 ring-brand ring-offset-2' : ''} ${unavailable ? 'cursor-not-allowed' : 'hover:brightness-110'}`}>
-                        <span className="block truncate">{table.name}</span>
-                        <span className="block text-[10px] opacity-90">{held ? 'Hold' : occupied ? 'Ordered' : unavailable ? 'Cleaning' : 'Free'}</span>
-                      </button>
+                      <section key={area}>
+                        <h3 className="mb-2 border-b border-border pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{area}</h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          {sectionTables.map(table => {
+                            const held = heldOrders.hasHeldOrder(table.id) || table.status === 'held';
+                            const occupied = table.status === 'occupied';
+                            const selected = cart.tableId === table.id;
+                            const unavailable = table.status === 'cleaning';
+                            const color = held ? 'bg-slate-500 text-white' : occupied ? 'bg-amber-500 text-white' :
+                              unavailable ? 'bg-gray-300 text-gray-600 dark:bg-gray-700' : 'bg-emerald-600 text-white';
+                            return (
+                              <button key={table.id} type="button" disabled={unavailable}
+                                title={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
+                                aria-label={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
+                                onClick={() => {
+                                  if (held) void handleSelectHeldTable(table.id);
+                                  else if (occupied) void handleSelectOccupiedTable(table);
+                                  else handleSelectAvailableTable(table.id, table.status === 'reserved' && table.reservation_customer_id
+                                    ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
+                                    : null);
+                                }}
+                                className={`min-h-14 rounded-lg p-1 text-center text-xs font-semibold transition-all ${color} ${selected ? 'ring-2 ring-brand ring-offset-2' : ''} ${unavailable ? 'cursor-not-allowed' : 'hover:brightness-110'}`}>
+                                <span className="block truncate">{table.name}</span>
+                                <span className="block text-[10px] opacity-90">{held ? 'Hold' : occupied ? 'Ordered' : unavailable ? 'Cleaning' : 'Free'}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
                     );
                   })}
                 </div>
