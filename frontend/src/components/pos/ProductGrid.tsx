@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowLeft, ChevronRight, Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Sunrise, Sandwich, Salad, Fish, Soup, GlassWater, Flame } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -108,7 +108,8 @@ export default function ProductGrid({
   const filtered = products.filter((p) => {
     // The landing screen is navigation only; show products after selecting a group.
     if (!activeGroup && !search.trim()) return false;
-    const matchCat = burgerFilterSelected ? /burger/i.test(p.name)\n      : selectedCategory ? p.category_id === selectedCategory
+    const matchCat = burgerFilterSelected ? /burger/i.test(p.name)
+      : selectedCategory ? p.category_id === selectedCategory
       : activeGroup === 'Favorites' ? favorites.includes(String(p.id))
       : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
     return matchCat && (!search || p.name.toLowerCase().includes(search.toLowerCase()));
@@ -158,23 +159,28 @@ export default function ProductGrid({
           })}
         </div>
         {activeGroup && (
-          <div className="flex items-center gap-2.5 flex-wrap pb-2">
+          <div className="pb-3">
             <button type="button" onClick={() => { setOpenGroup(null); setSelectedCategory(null); }}
               className="px-3 py-2 rounded-xl text-sm bg-card border border-border hover:bg-muted inline-flex items-center gap-1.5">
               <ArrowLeft size={15} /> All groups
             </button>
             {activeGroup !== 'Favorites' && (
               <>
-                <button type="button" onClick={() => setSelectedCategory(null)}
-                  className={`px-3 py-2 rounded-xl text-sm border ${!selectedCategory ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>All {activeGroup}</button>
-                {showVirtualBurgers && <button type="button" onClick={() => setSelectedCategory('__virtual_burgers__')}
-                  className={`px-3 py-2 rounded-xl text-sm border ${burgerFilterSelected ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>
-                  Burgers
-                </button>}
-                {children.map((cat) => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
-                  className={`px-3 py-2 rounded-xl text-sm border ${selectedCategory === cat.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>
-                  {cat.name.replace(/^Spirits\s*[—–-]\s*/i, '')}
-                </button>)}
+                <div className={selectedCategory ? "flex flex-wrap gap-2" : "grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 mt-3"}>
+                  {[
+                    ...(showVirtualBurgers ? [{ id: '__virtual_burgers__', name: 'Burgers' }] : []),
+                    ...children.map((cat) => ({ id: cat.id, name: cat.name.replace(/^Spirits\s*[—–-]\s*/i, '') })),
+                  ].map((cat) => {
+                    const name = cat.name.toLowerCase();
+                    const Icon = /breakfast|egg/.test(name) ? Sunrise : /burger|sandwich/.test(name) ? Sandwich : /salad/.test(name) ? Salad : /fish|seafood/.test(name) ? Fish : /soup|noodle/.test(name) ? Soup : /grill|steak/.test(name) ? Flame : /cocktail|gin|vodka|rum|wine|beer/.test(name) ? GlassWater : UtensilsCrossed;
+                    const color = /breakfast|egg/.test(name) ? 'bg-amber-500' : /burger|sandwich/.test(name) ? 'bg-orange-600' : /salad/.test(name) ? 'bg-emerald-600' : /fish|seafood/.test(name) ? 'bg-sky-600' : /soup|noodle/.test(name) ? 'bg-rose-600' : /cocktail|gin|vodka|rum|wine|beer/.test(name) ? 'bg-violet-600' : 'bg-indigo-600';
+                    return <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
+                      className={`flex items-center border transition-all hover:shadow-md ${selectedCategory ? 'gap-2 rounded-xl px-3 py-2' : 'flex-col justify-center gap-3 min-h-28 rounded-2xl p-3'} ${selectedCategory === cat.id ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/30 ring-2 ring-blue-500/20' : 'border-border bg-card hover:border-blue-400'}`}>
+                      <span className={`flex items-center justify-center rounded-xl text-white ${color} ${selectedCategory ? 'w-8 h-8' : 'w-12 h-12'}`}><Icon size={selectedCategory ? 18 : 25} /></span>
+                      <span className="font-semibold text-sm text-center">{cat.name}</span>
+                    </button>;
+                  })}
+                </div>
               </>
             )}
           </div>
@@ -182,11 +188,11 @@ export default function ProductGrid({
       </div>
 
       <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
-        {activeGroup && <h2 className="text-xl font-bold tracking-tight mb-3">{activeGroup}</h2>}
+        {activeGroup === 'Favorites' && <h2 className="text-xl font-bold tracking-tight mb-3">Favorites</h2>}
         {!activeGroup && !search.trim() && (
           <p className="text-sm text-muted-foreground py-4 text-center">Select a menu category above to browse products.</p>
         )}
-        <div className={`grid gap-3 ${
+        {(!activeGroup || !!selectedCategory || !!search.trim() || activeGroup === 'Favorites') && <div className={`grid gap-3 ${
           sidebarOpen 
             ? 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' 
             : 'grid-cols-2 lg:grid-cols-4 xl:grid-cols-5'
@@ -279,7 +285,7 @@ export default function ProductGrid({
               </button>
             );
           })}
-        </div>
+        </div>}
       </div>
     </div>
   );
