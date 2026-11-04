@@ -1,7 +1,7 @@
 'use client';
 
 import { UserCircle } from 'lucide-react';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslations } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -15,6 +15,16 @@ const getServerElectronCapability = () => false;
 
 export default function TitleBar() {
   const { currentTenant, user } = useAuthStore();
+  const [trainingMode, setTrainingMode] = useState(false);
+  const [trainingStatusKnown, setTrainingStatusKnown] = useState(false);
+
+  useEffect(() => {
+    if (!window.electronAPI?.getTrainingStatus) return;
+    void window.electronAPI.getTrainingStatus().then((status) => {
+      setTrainingMode(status.demo);
+      setTrainingStatusKnown(true);
+    }).catch(() => {});
+  }, []);
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
   const tStaff = useTranslations('staff');
@@ -92,6 +102,9 @@ export default function TitleBar() {
         {/* Windows/Linux: the frameless window has no native menu bar, so the
             top-level application menu is restored here (macOS keeps the native one). */}
         <ApplicationMenuRow />
+        {trainingStatusKnown && trainingMode && (
+          <span role="status" className="ml-3 rounded-md bg-amber-500 px-3 py-1 text-xs font-extrabold text-black shadow-sm">DEMO MODE — TRAINING ONLY</span>
+        )}
 
         {/* Trailing edge: Update badge */}
         <div className="flo-title-bar__interactive pointer-events-auto ms-auto flex items-center">
