@@ -133,13 +133,6 @@ export default function ProductGrid({
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <div className="shrink-0 mb-4">
-        {canArrange && selectedCategory && <div className="mb-2 flex justify-end gap-2">
-          {arranging ? <>
-            <span className="mr-auto text-xs">Drag pictures to reorder</span>
-            <button type="button" disabled={saving} onClick={() => setArranging(false)}>Cancel</button>
-            <button type="button" disabled={saving} onClick={() => void saveOrder()} className="rounded bg-brand px-3 py-1 text-white">Save Order</button>
-          </> : <button type="button" onClick={() => {setIds(ordered.map(p=>String(p.id)));setArranging(true);}} className="rounded border px-3 py-1">Arrange Menu</button>}
-        </div>}
         <div className="relative mb-4">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
