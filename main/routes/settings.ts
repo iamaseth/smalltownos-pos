@@ -96,6 +96,7 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   calendar: 'locale',
   // Returns 'system' if not yet explicitly saved by the user.
   theme_mode: 'system',
+  usd_khr_exchange_rate: '4100',
 };
 
 function maskSetting(key: string, value: string): string {
@@ -884,6 +885,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, Z_REPORT_LANGUAGE_POLICY_KEY,
   'currency_display', 'number_digits', 'calendar',
   'theme_mode',
+  'usd_khr_exchange_rate',
 ]);
 
 function isAllowedWildcardKey(key: string): boolean {
@@ -1084,6 +1086,13 @@ router.put('/:key', settingsWriteRateLimit, requirePermission('settings.manage')
     }
     if (req.params.key === 'bill_template') {
       valueToPersist = upgradeBillTemplateValue(value);
+    }
+    if (req.params.key === 'usd_khr_exchange_rate') {
+      const parsedRate = Number(value);
+      if (!Number.isInteger(parsedRate) || parsedRate < 1000 || parsedRate > 10000) {
+        return res.status(400).json({ error: 'USD/KHR exchange rate must be a whole number between 1000 and 10000' });
+      }
+      valueToPersist = String(parsedRate);
     }
     if (typeof req.params.key === 'string' && LANGUAGE_POLICY_SETTING_KEYS.has(req.params.key)) {
       const validation = validateLanguagePolicySetting(req.params.key, value);
