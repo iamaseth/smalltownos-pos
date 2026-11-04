@@ -69,6 +69,18 @@ export default function ProductGrid({
   // UI-only grouping: preserve original categories, products, and database.
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [favorites] = useState<string[]>([]);
+  // Bundled illustrations load locally, including when Flo is offline.
+  const groupArtwork: Record<string, string> = {
+    Favorites: '☕', Food: '🍜', Cocktails: '🍹', Spirits: '🥃', 'Beer & Wine': '🍷', 'Non-Alcoholic': '🥭',
+  };
+  const groupBackgrounds: Record<string, string> = {
+    Favorites: 'from-[#3a2418] via-[#765038] to-[#160e0a]',
+    Food: 'from-[#74421b] via-[#b67a3a] to-[#302014]',
+    Cocktails: 'from-[#9c2649] via-[#e55b62] to-[#51183a]',
+    Spirits: 'from-[#7c3c18] via-[#bb742f] to-[#2d160e]',
+    'Beer & Wine': 'from-[#55283b] via-[#9e5365] to-[#281722]',
+    'Non-Alcoholic': 'from-[#8b5813] via-[#e8a72f] to-[#40551d]',
+  };
   const groupLabels = ['Favorites', 'Food', 'Cocktails', 'Spirits', 'Beer & Wine', 'Non-Alcoholic'] as const;
   const groups = useMemo(() => {
     const result = new Map<string, Category[]>();
@@ -122,44 +134,46 @@ export default function ProductGrid({
             className="w-full ps-10 pe-4 py-3 bg-card border border-border rounded-2xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
         </div>
-        {!activeGroup ? (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 pb-2">
-            {groupLabels.map((label) => {
-              const Icon = groupIcons[label];
-              return <button key={label} type="button" onClick={() => { setOpenGroup(label); setSelectedCategory(null); }}
-                className="group flex flex-col items-start justify-between gap-4 min-h-32 px-5 py-4 rounded-2xl bg-card border border-border hover:border-brand hover:shadow-md active:scale-[0.99] transition-all text-start touch-manipulation">
-                <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-brand/10 text-brand"><Icon size={23} /></span>
-                <span className="font-semibold text-base leading-tight">{label}</span>
-                <ChevronRight size={17} className="self-end text-muted-foreground group-hover:text-brand shrink-0" />
-              </button>;
-            })}
-          </div>
-        ) : (
-          <div className="pb-1">
-            <div className="flex items-center gap-3 mb-4">
-              <button type="button" onClick={() => { setOpenGroup(null); setSelectedCategory(null); }}
-                className="px-4 py-2.5 rounded-xl text-sm bg-card border border-border hover:bg-muted inline-flex items-center gap-2 font-medium">
-                <ArrowLeft size={16} /> Back
+        <div className="grid grid-cols-3 xl:grid-cols-6 gap-2.5 pb-3">
+          {groupLabels.map((label) => {
+            const selected = activeGroup === label;
+            return (
+              <button key={label} type="button"
+                onClick={() => { setOpenGroup(label); setSelectedCategory(null); }}
+                aria-pressed={selected}
+                className={`group relative isolate overflow-hidden rounded-2xl min-h-28 xl:min-h-36 text-start shadow-sm border-2 transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.98] ${selected ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-transparent'}`}>
+                <span className={`absolute inset-0 bg-gradient-to-br ${groupBackgrounds[label]}`} />
+                <span aria-hidden="true" className="absolute inset-0 flex items-center justify-center text-[56px] xl:text-[68px] group-hover:scale-110 transition-transform duration-300 drop-shadow-xl">{groupArtwork[label]}</span>
+                <span className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/5 to-transparent" />
+                <span className="absolute bottom-2.5 start-3 end-2 text-white font-bold text-sm xl:text-base leading-tight drop-shadow">{label}</span>
               </button>
-              <span className="font-semibold text-sm">{activeGroup}</span>
-            </div>
-            {activeGroup !== 'Favorites' && <div className="flex flex-wrap gap-2.5">
-              <button type="button" onClick={() => setSelectedCategory(null)}
-                className={`px-3 py-2 rounded-lg text-sm border ${!selectedCategory ? 'bg-brand text-white border-brand' : 'bg-card border-border hover:bg-muted'}`}>
-                All {activeGroup}
-              </button>
-              {children.map((cat) => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
-                className={`px-3 py-2 rounded-lg text-sm border ${selectedCategory === cat.id ? 'bg-brand text-white border-brand' : 'bg-card border-border hover:bg-muted'}`}>
-                {cat.name.replace(/^Spirits\s*[—–-]\s*/i, '')}
-              </button>)}
-            </div>}
+            );
+          })}
+        </div>
+        {activeGroup && (
+          <div className="flex items-center gap-2.5 flex-wrap pb-2">
+            <button type="button" onClick={() => { setOpenGroup(null); setSelectedCategory(null); }}
+              className="px-3 py-2 rounded-xl text-sm bg-card border border-border hover:bg-muted inline-flex items-center gap-1.5">
+              <ArrowLeft size={15} /> All groups
+            </button>
+            {activeGroup !== 'Favorites' && (
+              <>
+                <button type="button" onClick={() => setSelectedCategory(null)}
+                  className={`px-3 py-2 rounded-xl text-sm border ${!selectedCategory ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>All {activeGroup}</button>
+                {children.map((cat) => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
+                  className={`px-3 py-2 rounded-xl text-sm border ${selectedCategory === cat.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>
+                  {cat.name.replace(/^Spirits\\s*[—–-]\\s*/i, '')}
+                </button>)}
+              </>
+            )}
           </div>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
+        {activeGroup && <h2 className="text-xl font-bold tracking-tight mb-3">{activeGroup}</h2>}
         {!activeGroup && !search.trim() && (
-          <p className="text-sm text-muted-foreground py-4 text-center">Choose one of the six menu groups above to browse products.</p>
+          <p className="text-sm text-muted-foreground py-4 text-center">Select a menu category above to browse products.</p>
         )}
         <div className={`grid gap-3 ${
           sidebarOpen 
