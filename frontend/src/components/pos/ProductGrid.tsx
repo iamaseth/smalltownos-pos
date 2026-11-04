@@ -188,7 +188,7 @@ export default function ProductGrid({
               className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold ${!selectedCategory ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card'}`}>All {activeGroup}</button>
             {[
               ...(showVirtualBurgers ? [{ id: '__virtual_burgers__', name: 'Burgers' }] : []),
-              ...children.map(cat => ({ id: cat.id, name: activeGroup === 'Cocktails' ? cat.name.replace(/\\s+Cocktails?$/i, '') : cat.name.replace(/^Spirits\\s*[—–-]\\s*/i, '') })),
+              ...children.map(cat => ({ id: cat.id, name: activeGroup === 'Cocktails' ? cat.name.replace(/\\s+Cocktails?$/i, '') : cat.name.replace(/^Spirits\s*[—–-]\s*/i, '') })),
             ].map(cat => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
               className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold ${selectedCategory === cat.id ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card hover:bg-muted'}`}>{cat.name}</button>)}
           </nav>
