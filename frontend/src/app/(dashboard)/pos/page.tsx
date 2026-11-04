@@ -1240,6 +1240,8 @@ export default function POSPage() {
             search={search}
             setSearch={setSearch}
             currency={currency}
+            canArrange={tenantCan(currentTenant, 'catalog.manage')}
+            onOrderSaved={async () => { const response = await api.get('/products?active=1'); setProducts((response.data.products as Product[]) || []); }}
             onProductClick={handleProductClick}
             sidebarOpen={leftSidebarOpen}
           />
