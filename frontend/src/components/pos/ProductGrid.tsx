@@ -109,7 +109,11 @@ export default function ProductGrid({
       : selectedCategory ? p.category_id === selectedCategory
       : activeGroup === 'Favorites' ? favorites.includes(String(p.id))
       : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
-    return matchCat && (!search || p.name.toLowerCase().includes(search.toLowerCase()));
+    // Search all menu items by the beginning of the product name, not any substring.
+    // When searching, ignore the currently selected category.
+    const query = search.trim().toLocaleLowerCase();
+    if (query) return p.name.trimStart().toLocaleLowerCase().startsWith(query);
+    return matchCat;
   });
   const ordered = [...filtered].sort((a,b) => (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name));
   const displayed = arranging ? [...ordered].sort((a,b) => ids.indexOf(String(a.id))-ids.indexOf(String(b.id))) : ordered;
