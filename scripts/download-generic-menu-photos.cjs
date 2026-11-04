@@ -28,7 +28,7 @@ const photos = {
   smoothie:'photo-1505252585461-04db1eb84625',
   juice:'photo-1600271886742-f049cd451bba',
   tea:'photo-1544787219-7f47ccb76574',
-  cocktail:'photo-1536935338788846bb9981813',
+  cocktail:'photo-1470337458703-46ad1756a187',
   whiskey:'photo-1527281400683-1aae777175f8',
   spirits:'photo-1513558161293-cdaf765edfd4',
   wine:'photo-1510812431401-41d2bd2722f3',
