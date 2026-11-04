@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee } from 'lucide-react';
+import { Plus, Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -217,27 +217,24 @@ export default function ProductGrid({
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
                 onClick={() => {if(!arranging)onProductClick(product);}}
-                className="min-h-32 bg-[#111a2e] text-slate-100 rounded-xl p-3 border border-slate-800 border-l-4 hover:border-slate-500 hover:bg-[#18243a] active:bg-slate-800 shadow-sm transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                className="group min-h-[168px] flex flex-col justify-between bg-[#0f172a] text-slate-100 rounded-2xl p-3.5 border border-slate-800/80 border-l-4 hover:border-l-slate-600 hover:bg-[#162032] hover:scale-[1.02] active:scale-[0.97] shadow-sm hover:shadow-md transition-all duration-150 text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
                 style={{ borderLeftColor: ['#f59e0b','#06b6d4','#10b981','#a855f7','#f97316'][String(product.category_id || product.id).split('').reduce((n,ch)=>n+ch.charCodeAt(0),0) % 5] }}
               >
-                {!!product.track_inventory && (
-                  <>
-                    {product.stock_quantity <= 0 ? (
-                      <span className="absolute top-2 start-2 bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-red-200 dark:border-red-800/40 pointer-events-none">
-                        {t('outOfStock')}
-                      </span>
-                    ) : product.stock_quantity <= (product.low_stock_threshold || 0) ? (
-                      <span className="absolute top-2 start-2 bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-orange-200 dark:border-orange-800/40 pointer-events-none">
-                        {t('lowStock')}
-                      </span>
+                <div className="mb-2 flex min-h-6 items-start justify-between gap-1">
+                  <div>
+                    {!!product.track_inventory && product.stock_quantity <= 0 ? (
+                      <span className="rounded-full border border-rose-800 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-rose-400">{t('outOfStock')}</span>
+                    ) : !!product.track_inventory && product.stock_quantity <= (product.low_stock_threshold || 0) ? (
+                      <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-emerald-400">{t('lowStock')}</span>
+                    ) : product.tags && product.tags.length > 0 ? (
+                      <span className="rounded-full border border-slate-700 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-emerald-400">{product.tags[0]}</span>
                     ) : null}
-                  </>
-                )}
-                {inCartQty > 0 && (
-                  <span className="absolute top-0 end-0 bg-brand text-white text-xs w-6 h-6 rounded-es-lg flex items-center justify-center font-bold z-10">
-                    {inCartQty}
-                  </span>
-                )}
+                  </div>
+                  {!!product.track_inventory && (
+                    <span className="shrink-0 rounded border border-slate-800 bg-[#090d16] px-1.5 py-0.5 font-mono text-[10px] text-slate-400">{Number(product.stock_quantity)} left</span>
+                  )}
+                  {inCartQty > 0 && <span className="rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold text-white">{inCartQty} in order</span>}
+                </div>
 
                 {showProductImages && showMenuPhotos && (
                   <div className="w-full aspect-[5/3] rounded-lg mb-1.5 relative overflow-hidden">
@@ -272,28 +269,12 @@ export default function ProductGrid({
                   </div>
                 )}
 
-                <h3 className="font-semibold text-slate-100 text-sm line-clamp-2 leading-snug">{product.name}</h3>
-                <div className="flex items-center justify-between mt-1">
-                  <p className="text-slate-100 font-bold">
-                    {fmt(Number(product.price))}
-                  </p>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {!showProductImages && product.tags && product.tags.length > 0 && (
-                      <TagBadge tag={product.tags[0]} />
-                    )}
-                    {product.addon_groups && product.addon_groups.length > 0 && (
-                      <span
-                        className="touch-target -me-2 -my-2 rounded-lg text-muted-foreground"
-                        title={t('customisable')}
-                        aria-label={t('customisable')}
-                      >
-                        <SlidersHorizontal size={16} />
-                      </span>
-                    )}
-                  </div>
+                <h3 className="font-bold text-slate-100 text-sm line-clamp-2 leading-snug group-hover:text-emerald-400 transition-colors">{product.name}</h3>
+                <div className="flex items-center justify-between mt-4 pt-2 border-t border-slate-800/60">
+                  <p className="font-mono text-base font-extrabold text-slate-200">{fmt(Number(product.price))}</p>
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-slate-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors" aria-hidden="true"><Plus size={18} /></span>
                 </div>
-
-              </button>
+                            </button>
             );
           })}
         </div>}
