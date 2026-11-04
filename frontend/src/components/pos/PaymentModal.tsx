@@ -112,6 +112,15 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
   // QR is manual verification only until a receiving bank is configured.
   const [showQrInstructions, setShowQrInstructions] = useState(false);
+  const [khrTendered, setKhrTendered] = useState('');
+  const [khrRate, setKhrRate] = useState(4100);
+  const [changeCurrency, setChangeCurrency] = useState<'USD' | 'KHR'>('KHR');
+  useEffect(() => {
+    api.get('/settings/usd_khr_exchange_rate').then(({ data }) => {
+      const value = Number(data.setting?.value);
+      if (Number.isInteger(value) && value >= 1000 && value <= 10000) setKhrRate(value);
+    }).catch(() => { /* Default to 4100 if settings are unavailable. */ });
+  }, []);
 
 
   // Discount state
@@ -202,7 +211,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   }, [bill.customer_id, cartCustomerId]);
 
   const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
-  const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt);
+  const khrAmount = Number(khrTendered) || 0;
+  const khrUsd = khrAmount / khrRate;
+  const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt) + toMinorUnits(khrUsd);
   const totalPayment = totalPaymentMinor / minorFactor;
   const remainingMinor = toMinorUnits(remaining);
 
@@ -267,7 +278,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     return [];
   })();
 
-  const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
+  const hasCash = khrAmount > 0 || payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
 
   const change = hasCash && totalPaymentMinor > remainingMinor
     ? (totalPaymentMinor - remainingMinor) / minorFactor
@@ -341,6 +352,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       toast.error(t('paymentFailed'));
       return;
     }
+    if (khrTendered.trim() && (!/^\\d+$/.test(khrTendered.trim()) || !Number.isSafeInteger(khrAmount))) {
+      toast.error('KHR cash must be a non-negative whole number');
+      return;
+    }
     if (walletAmount.trim() && !amountPattern.test(walletAmount.trim())) {
       toast.error(t('paymentFailed'));
       return;
@@ -375,6 +390,12 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           amount: toStoredUnit(parseFloat(p.amount) || 0),
         }))
         .filter((p) => p.amount > 0 && !isNaN(p.amount));
+      if (khrAmount > 0) {
+        const khrCashUsd = toMinorUnits(khrUsd) / minorFactor;
+        const existingCash = splitLines.find((line) => line.method === 'cash');
+        if (existingCash) existingCash.amount += khrCashUsd;
+        else splitLines.push({ method: 'cash', amount: khrCashUsd });
+      }
       if (walletAmt > 0) splitLines.push({ method: 'wallet', amount: walletAmt });
 
       // Atomic call ensures all split payment lines succeed together
@@ -643,7 +664,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           <div className="space-y-4">
           <div className="space-y-2">
             <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              Cash and card amounts use {currencyCode}. KHR cash conversion and dynamic KHQR are not configured yet.
+              Cash can be received in USD and KHR at the saved rate of {khrRate.toLocaleString('en-US')} KHR per USD. Dynamic KHQR is not configured.
             </div>
             <button type="button" onClick={() => setShowQrInstructions(v => !v)}
               className="w-full rounded-xl border border-border px-4 py-3 text-left text-sm font-semibold hover:bg-muted"
@@ -686,6 +707,15 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             })}
           </div>
 
+          <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-3 space-y-2">
+            <label htmlFor="khr-cash-tendered" className="block text-sm font-semibold">Cash received in KHR (៛)</label>
+            <input id="khr-cash-tendered" type="number" inputMode="numeric" min="0" step="1" value={khrTendered}
+              onChange={(e) => { setKhrTendered(e.target.value); setPaymentsTouched(true); }}
+              placeholder="0" className="w-full rounded-lg border border-border bg-card px-3 py-2 text-lg font-semibold" />
+            <p className="text-xs text-muted-foreground">Equivalent: {currencyFmt(khrUsd)} · Rate: {khrRate.toLocaleString('en-US')} KHR = $1</p>
+            <p className="text-xs text-muted-foreground">Enter USD in Cash above, and KHR here. Both count toward the same bill.</p>
+          </div>
+
           {/* Change Returned */}
           {hasCash && (
             <div className={`rounded-xl px-4 py-3 flex items-center justify-between border-2 transition-all duration-200 ${
@@ -711,10 +741,12 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               <span className={`text-xl font-bold tabular-nums ${
                 change > 0 ? 'text-emerald-600' : 'text-gray-300'
               }`}>
-                {currencyFmt(change)}
+                {changeCurrency === 'KHR' ? `${Math.round(change * khrRate / 100) * 100} ៛` : currencyFmt(change)}
               </span>
             </div>
           )}
+
+          {hasCash && <div className="flex items-center justify-end gap-2 text-xs"><span>Return change in:</span><button type="button" onClick={() => setChangeCurrency('USD')} className={`rounded px-3 py-2 border ${changeCurrency === 'USD' ? 'border-emerald-500 text-emerald-400' : 'border-border'}`}>USD</button><button type="button" onClick={() => setChangeCurrency('KHR')} className={`rounded px-3 py-2 border ${changeCurrency === 'KHR' ? 'border-emerald-500 text-emerald-400' : 'border-border'}`}>KHR</button></div>}
 
           {/* Loyalty Wallet Section */}
           {loyaltySettings?.loyalty_enabled && effectiveCustomerId && walletBalance !== null && (
