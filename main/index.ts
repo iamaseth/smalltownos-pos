@@ -1273,6 +1273,35 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Registering IPC handlers...');
     registerIpcHandlers(shutdownSignal, () => mainWindow, showMainWindow, () => currentEffectiveIsDark);
 
+    ipcMain.handle('training:refresh', async () => {
+      if (process.env.FLO_DEMO_MODE === '1') return { error: 'Return to Live Mode before refreshing training data.' };
+      const result = await dialog.showMessageBox({
+        type: 'warning',
+        buttons: ['Cancel', 'Replace Demo Data'],
+        defaultId: 0, cancelId: 0,
+        title: 'Refresh Demo from Live',
+        message: 'Replace all demo data with a fresh copy of the live database?',
+        detail: 'All training orders and changes will be erased. Live sales and settings will not be modified.',
+      });
+      if (result.response !== 1) return { cancelled: true };
+      const demoProfile = path.join(os.homedir(), '.config', 'flo-desktop-demo');
+      const demoDb = path.join(demoProfile, 'flo-demo.db');
+      const tempDb = path.join(demoProfile, 'flo-demo-refresh.tmp.db');
+      try {
+        fs.mkdirSync(demoProfile, { recursive: true });
+        if (fs.existsSync(tempDb)) fs.unlinkSync(tempDb);
+        await getDatabase().backup(tempDb);
+        fs.renameSync(tempDb, demoDb);
+        for (const suffix of ['-wal', '-shm']) {
+          const stale = demoDb + suffix;
+          if (fs.existsSync(stale)) fs.unlinkSync(stale);
+        }
+        return { success: true };
+      } catch (error) {
+        try { if (fs.existsSync(tempDb)) fs.unlinkSync(tempDb); } catch {}
+        return { error: String(error) };
+      }
+    });
     ipcMain.handle('training:status', () => ({ demo: process.env.FLO_DEMO_MODE === '1' }));
     ipcMain.handle('training:switch', async (_event, enable: unknown) => {
       if (typeof enable !== 'boolean') return { error: 'Invalid training mode' };
