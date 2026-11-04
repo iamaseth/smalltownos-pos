@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowLeft, ChevronRight, Search, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -66,33 +66,33 @@ export default function ProductGrid({
     return quantities;
   }, [cart.items]);
 
-  // Group existing "Parent — Child" categories without changing stored data.
+  // UI-only grouping: preserve original categories, products, and database.
   const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const groupLabels = ['Favorites', 'Food', 'Cocktails', 'Spirits', 'Beer & Wine', 'Non-Alcoholic'] as const;
   const groups = useMemo(() => {
     const result = new Map<string, Category[]>();
+    groupLabels.forEach((label) => result.set(label, []));
     for (const cat of categories) {
-      if (cat.id == null) continue;
-      const match = cat.name.match(/^(.+?)\s+[—–]\s+(.+)$/);
-      if (!match) continue;
-      const parent = match[1].trim();
-      result.set(parent, [...(result.get(parent) ?? []), cat]);
-    }
-    for (const [parent, children] of result) {
-      if (children.length < 2) result.delete(parent);
+      const name = cat.name.toLowerCase();
+      const group = name.startsWith('spirits ') ? 'Spirits'
+        : name.includes('cocktail') ? 'Cocktails'
+        : /beer|wine/.test(name) ? 'Beer & Wine'
+        : /coffee|juice|water|soft drink|tea|smoothie/.test(name) ? 'Non-Alcoholic'
+        : 'Food';
+      result.get(group)!.push(cat);
     }
     return result;
   }, [categories]);
   const activeGroup = openGroup && groups.has(openGroup) ? openGroup : null;
   const children = activeGroup ? groups.get(activeGroup) ?? [] : [];
-  const groupedIds = new Set(Array.from(groups.values()).flatMap((items) => items.map((cat) => cat.id)));
-  const visibleCategories = activeGroup ? children : categories.filter((cat) => cat.id != null && !groupedIds.has(cat.id));
   const filtered = products.filter((p) => {
-    const matchCat = selectedCategory
-      ? p.category_id === selectedCategory
+    const matchCat = selectedCategory ? p.category_id === selectedCategory
+      : activeGroup === 'Favorites' ? favorites.includes(String(p.id))
       : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
-    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
-    return matchCat && matchSearch;
+    return matchCat && (!search || p.name.toLowerCase().includes(search.toLowerCase()));
   });
+  const groupIcons = { Favorites: Star, Food: UtensilsCrossed, Cocktails: Martini, Spirits: Wine, 'Beer & Wine': Beer, 'Non-Alcoholic': Coffee };
 
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
@@ -120,39 +120,39 @@ export default function ProductGrid({
             className="w-full ps-9 pe-4 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />
         </div>
-        <div className="flex flex-wrap gap-2 pb-1">
-          {activeGroup && (
-            <button type="button" onClick={() => { setOpenGroup(null); setSelectedCategory(null); }}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-card text-foreground border border-border hover:bg-muted inline-flex items-center gap-2">
-              <ArrowLeft size={16} /> Back
-            </button>
-          )}
-          <button type="button" onClick={() => { setSelectedCategory(null); if (!activeGroup) setOpenGroup(null); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${!selectedCategory ? 'bg-brand text-white' : 'bg-card text-foreground border border-border hover:bg-muted'}`}>
-            {activeGroup ? `All ${activeGroup}` : t('allCategories')}
-          </button>
-          {visibleCategories.map((cat) => {
-            const colorClasses = getCategoryColorClasses(cat.color);
-            const isSelected = selectedCategory === cat.id;
-            const label = activeGroup ? cat.name.slice(activeGroup.length).replace(/^\s*[—–]\s*/, '') : cat.name;
-            return (
-              <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                  isSelected
-                    ? colorClasses ? `${colorClasses.activeBg} ${colorClasses.activeText}` : 'bg-brand text-white'
-                    : colorClasses ? `${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border} hover:opacity-80` : 'bg-card text-foreground border border-border hover:bg-muted'
-                }`}>
-                {label}
+        {!activeGroup ? (
+          <div className="grid grid-cols-3 gap-2 pb-1">
+            {groupLabels.map((label) => {
+              const Icon = groupIcons[label];
+              return <button key={label} type="button" onClick={() => { setOpenGroup(label); setSelectedCategory(null); }}
+                className="flex items-center gap-2 min-h-16 px-3 py-3 rounded-xl bg-card border border-border hover:border-brand hover:bg-muted/50 text-start touch-manipulation">
+                <Icon size={19} className="text-brand shrink-0" />
+                <span className="font-semibold text-sm leading-tight">{label}</span>
+                <ChevronRight size={14} className="ms-auto text-muted-foreground shrink-0" />
+              </button>;
+            })}
+          </div>
+        ) : (
+          <div className="pb-1">
+            <div className="flex items-center gap-2 mb-2">
+              <button type="button" onClick={() => { setOpenGroup(null); setSelectedCategory(null); }}
+                className="px-3 py-2 rounded-lg text-sm bg-card border border-border hover:bg-muted inline-flex items-center gap-2">
+                <ArrowLeft size={16} /> Back
               </button>
-            );
-          })}
-          {!activeGroup && Array.from(groups, ([parent]) => (
-            <button key={parent} type="button" onClick={() => { setOpenGroup(parent); setSelectedCategory(null); }}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-card text-foreground border border-border hover:bg-muted inline-flex items-center gap-1">
-              {parent} <ChevronRight size={15} />
-            </button>
-          ))}
-        </div>
+              <span className="font-semibold text-sm">{activeGroup}</span>
+            </div>
+            {activeGroup !== 'Favorites' && <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setSelectedCategory(null)}
+                className={`px-3 py-2 rounded-lg text-sm border ${!selectedCategory ? 'bg-brand text-white border-brand' : 'bg-card border-border hover:bg-muted'}`}>
+                All {activeGroup}
+              </button>
+              {children.map((cat) => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
+                className={`px-3 py-2 rounded-lg text-sm border ${selectedCategory === cat.id ? 'bg-brand text-white border-brand' : 'bg-card border-border hover:bg-muted'}`}>
+                {cat.name.replace(/^Spirits\s*[—–-]\s*/i, '')}
+              </button>)}
+            </div>}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
@@ -171,7 +171,7 @@ export default function ProductGrid({
                 data-testid="pos-product-card"
                 type="button"
                 onClick={() => onProductClick(product)}
-                className="min-h-36 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                className="min-h-28 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 {!!product.track_inventory && (
                   <>
@@ -193,13 +193,13 @@ export default function ProductGrid({
                 )}
 
                 {showProductImages && (
-                  <div className="w-full aspect-square rounded-lg mb-3 relative overflow-hidden">
+                  <div className="w-full aspect-[5/3] rounded-lg mb-2 relative overflow-hidden">
                     {/* Always-visible background tile — no flash when image loads */}
                     <div
                       className="absolute inset-0 flex items-center justify-center"
                       style={{ backgroundColor: nameToColor(product.name) }}
                     >
-                      <span className="text-2xl font-bold text-white/80">
+                      <span className="text-lg font-semibold text-white/80">
                         {product.name.substring(0, 2).toUpperCase()}
                       </span>
                     </div>
