@@ -1180,7 +1180,7 @@ export default function POSPage() {
       />
 
       {/* Main content area */}
-      <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
+      <div className="flex flex-1 min-h-0 overflow-hidden p-2 lg:p-3 gap-2 lg:gap-3">
         {/* Collapsible desktop table rail; reuses the same table actions as the picker. */}
         {isRestaurant && tablesRequired && (
           <aside className={`hidden lg:flex shrink-0 flex-col rounded-xl border border-border bg-card ${tableRailOpen ? 'w-44 xl:w-48' : 'w-12'}`}>
@@ -1264,7 +1264,7 @@ export default function POSPage() {
         </div>
 
         {/* Desktop Cart — always open, hidden on mobile */}
-        <div className="hidden md:flex md:w-80 md:shrink-0 h-full">
+        <div className="hidden md:flex md:w-[32%] md:min-w-[280px] md:max-w-[420px] md:shrink-0 h-full">
           <CartPanel {...cartPanelProps} />
         </div>
       </div>
