@@ -220,10 +220,10 @@ export default function ProductGrid({
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
                 onClick={() => {if(!arranging)onProductClick(product);}}
-                className="group min-h-[168px] flex flex-col justify-between bg-[#0f172a] text-slate-100 rounded-2xl p-3.5 border border-slate-800/80 border-l-4 hover:border-l-slate-600 hover:bg-[#162032] hover:scale-[1.02] active:scale-[0.97] shadow-sm hover:shadow-md transition-all duration-150 text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-                style={{ borderLeftColor: ['#f59e0b','#06b6d4','#10b981','#a855f7','#f97316'][String(product.category_id || product.id).split('').reduce((n,ch)=>n+ch.charCodeAt(0),0) % 5] }}
+                className="group flex flex-col justify-between bg-[#0f172a] text-slate-100 rounded-2xl p-3.5 border border-slate-800/80 border-l-4 hover:border-slate-700 hover:bg-[#162032] hover:scale-[1.02] active:scale-[0.97] shadow-sm hover:shadow-md transition-all duration-150 text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                style={{ borderLeftColor: activeGroup === 'Cocktails' ? '#06b6d4' : activeGroup === 'Spirits' ? '#a855f7' : activeGroup === 'Food' ? '#f97316' : activeGroup === 'Beer & Wine' ? '#f59e0b' : activeGroup === 'Non-Alcoholic' ? '#10b981' : ['#f59e0b','#06b6d4','#10b981','#a855f7','#f97316'][String(product.category_id || product.id).split('').reduce((n,ch)=>n+ch.charCodeAt(0),0) % 5] }}
               >
-                <div className="mb-2 flex min-h-6 items-start justify-between gap-1">
+                <div className="mb-2 flex items-start justify-between gap-1">
                   <div>
                     {!!product.track_inventory && product.stock_quantity <= 0 ? (
                       <span className="rounded-full border border-rose-800 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-rose-400">{t('outOfStock')}</span>
@@ -272,10 +272,10 @@ export default function ProductGrid({
                   </div>
                 )}
 
-                <h3 className="font-bold text-slate-100 text-sm line-clamp-2 leading-snug group-hover:text-emerald-400 transition-colors">{product.name}</h3>
+                <h3 className="font-bold text-sm text-slate-100 group-hover:text-emerald-400 transition-colors leading-snug">{product.name}</h3>
                 <div className="flex items-center justify-between mt-4 pt-2 border-t border-slate-800/60">
                   <p className="font-mono text-base font-extrabold text-slate-200">{fmt(Number(product.price))}</p>
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-slate-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors" aria-hidden="true"><Plus size={18} /></span>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#1e293b] text-slate-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors" aria-hidden="true"><Plus size={16} /></span>
                 </div>
                             </button>
             );
