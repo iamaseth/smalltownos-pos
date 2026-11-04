@@ -580,6 +580,13 @@ if (process.env.FLO_E2E_USER_DATA_DIR) {
   app.setPath('userData', path.join(os.homedir(), '.config', 'flo-desktop'));
 }
 
+// Demo runs in its own Electron profile: preferences, backups and runtime state
+// cannot accidentally write into the real installation's userData directory.
+if (process.env.FLO_DEMO_MODE === '1') {
+  app.setPath('userData', path.join(os.homedir(), '.config', 'flo-desktop-demo'));
+  console.log('[DEMO MODE] Isolated profile and flo-demo.db; not for real sales.');
+}
+
 gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   console.log('[Lock] Another instance is already running. Quitting.');
