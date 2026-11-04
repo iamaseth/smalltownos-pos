@@ -1155,19 +1155,6 @@ export default function POSPage() {
           )}
         </div>
       )}
-      {/* Bar Quick Tab uses the existing no-table takeaway checkout; it does not create a persistent credit tab. */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-slate-800 bg-[#0f172a] px-3 py-2 text-slate-100">
-        <span className="mr-2 hidden rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm font-bold text-emerald-400 xl:inline">FLO POS</span>
-        <button type="button" onClick={() => { cart.setOrderType('takeaway'); cart.setTableId(null); }}
-          className={`rounded-lg px-3 py-2 text-xs font-semibold ${cart.orderType === 'takeaway' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
-          Quick Bar Sale
-        </button>
-        <button type="button" onClick={() => { cart.setOrderType('dine_in'); setShowTablePicker(true); }}
-          className={`rounded-lg px-3 py-2 text-xs font-semibold ${cart.orderType === 'dine_in' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}`}>
-          Tables
-        </button>
-        <span className="hidden text-xs text-slate-400 lg:inline">Quick Bar Sale: checkout without a table</span>
-      </div>
       <PosTopbar
         tables={tables}
         onShowTablePicker={() => setShowTablePicker(true)}
