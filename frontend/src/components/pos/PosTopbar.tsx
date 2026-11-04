@@ -6,7 +6,7 @@ import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, Wine } from 'lucide-react';
+import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 
@@ -35,14 +35,6 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
 
   return (
     <div className="relative flex shrink-0 items-center gap-2 border-b border-slate-800 bg-[#0f172a] px-3 py-2 text-slate-100">
-      <button type="button" onClick={() => { cart.setOrderType('takeaway'); cart.setTableId(null); }}
-        className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold ${cart.orderType === 'takeaway' ? 'bg-emerald-600 text-white' : 'bg-[#1e293b] text-slate-300 hover:bg-[#334155]'}`}>
-        <Wine size={14} className="mr-1 inline" />Quick Sale
-      </button>
-      {isRestaurant && <button type="button" onClick={() => { cart.setOrderType('dine_in'); onShowTablePicker(); }}
-        className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold ${cart.orderType === 'dine_in' ? 'bg-emerald-600 text-white' : 'bg-[#1e293b] text-slate-300 hover:bg-[#334155]'}`}>
-        <LayoutGrid size={14} className="mr-1 inline" />Tables
-      </button>}
       <div className="min-w-0 flex-1" />
       <div className="relative">
         <button type="button" onClick={() => setActionsOpen(v => !v)} aria-expanded={actionsOpen}
