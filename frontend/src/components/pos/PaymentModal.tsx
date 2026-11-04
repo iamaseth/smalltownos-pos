@@ -351,7 +351,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       toast.error(t('paymentFailed'));
       return;
     }
-    if (khrTendered.trim() && (!/^\\d+$/.test(khrTendered.trim()) || !Number.isSafeInteger(khrAmount))) {
+    if (khrTendered.trim() && (!/^[0-9]+$/.test(khrTendered.trim()) || !Number.isSafeInteger(khrAmount))) {
       toast.error('KHR cash must be a non-negative whole number');
       return;
     }
