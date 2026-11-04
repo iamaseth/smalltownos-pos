@@ -170,12 +170,12 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       {/* Order Type */}
       <div className="p-4 border-b border-border dark:border-border space-y-2">
         <div className="flex gap-1 bg-muted rounded-lg p-1">
-          {(['dine_in', 'takeaway', 'delivery', 'online'] as const)
+          {(['dine_in', 'takeaway', 'delivery'] as const)
             .filter((type) => isRestaurant || type !== 'dine_in')
             .map((type) => {
               const Icon = orderTypeIcons[type];
-              const showIcon = type !== 'dine_in' && type !== 'online';
-              const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : type === 'delivery' ? t('orderTypeDelivery') : t('orderTypeOnline');
+              const showIcon = type !== 'dine_in';
+              const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? 'Quick Tab' : t('orderTypeDelivery');
               return (
                 <button
                   key={type}
@@ -245,7 +245,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       {!isDrawer && (
         <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
-            {cart.orderType === 'takeaway' ? 'Quick Bar Sale' : cart.tableId ? tables.find(table => table.id === cart.tableId)?.name || 'Table Order' : 'Order'}
+            {cart.orderType === 'takeaway' ? 'Quick Tab' : cart.tableId ? tables.find(table => table.id === cart.tableId)?.name || 'Table Order' : 'Order'}
           </span>
           <span className="text-xs text-slate-400">{cart.itemCount()} items</span>
         </div>
