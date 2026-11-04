@@ -68,14 +68,14 @@ export default function ProductGrid({
 
   // UI-only grouping: preserve original categories, products, and database.
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favorites] = useState<string[]>([]);
   const groupLabels = ['Favorites', 'Food', 'Cocktails', 'Spirits', 'Beer & Wine', 'Non-Alcoholic'] as const;
   const groups = useMemo(() => {
     const result = new Map<string, Category[]>();
     groupLabels.forEach((label) => result.set(label, []));
     for (const cat of categories) {
       const name = cat.name.toLowerCase();
-      const group = name.startsWith('spirits ') ? 'Spirits'
+      const group = /^spirits(?:\s|$|[—–-])/.test(name) ? 'Spirits'
         : name.includes('cocktail') ? 'Cocktails'
         : /beer|wine/.test(name) ? 'Beer & Wine'
         : /coffee|juice|water|soft drink|tea|smoothie/.test(name) ? 'Non-Alcoholic'
@@ -87,6 +87,8 @@ export default function ProductGrid({
   const activeGroup = openGroup && groups.has(openGroup) ? openGroup : null;
   const children = activeGroup ? groups.get(activeGroup) ?? [] : [];
   const filtered = products.filter((p) => {
+    // The landing screen is navigation only; show products after selecting a group.
+    if (!activeGroup && !search.trim()) return false;
     const matchCat = selectedCategory ? p.category_id === selectedCategory
       : activeGroup === 'Favorites' ? favorites.includes(String(p.id))
       : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
@@ -156,6 +158,9 @@ export default function ProductGrid({
       </div>
 
       <div className="flex-1 overflow-y-auto pb-20 md:pb-0">
+        {!activeGroup && !search.trim() && (
+          <p className="text-sm text-muted-foreground py-4 text-center">Choose one of the six menu groups above to browse products.</p>
+        )}
         <div className={`grid gap-3 ${
           sidebarOpen 
             ? 'grid-cols-4' 
