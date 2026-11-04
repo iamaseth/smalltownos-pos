@@ -123,6 +123,8 @@ export async function injectElectronFixture(
     const api: ElectronAPI = {
       platform: config.platform ?? 'darwin',
       onMenuAction: () => () => {},
+      getTrainingStatus: async () => ({ demo: false }),
+      switchTrainingMode: async () => ({ success: true }),
       getApplicationMenu: async () => ({ entries: config.applicationMenuEntries }),
       openApplicationMenu: async (key, x, y) => {
         openedMenuEntries.push({ key, x, y });
