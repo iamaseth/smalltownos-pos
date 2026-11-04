@@ -110,6 +110,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [walletAmount, setWalletAmount] = useState('');
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
+  // QR is manual verification only until a receiving bank is configured.
+  const [showQrInstructions, setShowQrInstructions] = useState(false);
+
 
   // Discount state
   const [showDiscount, setShowDiscount] = useState(false);
@@ -639,6 +642,21 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
           <div className="space-y-4">
           <div className="space-y-2">
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              Cash and card amounts use {currencyCode}. KHR cash conversion and dynamic KHQR are not configured yet.
+            </div>
+            <button type="button" onClick={() => setShowQrInstructions(v => !v)}
+              className="w-full rounded-xl border border-border px-4 py-3 text-left text-sm font-semibold hover:bg-muted"
+              aria-expanded={showQrInstructions}>
+              QR Payment (KHQR) — {showQrInstructions ? 'Hide instructions' : 'Details'}
+            </button>
+            {showQrInstructions && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-2">
+                <p>Dynamic KHQR requires the bar's receiving bank account. No QR has been generated.</p>
+                <p>Until configured, verify the transfer in the bank app before recording it under a separately configured QR payment method.</p>
+                <p className="font-semibold">Never mark a QR payment as paid based only on a customer's screenshot.</p>
+              </div>
+            )}
             {payments.map((payment, idx) => {
               const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
               const custom = customMethods.find((method) => method.id === payment.payment_method_id);
