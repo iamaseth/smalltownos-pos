@@ -196,7 +196,7 @@ export default function ProductGrid({
                 <div className={selectedCategory ? "flex flex-wrap gap-2" : "grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 mt-3"}>
                   {[
                     ...(showVirtualBurgers ? [{ id: '__virtual_burgers__', name: 'Burgers' }] : []),
-                    ...children.map((cat) => ({ id: cat.id, name: cat.name.replace(/^Spirits\s*[—–-]\s*/i, '') })),
+                    ...children.map((cat) => ({ id: cat.id, name: activeGroup === 'Cocktails' ? cat.name.replace(/\s+Cocktails?$/i, '') : cat.name.replace(/^Spirits\s*[—–-]\s*/i, '') })),
                   ].map((cat) => {
                     const name = cat.name.toLowerCase();
                     const Icon = /breakfast|egg/.test(name) ? Sunrise : /burger|sandwich/.test(name) ? Sandwich : /salad/.test(name) ? Salad : /fish|seafood/.test(name) ? Fish : /soup|noodle/.test(name) ? Soup : /grill|steak/.test(name) ? Flame : /cocktail|gin|vodka|rum|wine|beer/.test(name) ? GlassWater : UtensilsCrossed;
