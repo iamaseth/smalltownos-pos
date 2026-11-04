@@ -1273,6 +1273,13 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Registering IPC handlers...');
     registerIpcHandlers(shutdownSignal, () => mainWindow, showMainWindow, () => currentEffectiveIsDark);
 
+    ipcMain.handle('training:status', () => ({ demo: process.env.FLO_DEMO_MODE === '1' }));
+    ipcMain.handle('training:switch', async (_event, enable: unknown) => {
+      if (typeof enable !== 'boolean') return { error: 'Invalid training mode' };
+      await switchTrainingMode(enable);
+      return { success: true };
+    });
+
     ipcMain.handle('get-update-status', () =>
       // #467: return the real persisted state (including not-checked-yet and
       // one-shot states) so renderer reloads recover it.
