@@ -64,6 +64,7 @@ export default function ProductGrid({
   const [ids, setIds] = useState<string[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
   const { showProductImages } = usePosSettingsStore();
+  const [showMenuPhotos, setShowMenuPhotos] = useState(false);
   const t = useTranslations('pos');
   const fmt = useFormatCurrency();
   const cartQuantities = useMemo(() => {
@@ -158,6 +159,13 @@ export default function ProductGrid({
             className="w-full ps-10 pe-4 py-3 bg-card border border-border rounded-2xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
         </div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menu</span>
+          {showProductImages && <button type="button" onClick={() => setShowMenuPhotos(v => !v)}
+            className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800">
+            {showMenuPhotos ? 'Compact cards' : 'Show photos'}
+          </button>}
+        </div>
         {/* Preview layout A: compact horizontal categories and contextual subcategories. */}
         <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto pb-2">
           {groupLabels.map(label => {
@@ -209,7 +217,8 @@ export default function ProductGrid({
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
                 onClick={() => {if(!arranging)onProductClick(product);}}
-                className="min-h-24 bg-card rounded-xl p-2.5 border border-border hover:border-brand/50 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                className="min-h-32 bg-[#111a2e] text-slate-100 rounded-xl p-3 border border-slate-800 border-l-4 hover:border-slate-500 hover:bg-[#18243a] active:bg-slate-800 shadow-sm transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                style={{ borderLeftColor: ['#f59e0b','#06b6d4','#10b981','#a855f7','#f97316'][String(product.category_id || product.id).split('').reduce((n,ch)=>n+ch.charCodeAt(0),0) % 5] }}
               >
                 {!!product.track_inventory && (
                   <>
@@ -230,7 +239,7 @@ export default function ProductGrid({
                   </span>
                 )}
 
-                {showProductImages && (
+                {showProductImages && showMenuPhotos && (
                   <div className="w-full aspect-[5/3] rounded-lg mb-1.5 relative overflow-hidden">
                     {/* Always-visible background tile — no flash when image loads */}
                     <div
@@ -263,9 +272,9 @@ export default function ProductGrid({
                   </div>
                 )}
 
-                <h3 className="font-medium text-foreground text-sm line-clamp-2 leading-snug">{product.name}</h3>
+                <h3 className="font-semibold text-slate-100 text-sm line-clamp-2 leading-snug">{product.name}</h3>
                 <div className="flex items-center justify-between mt-1">
-                  <p className="text-brand font-bold">
+                  <p className="text-slate-100 font-bold">
                     {fmt(Number(product.price))}
                   </p>
                   <div className="flex items-center gap-1 shrink-0">
