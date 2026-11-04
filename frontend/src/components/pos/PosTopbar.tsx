@@ -1,11 +1,12 @@
 'use client';
 
 import PrinterStatus from './PrinterStatus';
+import { useState } from 'react';
 import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock } from 'lucide-react';
+import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, Wine } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 
@@ -24,6 +25,7 @@ interface Props {
 
 export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen }: Props) {
   const cart = useCartStore();
+  const [actionsOpen, setActionsOpen] = useState(false);
   const { currentTenant } = useAuthStore();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
   const t = useTranslations('pos');
@@ -32,65 +34,42 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
   const showTableBtn = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
 
   return (
-    <div className="flex items-center gap-3 border-b bg-card shrink-0 px-4 py-2.5">
-      <div className="flex-1 min-w-0">
-        <CustomerSearch variant="topbar" />
-      </div>
-
-      {/* Select Table — between customer search and printer */}
-      {showTableBtn && (
-        <button
-          onClick={onShowTablePicker}
-          className={`touch-target shrink-0 gap-1.5 px-3 text-sm rounded-lg border font-medium transition-colors whitespace-nowrap ${
-            cart.tableId
-              ? 'bg-orange-500 text-white border-orange-500 hover:bg-orange-600'
-              : 'bg-amber-50 border-amber-400 text-amber-700 hover:bg-amber-100'
-          }`}
-        >
-          <LayoutGrid size={14} />
-          {cart.tableId
-            ? t('tableLabel', { name: tables.find(t => t.id === cart.tableId)?.name || cart.tableId })
-            : t('selectTable')}
-        </button>
-      )}
-
-      <button
-        type="button"
-        onClick={onShowCashMovement}
-        className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted whitespace-nowrap"
-        title={tDashboard('cashMovement')}
-        aria-label={tDashboard('cashMovement')}
-      >
-        <Banknote size={16} />
-        <span className="hidden sm:inline">{tDashboard('cashMovement')}</span>
+    <div className="relative flex shrink-0 items-center gap-2 border-b border-slate-800 bg-[#0f172a] px-3 py-2 text-slate-100">
+      <button type="button" onClick={() => { cart.setOrderType('takeaway'); cart.setTableId(null); }}
+        className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold ${cart.orderType === 'takeaway' ? 'bg-emerald-600 text-white' : 'bg-[#1e293b] text-slate-300 hover:bg-[#334155]'}`}>
+        <Wine size={14} className="mr-1 inline" />Quick Sale
       </button>
-
-      {canUseShift && (
-        <button
-          type="button"
-          onClick={onShowShift}
-          disabled={shiftLoading}
-          className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted whitespace-nowrap disabled:opacity-50"
-          title={shiftError ?? (shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift'))}
-          aria-label={shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
-        >
-          {shiftHasOpenSession ? <Lock size={16} /> : <LockOpen size={16} />}
-          <span className="hidden sm:inline">{shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}</span>
+      {isRestaurant && <button type="button" onClick={() => { cart.setOrderType('dine_in'); onShowTablePicker(); }}
+        className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold ${cart.orderType === 'dine_in' ? 'bg-emerald-600 text-white' : 'bg-[#1e293b] text-slate-300 hover:bg-[#334155]'}`}>
+        <LayoutGrid size={14} className="mr-1 inline" />Tables
+      </button>}
+      <div className="min-w-0 flex-1" />
+      <div className="relative">
+        <button type="button" onClick={() => setActionsOpen(v => !v)} aria-expanded={actionsOpen}
+          aria-label="Cashier actions" className="flex items-center gap-2 rounded-lg border border-slate-700 bg-[#1e293b] px-3 py-2 text-xs font-semibold hover:bg-[#334155]">
+          <Menu size={16}/> Actions
         </button>
-      )}
-
-      <div className="shrink-0">
-        <PrinterStatus />
+        {actionsOpen && <>
+          <button type="button" className="fixed inset-0 z-40 cursor-default" aria-label="Close cashier actions" onClick={() => setActionsOpen(false)} />
+          <div className="absolute right-0 top-full z-50 mt-2 w-80 max-w-[90vw] space-y-2 rounded-xl border border-slate-700 bg-[#111a2e] p-3 shadow-2xl">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Customer</p>
+            <CustomerSearch variant="topbar" />
+            {showTableBtn && <button type="button" onClick={() => {setActionsOpen(false);onShowTablePicker();}} className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-slate-700">
+              <LayoutGrid size={16}/>{cart.tableId ? t('tableLabel',{name:tables.find(table=>table.id===cart.tableId)?.name||cart.tableId}) : t('selectTable')}
+            </button>}
+            <button type="button" onClick={() => {setActionsOpen(false);onShowCashMovement();}} className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-slate-700"><Banknote size={16}/>{tDashboard('cashMovement')}</button>
+            {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={() => {setActionsOpen(false);onShowShift();}} className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-slate-700 disabled:opacity-50">
+              {shiftHasOpenSession ? <Lock size={16}/> : <LockOpen size={16}/>}
+              {shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
+            </button>}
+            <div className="border-t border-slate-700 pt-2"><PrinterStatus /></div>
+            <button type="button" onClick={() => {setActionsOpen(false);onToggleFullscreen();}} className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-slate-700">
+              {fullscreen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
+              {fullscreen ? t('exitFullscreen') : t('enterFullscreen')}
+            </button>
+          </div>
+        </>}
       </div>
-      <button
-        type="button"
-        onClick={onToggleFullscreen}
-        className="touch-target shrink-0 rounded-lg border border-border bg-card px-3 text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
-        title={fullscreen ? t('exitFullscreen') : t('enterFullscreen')}
-        aria-label={fullscreen ? t('exitFullscreen') : t('enterFullscreen')}
-      >
-        {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-      </button>
     </div>
   );
 }
