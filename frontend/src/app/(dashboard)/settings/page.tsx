@@ -23,6 +23,7 @@ import { normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import BetaChannelToggle from '@/components/settings/BetaChannelToggle';
+import TrainingModePanel from '@/components/settings/TrainingModePanel';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
 import { CurrencyResetDialog } from '@/components/settings/CurrencyResetDialog';
@@ -2919,6 +2920,7 @@ export default function SettingsPage() {
         <div className={`flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-8 md:pb-12 ${isDirty ? 'pb-32 md:pb-32' : ''}`}>
 
         <TabsContent value="store">
+          <TrainingModePanel />
           <GeneralSettingsTab
             isAdmin={isAdmin}
             isOwner={canManageDatabase}
