@@ -124,7 +124,11 @@ export default function ProductGrid({
     } catch { toast.error('Could not save order. Refresh and retry.'); }
     finally { setSaving(false); }
   };
-  const groupIcons: Record<(typeof groupLabels)[number], typeof Star> = { Favorites: Star, Food: UtensilsCrossed, Cocktails: Martini, Spirits: Wine, 'Beer & Wine': Beer, 'Non-Alcoholic': Coffee };
+  // VeloxPOS category-pill styling; retain FloPOS group IDs and filtering.
+  const groupEmoji: Record<(typeof groupLabels)[number], string> = {
+    Favorites: '⭐', Food: '🍔', Cocktails: '🍹', Spirits: '🥃',
+    'Beer & Wine': '🍺', 'Non-Alcoholic': '☕',
+  };
 
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
@@ -167,15 +171,14 @@ export default function ProductGrid({
           </button>}
         </div>
         {/* Preview layout A: compact horizontal categories and contextual subcategories. */}
-        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto pb-2">
+        <nav aria-label="Menu categories" className="flex shrink-0 items-center gap-2 overflow-x-auto rounded-none border-b border-slate-800/80 bg-[#0f172a] px-4 py-3">
           {groupLabels.map(label => {
             const selected = activeGroup === label;
-            const Icon = groupIcons[label];
             return <button key={label} type="button"
               onClick={() => { setOpenGroup(label); setSelectedCategory(null); setArranging(false); }}
               aria-pressed={selected}
-              className={`shrink-0 inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${selected ? 'border-brand bg-brand text-white' : 'border-border bg-card hover:bg-muted'}`}>
-              <Icon size={16} />{label}
+              className={`shrink-0 whitespace-nowrap rounded-xl border px-4 py-2 text-xs font-bold transition-all ${selected ? 'border-emerald-500/40 bg-emerald-500/20 text-emerald-300' : 'border-slate-800 bg-[#1e293b] text-slate-300 hover:bg-[#334155]'}`}>
+              <span aria-hidden="true">{groupEmoji[label]}</span> {label}
             </button>;
           })}
         </nav>
