@@ -6,6 +6,7 @@ import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { nameToColor } from '@/lib/image-utils';
+import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import TagBadge from './DietaryBadge';
 import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
@@ -224,11 +225,11 @@ export default function ProductGrid({
                     </div>
 
                     {/* Image overlays the tile when available */}
-                    {product.has_image && (
+                    {(product.has_image || genericMenuPhoto(product.name)) && (
                       <img
-                        src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}`}
+                        src={product.has_image ? `${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}` : genericMenuPhoto(product.name)!}
                         alt={product.name}
-                        className="absolute inset-0 w-full h-full object-cover rounded-lg"
+                        className="absolute inset-0 w-full h-full object-cover rounded-lg"\n                        loading="lazy"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
                         }}
