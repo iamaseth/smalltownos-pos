@@ -2310,6 +2310,7 @@ router.post('/:id/markPrinted', requirePermission('bills.print'), (req: Request,
 
 // POST /api/bills/:id/print - Print or reprint bill
 router.post('/:id/print', requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
+  if (process.env.FLO_DEMO_MODE === '1') return res.status(403).json({ error: 'Printing disabled in Demo Mode' });
   try {
     const { print_type } = req.body;
 
