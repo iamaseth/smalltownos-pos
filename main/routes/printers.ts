@@ -19,6 +19,16 @@ import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
+// Never dispatch physical or browser/WebUSB print jobs during staff training.
+router.use((req, res, next) => {
+  if (process.env.FLO_DEMO_MODE === '1' && req.method === 'POST' &&
+      (/^\/[^/]+\/test$/.test(req.path) || ['/print-bill', '/print-kot'].includes(req.path))) {
+    res.status(403).json({ success: false, error: 'Printing disabled in Demo Mode' });
+    return;
+  }
+  next();
+});
+
 // Allows standard OS printer queue characters while rejecting control characters.
 const PRINTER_NAME_REGEX = /^[^\x00-\x1f\x7f]{1,128}$/;
 const CONNECTION_TYPES = ['network', 'usb', 'webusb'] as const;
