@@ -162,7 +162,7 @@ export default function ProductGrid({
                   className={`px-3 py-2 rounded-xl text-sm border ${!selectedCategory ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>All {activeGroup}</button>
                 {children.map((cat) => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
                   className={`px-3 py-2 rounded-xl text-sm border ${selectedCategory === cat.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-card border-border hover:bg-muted'}`}>
-                  {cat.name.replace(/^Spirits\\s*[—–-]\\s*/i, '')}
+                  {cat.name.replace(/^Spirits\s*[—–-]\s*/i, '')}
                 </button>)}
               </>
             )}
