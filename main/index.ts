@@ -1043,6 +1043,62 @@ function stopMdns(): Promise<void> {
   });
 }
 
+async function switchTrainingMode(enable: boolean): Promise<void> {
+  const demo = process.env.FLO_DEMO_MODE === '1';
+  if (demo === enable) return;
+  const result = await dialog.showMessageBox(mainWindow ?? undefined as never, {
+    type: 'question',
+    buttons: ['Cancel', enable ? 'Enter Demo Mode' : 'Return to Live Mode'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Flo Training Mode',
+    message: enable ? 'Start isolated training session?' : 'Return to live sales?',
+    detail: enable
+      ? 'Training orders are stored in a separate database. Close any active live orders first. Never use real payments during training.'
+      : 'The training database will be preserved for the next session.',
+  });
+  if (result.response !== 1) return;
+  const { spawn } = await import('node:child_process');
+  const demoProfile = path.join(os.homedir(), '.config', 'flo-desktop-demo');
+  const demoDb = path.join(demoProfile, 'flo-demo.db');
+  if (enable && !fs.existsSync(demoDb)) {
+    fs.mkdirSync(demoProfile, { recursive: true });
+    try {
+      await getDatabase().backup(demoDb);
+    } catch (error) {
+      dialog.showErrorBox('Demo setup failed', String(error));
+      return;
+    }
+  }
+  const env = { ...process.env };
+  if (enable) env.FLO_DEMO_MODE = '1';
+  else delete env.FLO_DEMO_MODE;
+  const args = app.isPackaged ? [] : [path.resolve(__dirname, '../..')];
+  const child = spawn(process.execPath, args, {
+    env,
+    detached: true,
+    stdio: 'ignore',
+    cwd: process.cwd(),
+  });
+  child.unref();
+  isQuitting = true;
+  app.quit();
+}
+
+async function resetTrainingData(): Promise<void> {
+  if (process.env.FLO_DEMO_MODE !== '1') return;
+  const result = await dialog.showMessageBox({
+    type: 'warning',
+    buttons: ['Cancel', 'Reset Training Data'],
+    defaultId: 0, cancelId: 0,
+    title: 'Reset Training Data',
+    message: 'Delete all training transactions and restore a fresh menu snapshot next time?',
+    detail: 'This does not affect live data. Exit Demo Mode before resetting.',
+  });
+  if (result.response !== 1) return;
+  dialog.showMessageBoxSync({ type: 'info', message: 'Return to Live Mode first, then enter Demo Mode again to start a fresh training session. Automatic reset is not enabled yet.' });
+}
+
 function createMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(process.platform === 'darwin' ? [{
@@ -1109,6 +1165,18 @@ function createMenu(): void {
         { label: 'Tax Settings', click: () => mainWindow?.webContents.send('settings-tax') },
         { label: 'Printer Setup', click: () => mainWindow?.webContents.send('settings-printer') },
         { label: 'Kitchen Stations', click: () => mainWindow?.webContents.send('settings-kitchen') },
+      ],
+    },
+    {
+      label: 'Training',
+      submenu: [
+        { label: process.env.FLO_DEMO_MODE === '1' ? '✓ Demo Mode Active' : 'Enter Demo Mode…',
+          enabled: process.env.FLO_DEMO_MODE !== '1',
+          click: () => { void switchTrainingMode(true); } },
+        { label: 'Return to Live Mode…', enabled: process.env.FLO_DEMO_MODE === '1',
+          click: () => { void switchTrainingMode(false); } },
+        { label: 'Reset Training Data…', enabled: process.env.FLO_DEMO_MODE === '1',
+          click: () => { void resetTrainingData(); } },
       ],
     },
     {
