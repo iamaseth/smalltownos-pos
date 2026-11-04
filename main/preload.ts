@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Windows/Linux title-bar menu row. The labels come from the main-process
   // application menu; each click pops that entry's real submenu.
+  refreshTrainingData: () => ipcRenderer.invoke('training:refresh'),
   getTrainingStatus: () => ipcRenderer.invoke('training:status'),
   switchTrainingMode: (enable: boolean) => ipcRenderer.invoke('training:switch', enable),
   getApplicationMenu: () => ipcRenderer.invoke('get-application-menu'),
