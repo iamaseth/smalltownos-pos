@@ -684,6 +684,31 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : custom?.name || tCommon('unknown');
               const Icon = builtIn?.icon;
               const active = (parseFloat(payment.amount) || 0) > 0;
+              if (payment.method === 'cash' && payment.payment_method_id === undefined) {
+                return <div key="cash-both-currencies" className="rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold">Cash received</span>
+                    <span className="text-xs text-muted-foreground">1 USD = {khrRate.toLocaleString('en-US')} KHR</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block min-w-0 text-xs font-semibold text-muted-foreground">USD ($)
+                      <input type="number" value={payment.amount} min="0" step="0.01" inputMode="decimal"
+                        onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
+                        onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                        placeholder="0.00"
+                        className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-card px-3 py-3 text-lg font-semibold text-foreground" />
+                    </label>
+                    <label className="block min-w-0 text-xs font-semibold text-muted-foreground">KHR (៛)
+                      <input type="number" value={khrTendered} min="0" step="1" inputMode="numeric"
+                        onFocus={() => setAmountTarget(null)}
+                        onChange={(e) => { setKhrTendered(e.target.value); setPaymentsTouched(true); }}
+                        placeholder="0"
+                        className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-card px-3 py-3 text-lg font-semibold text-foreground" />
+                    </label>
+                  </div>
+                  <p className="text-xs text-muted-foreground">KHR equivalent: {currencyFmt(khrUsd)} · Both cash amounts count toward payment.</p>
+                </div>;
+              }
               return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex min-h-12">
                 <button type="button" title={label} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
                   {Icon && <Icon size={15} />}
@@ -691,29 +716,13 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 </button>
                 <div className="flex flex-1 items-center border border-s-0 border-border rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
                   <span className="ps-3 text-muted-foreground text-xs">{inputCurrencyLabel}</span>
-                  <input
-                    type="number"
-                    value={payment.amount}
-                    onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
-                    onChange={(e) => updatePaymentAmount(idx, e.target.value)}
-                    placeholder="0.00"
-                    inputMode="decimal"
+                  <input type="number" value={payment.amount} onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
+                    onChange={(e) => updatePaymentAmount(idx, e.target.value)} placeholder="0.00" inputMode="decimal"
                     className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl"
-                    step={inputCurrencyStep}
-                    min="0"
-                  />
+                    step={inputCurrencyStep} min="0" />
                 </div>
               </div>;
             })}
-          </div>
-
-          <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-3 space-y-2">
-            <label htmlFor="khr-cash-tendered" className="block text-sm font-semibold">Cash received in KHR (៛)</label>
-            <input id="khr-cash-tendered" type="number" inputMode="numeric" min="0" step="1" value={khrTendered}
-              onChange={(e) => { setKhrTendered(e.target.value); setPaymentsTouched(true); }}
-              placeholder="0" className="w-full rounded-lg border border-border bg-card px-3 py-2 text-lg font-semibold" />
-            <p className="text-xs text-muted-foreground">Equivalent: {currencyFmt(khrUsd)} · Rate: {khrRate.toLocaleString('en-US')} KHR = $1</p>
-            <p className="text-xs text-muted-foreground">Enter USD in Cash above, and KHR here. Both count toward the same bill.</p>
           </div>
 
           {/* Change Returned */}
