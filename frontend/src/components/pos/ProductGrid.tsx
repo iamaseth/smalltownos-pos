@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ArrowLeft, ChevronRight, Search, SlidersHorizontal } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -66,8 +66,30 @@ export default function ProductGrid({
     return quantities;
   }, [cart.items]);
 
+  // Group existing "Parent — Child" categories without changing stored data.
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const groups = useMemo(() => {
+    const result = new Map<string, Category[]>();
+    for (const cat of categories) {
+      if (cat.id == null) continue;
+      const match = cat.name.match(/^(.+?)\s+[—–]\s+(.+)$/);
+      if (!match) continue;
+      const parent = match[1].trim();
+      result.set(parent, [...(result.get(parent) ?? []), cat]);
+    }
+    for (const [parent, children] of result) {
+      if (children.length < 2) result.delete(parent);
+    }
+    return result;
+  }, [categories]);
+  const activeGroup = openGroup && groups.has(openGroup) ? openGroup : null;
+  const children = activeGroup ? groups.get(activeGroup) ?? [] : [];
+  const groupedIds = new Set(Array.from(groups.values()).flatMap((items) => items.map((cat) => cat.id)));
+  const visibleCategories = activeGroup ? children : categories.filter((cat) => cat.id != null && !groupedIds.has(cat.id));
   const filtered = products.filter((p) => {
-    const matchCat = !selectedCategory || p.category_id === selectedCategory;
+    const matchCat = selectedCategory
+      ? p.category_id === selectedCategory
+      : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
     const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
   });
@@ -99,35 +121,37 @@ export default function ProductGrid({
           />
         </div>
         <div className="flex flex-wrap gap-2 pb-1">
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-              !selectedCategory ? 'bg-brand text-white' : 'bg-card text-foreground border border-border hover:bg-muted'
-            }`}
-          >
-            {t('allCategories')}
+          {activeGroup && (
+            <button type="button" onClick={() => { setOpenGroup(null); setSelectedCategory(null); }}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-card text-foreground border border-border hover:bg-muted inline-flex items-center gap-2">
+              <ArrowLeft size={16} /> Back
+            </button>
+          )}
+          <button type="button" onClick={() => { setSelectedCategory(null); if (!activeGroup) setOpenGroup(null); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${!selectedCategory ? 'bg-brand text-white' : 'bg-card text-foreground border border-border hover:bg-muted'}`}>
+            {activeGroup ? `All ${activeGroup}` : t('allCategories')}
           </button>
-          {categories.filter((cat) => cat.id != null).map((cat) => {
+          {visibleCategories.map((cat) => {
             const colorClasses = getCategoryColorClasses(cat.color);
             const isSelected = selectedCategory === cat.id;
+            const label = activeGroup ? cat.name.slice(activeGroup.length).replace(/^\s*[—–]\s*/, '') : cat.name;
             return (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
+              <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
                 className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   isSelected
-                    ? colorClasses
-                      ? `${colorClasses.activeBg} ${colorClasses.activeText}`
-                      : 'bg-brand text-white'
-                    : colorClasses
-                      ? `${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border} hover:opacity-80`
-                      : 'bg-card text-foreground border border-border hover:bg-muted'
-                }`}
-              >
-                {cat.name}
+                    ? colorClasses ? `${colorClasses.activeBg} ${colorClasses.activeText}` : 'bg-brand text-white'
+                    : colorClasses ? `${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border} hover:opacity-80` : 'bg-card text-foreground border border-border hover:bg-muted'
+                }`}>
+                {label}
               </button>
             );
           })}
+          {!activeGroup && Array.from(groups, ([parent]) => (
+            <button key={parent} type="button" onClick={() => { setOpenGroup(parent); setSelectedCategory(null); }}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-card text-foreground border border-border hover:bg-muted inline-flex items-center gap-1">
+              {parent} <ChevronRight size={15} />
+            </button>
+          ))}
         </div>
       </div>
 
