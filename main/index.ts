@@ -1046,7 +1046,7 @@ function stopMdns(): Promise<void> {
 async function switchTrainingMode(enable: boolean): Promise<void> {
   const demo = process.env.FLO_DEMO_MODE === '1';
   if (demo === enable) return;
-  const result = await dialog.showMessageBox(mainWindow ?? undefined as never, {
+  const result = await dialog.showMessageBox({
     type: 'question',
     buttons: ['Cancel', enable ? 'Enter Demo Mode' : 'Return to Live Mode'],
     defaultId: 0,
@@ -1083,20 +1083,6 @@ async function switchTrainingMode(enable: boolean): Promise<void> {
   child.unref();
   isQuitting = true;
   app.quit();
-}
-
-async function resetTrainingData(): Promise<void> {
-  if (process.env.FLO_DEMO_MODE !== '1') return;
-  const result = await dialog.showMessageBox({
-    type: 'warning',
-    buttons: ['Cancel', 'Reset Training Data'],
-    defaultId: 0, cancelId: 0,
-    title: 'Reset Training Data',
-    message: 'Delete all training transactions and restore a fresh menu snapshot next time?',
-    detail: 'This does not affect live data. Exit Demo Mode before resetting.',
-  });
-  if (result.response !== 1) return;
-  dialog.showMessageBoxSync({ type: 'info', message: 'Return to Live Mode first, then enter Demo Mode again to start a fresh training session. Automatic reset is not enabled yet.' });
 }
 
 function createMenu(): void {
@@ -1175,8 +1161,6 @@ function createMenu(): void {
           click: () => { void switchTrainingMode(true); } },
         { label: 'Return to Live Mode…', enabled: process.env.FLO_DEMO_MODE === '1',
           click: () => { void switchTrainingMode(false); } },
-        { label: 'Reset Training Data…', enabled: process.env.FLO_DEMO_MODE === '1',
-          click: () => { void resetTrainingData(); } },
       ],
     },
     {
