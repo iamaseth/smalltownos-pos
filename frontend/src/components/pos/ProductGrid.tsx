@@ -229,7 +229,8 @@ export default function ProductGrid({
                       <img
                         src={product.has_image ? `${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}` : genericMenuPhoto(product.name)!}
                         alt={product.name}
-                        className="absolute inset-0 w-full h-full object-cover rounded-lg"\n                        loading="lazy"
+                        className="absolute inset-0 w-full h-full object-cover rounded-lg"
+                        loading="lazy"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = 'none';
                         }}
