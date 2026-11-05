@@ -110,11 +110,10 @@ export default function ProductGrid({
       : selectedCategory ? p.category_id === selectedCategory
       : activeGroup === 'Favorites' ? favorites.includes(String(p.id))
       : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
-    // Search all menu items by any part of the name, independent of category.
-    // When searching, ignore the currently selected category.
+    // Search only within the selected category or subcategory.
+    // With no category selected, matchCat is true and search covers the full menu.
     const query = search.trim().toLocaleLowerCase();
-    if (query) return p.name.toLocaleLowerCase().includes(query);
-    return matchCat;
+    return matchCat && (!query || p.name.toLocaleLowerCase().includes(query));
   });
   const ordered = [...filtered].sort((a,b) => (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name));
   const displayed = arranging ? [...ordered].sort((a,b) => ids.indexOf(String(a.id))-ids.indexOf(String(b.id))) : ordered;
@@ -188,7 +187,7 @@ export default function ProductGrid({
                 setSearch('');
               }
             }}
-            placeholder="Search all products (e.g. mojito, coffee, burger)…"
+            placeholder="Type to search selected category (or all products)…"
             className="w-full ps-10 pe-10 py-2 bg-[#131d31] border border-[#1e293b] rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
           {search && <button type="button" aria-label="Clear product search" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-300 hover:text-white">Clear</button>}
@@ -238,7 +237,7 @@ export default function ProductGrid({
         {<>
           <div className="flex items-center justify-between mb-2 gap-2">
             <div className="flex items-center gap-3">
-              <h2 className="text-sm font-bold text-white tracking-tight">{search.trim() ? 'Search results' : referenceCategory || activeGroup || 'All Products'} · {selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : 'All'}</h2>
+              <h2 className="text-sm font-bold text-white tracking-tight">{referenceCategory || activeGroup || 'All Products'} · {selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : 'All'}</h2>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length} Items Shown</span>
             </div>
             <div className="flex items-center bg-[#131d31] p-1 rounded-xl border border-[#1e293b] gap-1 shadow-sm">
