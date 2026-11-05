@@ -103,8 +103,8 @@ export default function ProductGrid({
   const showVirtualBurgers = activeGroup === 'Food' && burgerProducts.length > 0 && !hasBurgerCategory;
   const burgerFilterSelected = selectedCategory === '__virtual_burgers__';
   const filtered = products.filter((p) => {
-    // The landing screen is navigation only; show products after selecting a group.
-    if (!activeGroup && !search.trim()) return false;
+    // No selected category means show the entire menu.
+    if (!activeGroup && !search.trim()) return true;
     const matchCat = burgerFilterSelected ? /burger/i.test(p.name)
       : selectedCategory ? p.category_id === selectedCategory
       : activeGroup === 'Favorites' ? favorites.includes(String(p.id))
@@ -179,10 +179,10 @@ export default function ProductGrid({
             const selected = referenceCategory === label;
             return <button key={label} type="button" aria-pressed={selected}
               onClick={() => {
-                setReferenceCategory(label);
+                setReferenceCategory(selected ? null : label);
                 setSearch('');
-                setOpenGroup(group);
-                setSelectedCategory(filter ? (groups.get(group) ?? []).find(c => filter.test(c.name))?.id ?? null : null);
+                setOpenGroup(selected ? null : group);
+                setSelectedCategory(selected ? null : (filter ? (groups.get(group) ?? []).find(c => filter.test(c.name))?.id ?? null : null));
                 setArranging(false);
               }}
               className={`group relative h-[74px] w-[74px] shrink-0 rounded-xl overflow-hidden border border-white/10 shadow-[inset_0_-3px_0_rgba(0,0,0,0.20),0_3px_0_rgba(0,0,0,0.18)] flex flex-col items-center justify-center p-1.5 transition-[filter,transform] active:scale-95 text-white ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17] brightness-110' : 'hover:brightness-110'}`}
@@ -208,13 +208,11 @@ export default function ProductGrid({
 
       <div className="flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
         {activeGroup === 'Favorites' && <h2 className="text-xl font-bold tracking-tight mb-3">Favorites</h2>}
-        {!activeGroup && !search.trim() && (
-          <p className="text-sm text-muted-foreground py-4 text-center">Select a menu category above to browse products.</p>
-        )}
-        {(!!activeGroup || !!search.trim()) && <>
+        
+        {<>
           <div className="flex items-center justify-between mb-2 gap-2">
             <div className="flex items-center gap-3">
-              <h2 className="text-sm font-bold text-white tracking-tight">{referenceCategory || activeGroup || 'Search'} · {selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : 'All'}</h2>
+              <h2 className="text-sm font-bold text-white tracking-tight">{search.trim() ? 'Search results' : referenceCategory || activeGroup || 'All Products'} · {selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : 'All'}</h2>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length} Items Shown</span>
             </div>
             <div className="flex items-center bg-[#131d31] p-1 rounded-xl border border-[#1e293b] gap-1 shadow-sm">
