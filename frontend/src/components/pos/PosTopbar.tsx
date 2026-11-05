@@ -34,28 +34,28 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
   const showTableBtn = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
 
   return (
-    <div className="pos-reference-font relative flex shrink-0 items-center justify-between gap-3 border-b border-[#1e293b] bg-[#0d1527] px-5 py-3 text-slate-100">
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-900/20">
-          <span className="text-xl font-black">B</span>
+    <div className="pos-reference-font relative flex shrink-0 items-center justify-between gap-3 border-b border-[#1e293b] bg-[#0d1527] px-3 py-1.5 text-slate-100">
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-lg shadow-blue-900/20">
+          <span className="text-sm font-black">B</span>
         </div>
         <div className="min-w-0">
-          <div className="pos-reference-display truncate text-xs font-extrabold tracking-tight text-white">{currentTenant?.business_name || 'The Bay Bar'}</div>
-          <div className="text-[10px] font-medium text-slate-400">SmallTownPOS</div>
+          <div className="pos-reference-display truncate text-[11px] leading-tight font-extrabold tracking-tight text-white">{currentTenant?.business_name || 'The Bay Bar'}</div>
+          <div className="text-[9px] leading-tight font-medium text-slate-400">SmallTownPOS</div>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {showTableBtn && <button type="button" onClick={onShowTablePicker} className="hidden sm:flex items-center gap-2 rounded-xl border border-[#1e293b] bg-[#182234] px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-[#243149]">
+        {showTableBtn && <button type="button" onClick={onShowTablePicker} className="hidden sm:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149]">
           <LayoutGrid size={16} className="text-blue-400" />
           <span>{cart.tableId ? t('tableLabel',{name:tables.find(table=>table.id===cart.tableId)?.name||cart.tableId}) : t('selectTable')}</span>
         </button>}
-        {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={onShowShift} className="hidden md:flex items-center gap-2 rounded-xl border border-[#1e293b] bg-[#182234] px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
+        {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={onShowShift} className="hidden md:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
           {shiftHasOpenSession ? <Lock size={15} className="text-emerald-400" /> : <LockOpen size={15} className="text-amber-400" />}
           <span>{shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}</span>
         </button>}
         <div className="relative">
         <button type="button" onClick={() => setActionsOpen(v => !v)} aria-expanded={actionsOpen}
-          aria-label="Cashier actions" className="flex items-center gap-2 rounded-xl border border-[#1e293b] bg-[#182234] px-3 py-2 text-xs font-semibold hover:bg-[#243149]">
+          aria-label="Cashier actions" className="flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold hover:bg-[#243149]">
           <Menu size={16}/> Actions <ChevronDown size={13} className="text-slate-400" />
         </button>
         {actionsOpen && <>
