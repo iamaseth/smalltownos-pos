@@ -1183,7 +1183,7 @@ export default function POSPage() {
       <div className="pos-cashier-preview flex flex-1 min-h-0 overflow-hidden bg-[#0b0f17] gap-0 font-[Geist,sans-serif] text-slate-100">
         {/* Collapsible desktop table rail; reuses the same table actions as the picker. */}
         {isRestaurant && tablesRequired && cart.orderType === 'dine_in' && (
-          <aside className={`hidden lg:flex shrink-0 flex-col border-r border-slate-700/50 bg-[#10192b] ${tableRailOpen ? 'w-64' : 'w-12'}`}>
+          <aside className={`hidden lg:flex shrink-0 flex-col border-r border-slate-700/50 bg-[#10192b] ${tableRailOpen ? 'w-44 xl:w-48' : 'w-12'}`}>
             <div className="flex items-center justify-between gap-1 border-b border-[#1e293b] p-4">
               {tableRailOpen && <span className="text-sm font-semibold">Tables</span>}
               <button type="button" onClick={() => setTableRailOpen(v => !v)}
@@ -1263,7 +1263,7 @@ export default function POSPage() {
         </div>
 
         {/* Desktop Cart — always open, hidden on mobile */}
-        <div className="hidden md:flex md:w-[32%] md:min-w-[280px] md:max-w-[420px] md:shrink-0 h-full border-l border-[#1e293b] bg-[#131d31]">
+        <div className="hidden md:flex md:w-[25%] md:min-w-[220px] md:max-w-[320px] md:shrink-0 h-full border-l border-[#1e293b] bg-[#131d31]">
           <CartPanel {...cartPanelProps} />
         </div>
       </div>
