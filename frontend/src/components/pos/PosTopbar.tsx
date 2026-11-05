@@ -40,8 +40,8 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
           <span className="text-xl font-black">B</span>
         </div>
         <div className="min-w-0">
-          <div className="truncate text-lg font-extrabold tracking-tight text-white">{currentTenant?.business_name || 'The Bay Bar'}</div>
-          <div className="text-[11px] font-medium text-slate-400">FloPOS</div>
+          <div className="truncate text-xs font-extrabold tracking-tight text-white">{currentTenant?.business_name || 'The Bay Bar'}</div>
+          <div className="text-[10px] font-medium text-slate-400">SmallTownPOS</div>
         </div>
       </div>
       <div className="flex items-center gap-2">
