@@ -505,3 +505,8 @@ html.dark::-webkit-scrollbar-thumb:hover,
 [dir="rtl"] .rtl-flip {
   transform: scaleX(-1);
 }
+
+/* Bay POS reference: Geist for body/UI, Space Grotesk for display and numeric labels.
+   Scoped to the register so other FloPOS screens keep their existing typography. */
+.pos-reference-font { font-family: "Geist", var(--font-geist-sans), sans-serif; }
+.pos-reference-font .pos-reference-display { font-family: "Space Grotesk", "Geist", var(--font-geist-sans), sans-serif; }
