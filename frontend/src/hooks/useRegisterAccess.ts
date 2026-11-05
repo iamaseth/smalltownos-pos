@@ -6,7 +6,7 @@ export const REGISTER_IDLE_TIMEOUT_MS = 300000;
 
 export function useRegisterAccess(enabled: boolean) {
   const [locked, setLocked] = useState(true);
-  const [operator, setOperator] = useState<{ id: number; name: string } | null>(null);
+  const [operator, setOperator] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
     if (!enabled || locked) return;
@@ -32,7 +32,7 @@ export function useRegisterAccess(enabled: boolean) {
     if (!enabled || !/^\d{4}$/.test(pin)) return false;
     try {
       const { data } = await api.post('/register-access/unlock', { pin });
-      if (!data?.operator?.id) return false;
+      if (!data?.operator?.id || !data?.operator?.name) return false;
       setOperator(data.operator);
       setLocked(false);
       setError('');
