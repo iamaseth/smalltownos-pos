@@ -510,3 +510,15 @@ html.dark::-webkit-scrollbar-thumb:hover,
    Scoped to the register so other FloPOS screens keep their existing typography. */
 .pos-reference-font { font-family: "Geist", var(--font-geist-sans), sans-serif; }
 .pos-reference-font .pos-reference-display { font-family: "Space Grotesk", "Geist", var(--font-geist-sans), sans-serif; }
+
+/* Use the actual next/font Geist face loaded by RootLayout, not an unregistered
+   literal "Geist" family that can silently fall back to a system font. */
+.pos-reference-font,
+.pos-reference-font button,
+.pos-reference-font input,
+.pos-reference-font textarea,
+.pos-reference-font select,
+.pos-reference-font .pos-reference-display,
+.pos-reference-font [class*="font-mono"] {
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+}
