@@ -183,10 +183,10 @@ export default function ProductGrid({
                 setSelectedCategory(filter ? (groups.get(group) ?? []).find(c => filter.test(c.name))?.id ?? null : null);
                 setArranging(false);
               }}
-              className={`group relative h-[74px] w-[74px] shrink-0 rounded-xl overflow-hidden shadow-sm flex flex-col items-center justify-center p-1.5 transition transform active:scale-95 text-white ${selected ? 'ring-4 ring-blue-500/80 border-2 border-blue-400 scale-[1.03] z-10 shadow-2xl' : 'hover:brightness-110 opacity-90 hover:opacity-100'}`}
+              className={`group relative h-[74px] w-[74px] shrink-0 rounded-xl overflow-hidden border border-white/10 shadow-[inset_0_-3px_0_rgba(0,0,0,0.20),0_3px_0_rgba(0,0,0,0.18)] flex flex-col items-center justify-center p-1.5 transition-[filter,transform] active:scale-95 text-white ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17] brightness-110' : 'hover:brightness-110'}`}
               style={{ backgroundColor: color }}>
               {selected && <span className="absolute -top-1 right-2 px-2 py-0.5 rounded-full bg-blue-300 text-slate-900 font-extrabold text-[10px] uppercase">Active</span>}
-              <Icon size={selected ? 23 : 21} strokeWidth={2} className="mb-1" />
+              <Icon size={selected ? 23 : 21} strokeWidth={2} className="mb-1 drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
               <span className={`font-bold text-[11px] tracking-wide text-white drop-shadow ${selected ? 'text-xs font-black' : ''}`}>{label}</span>
             </button>;
           })}
