@@ -173,7 +173,7 @@ export default function ProductGrid({
             {showMenuPhotos ? 'Compact cards' : 'Show photos'}
           </button>}
         </div>
-        <nav aria-label="Menu categories" className="grid grid-cols-6 gap-2 mb-2">
+        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto pb-2 mb-2">
           {referenceCategories.map(({ label, group, filter, color, Icon }) => {
             const selected = referenceCategory === label;
             return <button key={label} type="button" aria-pressed={selected}
@@ -183,7 +183,7 @@ export default function ProductGrid({
                 setSelectedCategory(filter ? (groups.get(group) ?? []).find(c => filter.test(c.name))?.id ?? null : null);
                 setArranging(false);
               }}
-              className={`group relative h-[66px] rounded-xl overflow-hidden shadow-sm flex flex-col items-center justify-center p-1.5 transition transform active:scale-95 text-white ${selected ? 'ring-4 ring-blue-500/80 border-2 border-blue-400 scale-[1.03] z-10 shadow-2xl' : 'hover:brightness-110 opacity-90 hover:opacity-100'}`}
+              className={`group relative h-[74px] w-[74px] shrink-0 rounded-xl overflow-hidden shadow-sm flex flex-col items-center justify-center p-1.5 transition transform active:scale-95 text-white ${selected ? 'ring-4 ring-blue-500/80 border-2 border-blue-400 scale-[1.03] z-10 shadow-2xl' : 'hover:brightness-110 opacity-90 hover:opacity-100'}`}
               style={{ backgroundColor: color }}>
               {selected && <span className="absolute -top-1 right-2 px-2 py-0.5 rounded-full bg-blue-300 text-slate-900 font-extrabold text-[10px] uppercase">Active</span>}
               <Icon size={selected ? 23 : 21} strokeWidth={2} className="mb-1" />
