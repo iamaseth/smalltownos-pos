@@ -1226,7 +1226,10 @@ export default function POSPage() {
                                 }}
                                 className={`min-h-[72px] rounded-xl p-2.5 text-left text-xs font-semibold transition active:scale-95 flex flex-col justify-between shadow-sm ${color} ${unavailable ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                                 <span className="flex items-center justify-between gap-1"><span className="truncate font-bold text-sm font-[family-name:var(--font-geist-sans)]">{table.name}</span><span className={`h-2 w-2 shrink-0 rounded-full ${selected ? 'bg-blue-400' : held ? 'bg-slate-400' : occupied ? 'bg-amber-400' : unavailable ? 'bg-slate-500' : 'bg-emerald-400'}`} /></span>
-                                <span className={`flex justify-end text-[11px] font-semibold ${selected ? 'text-blue-300' : occupied ? 'text-amber-400' : held ? 'text-slate-400' : 'text-emerald-400'}`}>{selected ? 'Active' : held ? 'Hold' : occupied ? 'Occupied' : unavailable ? 'Cleaning' : 'Open'}</span>
+                                <span className="flex items-end justify-between gap-1 text-[10px] font-[family-name:var(--font-geist-sans)]">
+                                  <span className="text-slate-400">{selected ? cart.guestCount : (table.capacity || 4)} Pax</span>
+                                  <span className={`font-semibold ${selected ? 'text-blue-300' : occupied ? 'text-amber-400' : held ? 'text-slate-400' : 'text-emerald-400'}`}>{selected ? 'Active' : held ? 'Hold' : occupied ? 'Occupied' : unavailable ? 'Cleaning' : 'Open'}</span>
+                                </span>
                               </button>
                             );
                           })}
