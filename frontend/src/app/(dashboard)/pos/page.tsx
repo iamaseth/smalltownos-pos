@@ -1183,7 +1183,7 @@ export default function POSPage() {
       <div className="pos-cashier-preview flex flex-1 min-h-0 overflow-hidden bg-[#0b0f17] gap-0 font-[Geist,sans-serif] text-slate-100">
         {/* Collapsible desktop table rail; reuses the same table actions as the picker. */}
         {isRestaurant && tablesRequired && cart.orderType === 'dine_in' && (
-          <aside className={`hidden lg:flex shrink-0 flex-col border-r border-[#1e293b] bg-[#131d31] ${tableRailOpen ? 'w-64' : 'w-12'}`}>
+          <aside className={`hidden lg:flex shrink-0 flex-col border-r border-slate-700/50 bg-[#10192b] ${tableRailOpen ? 'w-64' : 'w-12'}`}>
             <div className="flex items-center justify-between gap-1 border-b border-[#1e293b] p-4">
               {tableRailOpen && <span className="text-sm font-semibold">Tables</span>}
               <button type="button" onClick={() => setTableRailOpen(v => !v)}
@@ -1194,7 +1194,7 @@ export default function POSPage() {
             </div>
             {tableRailOpen && (
               <>
-                <div className="flex-1 overflow-y-auto p-2 space-y-3">
+                <div className="flex-1 overflow-y-auto p-3 space-y-4">
                   {['Front', 'Middle', 'Back', 'Upstairs', 'Unassigned'].map(area => {
                     const sectionTables = tables.filter(table => {
                       const section = (table.section || '').trim().toLowerCase();
@@ -1205,15 +1205,14 @@ export default function POSPage() {
                     if (!sectionTables.length) return null;
                     return (
                       <section key={area}>
-                        <h3 className="mb-2 border-b border-border pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{area}</h3>
+                        <h3 className="mb-1.5 px-1 text-xs font-bold uppercase tracking-wide text-slate-400">{area}</h3>
                         <div className="grid grid-cols-2 gap-2">
                           {sectionTables.map(table => {
                             const held = heldOrders.hasHeldOrder(table.id) || table.status === 'held';
                             const occupied = table.status === 'occupied';
                             const selected = cart.tableId === table.id;
                             const unavailable = table.status === 'cleaning';
-                            const color = held ? 'bg-slate-500 text-white' : occupied ? 'bg-amber-500 text-white' :
-                              unavailable ? 'bg-gray-300 text-gray-600 dark:bg-gray-700' : 'border border-slate-700/40 bg-slate-800/20 text-slate-500 dark:bg-slate-900/20 dark:text-slate-500';
+                            const color = selected ? 'border-2 border-blue-500 bg-[#131d31] text-white shadow-lg shadow-blue-900/30 ring-2 ring-blue-500/20' : 'border border-[#1e293b] bg-[#131b2e] text-slate-100 hover:border-slate-600';
                             return (
                               <button key={table.id} type="button" disabled={unavailable}
                                 title={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
@@ -1225,9 +1224,9 @@ export default function POSPage() {
                                     ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
                                     : null);
                                 }}
-                                className={`min-h-14 rounded-lg p-1 text-center text-xs font-semibold transition-all ${color} ${selected ? 'ring-2 ring-brand ring-offset-2' : ''} ${unavailable ? 'cursor-not-allowed' : 'hover:brightness-110 hover:bg-slate-700/40 hover:text-slate-100'}`}>
-                                <span className="block truncate">{table.name}</span>
-                                <span className="block text-[10px] opacity-90">{held ? 'Hold' : occupied ? 'Ordered' : unavailable ? 'Cleaning' : 'Free'}</span>
+                                className={`min-h-[72px] rounded-xl p-2.5 text-left text-xs font-semibold transition active:scale-95 flex flex-col justify-between shadow-sm ${color} ${unavailable ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+                                <span className="flex items-center justify-between gap-1"><span className="truncate font-bold text-sm">{table.name}</span><span className={`h-2 w-2 shrink-0 rounded-full ${selected ? 'bg-blue-400' : held ? 'bg-slate-400' : occupied ? 'bg-amber-400' : unavailable ? 'bg-slate-500' : 'bg-emerald-400'}`} /></span>
+                                <span className={`flex justify-end text-[11px] font-semibold ${selected ? 'text-blue-300' : occupied ? 'text-amber-400' : held ? 'text-slate-400' : 'text-emerald-400'}`}>{selected ? 'Active' : held ? 'Hold' : occupied ? 'Occupied' : unavailable ? 'Cleaning' : 'Open'}</span>
                               </button>
                             );
                           })}
