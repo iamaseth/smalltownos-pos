@@ -35,6 +35,46 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string
   rose: { bg: 'bg-rose-50 dark:bg-rose-950/40', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800/40', activeBg: 'bg-rose-500', activeText: 'text-white' },
 };
 
+// Fast, offline menu search. No product/database changes or network calls.
+const SEARCH_ALIASES: Record<string, string[]> = {
+  coke: ['coca cola', 'coca-cola', 'cola'],
+  cola: ['coca cola', 'coca-cola', 'coke'],
+  fries: ['french fries', 'chips'],
+  chips: ['french fries', 'fries'],
+  soda: ['soft drink', 'cola'],
+  softdrink: ['soft drink', 'soda'],
+  burger: ['hamburger', 'cheeseburger'],
+  marg: ['margarita'],
+};
+const normalizeMenuText = (value: string) =>
+  value.toLocaleLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+function oneEditAway(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++edits > 1) return false;
+    if (a.length >= b.length) i++;
+    if (b.length >= a.length) j++;
+  }
+  return edits + Number(i < a.length || j < b.length) <= 1;
+}
+function menuSearchScore(name: string, rawQuery: string): number {
+  const query = normalizeMenuText(rawQuery);
+  if (!query) return 1;
+  const title = normalizeMenuText(name);
+  if (title === query) return 100;
+  if (title.startsWith(query)) return 90;
+  if (title.split(' ').some(word => word.startsWith(query))) return 80;
+  if (title.includes(query)) return 70;
+  const aliases = SEARCH_ALIASES[query] ?? [];
+  if (aliases.some(alias => title.includes(normalizeMenuText(alias)))) return 60;
+  // Fuzzy matching only for meaningful words, avoiding noise for 1-3 letters.
+  if (query.length >= 4 && title.split(' ').some(word =>
+    word.length >= 4 && oneEditAway(query, word))) return 40;
+  return 0;
+}
+
 function getCategoryColorClasses(color: string | null | undefined) {
   if (!color) return null;
   return CATEGORY_COLORS[color.toLowerCase()] || null;
@@ -112,10 +152,15 @@ export default function ProductGrid({
       : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
     // Search only within the selected category or subcategory.
     // With no category selected, matchCat is true and search covers the full menu.
-    const query = search.trim().toLocaleLowerCase();
-    return matchCat && (!query || p.name.toLocaleLowerCase().includes(query));
+    return matchCat && menuSearchScore(p.name, search) > 0;
   });
-  const ordered = [...filtered].sort((a,b) => (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name));
+  const ordered = [...filtered].sort((a,b) => {
+    if (search.trim()) {
+      const difference = menuSearchScore(b.name, search) - menuSearchScore(a.name, search);
+      if (difference) return difference;
+    }
+    return (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name);
+  });
   const displayed = arranging ? [...ordered].sort((a,b) => ids.indexOf(String(a.id))-ids.indexOf(String(b.id))) : ordered;
   const saveOrder = async () => {
     setSaving(true);
