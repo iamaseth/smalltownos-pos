@@ -37,7 +37,7 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
     <div className="pos-reference-font relative flex shrink-0 items-center justify-between gap-3 border-b border-[#1e293b] bg-[#0d1527] px-3 py-1.5 text-slate-100">
       <div className="flex min-w-0 items-center gap-2">
         <div className="min-w-0">
-          <div className="truncate text-[12px] leading-tight font-bold tracking-normal text-white">{currentTenant?.business_name || 'The Bay Bar'}</div>
+          <div className="truncate text-[12px] leading-tight font-bold tracking-normal text-white font-[family-name:var(--font-geist-sans)]">{currentTenant?.business_name || 'The Bay Bar'}</div>
           <div className="text-[9px] leading-tight font-normal text-slate-400">SmallTownPOS</div>
         </div>
       </div>
