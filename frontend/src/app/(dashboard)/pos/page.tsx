@@ -1180,12 +1180,12 @@ export default function POSPage() {
       />
 
       {/* Main content area */}
-      <div className="pos-cashier-preview flex flex-1 min-h-0 overflow-hidden bg-[#0b0f17] gap-0 font-[Geist,sans-serif] text-slate-100">
+      <div className="pos-reference-font pos-cashier-preview flex flex-1 min-h-0 overflow-hidden bg-[#0b0f17] gap-0 font-[Geist,sans-serif] text-slate-100">
         {/* Collapsible desktop table rail; reuses the same table actions as the picker. */}
         {isRestaurant && tablesRequired && cart.orderType === 'dine_in' && (
           <aside className={`hidden lg:flex shrink-0 flex-col border-r border-slate-700/50 bg-[#10192b] ${tableRailOpen ? 'w-44 xl:w-48' : 'w-12'}`}>
             <div className="flex items-center justify-between gap-1 border-b border-[#1e293b] p-4">
-              {tableRailOpen && <span className="text-sm font-semibold">Tables</span>}
+              {tableRailOpen && <span className="pos-reference-display text-sm font-semibold">Tables</span>}
               <button type="button" onClick={() => setTableRailOpen(v => !v)}
                 className="rounded-md p-2 hover:bg-muted" aria-label={tableRailOpen ? 'Collapse tables' : 'Expand tables'}
                 title={tableRailOpen ? 'Collapse tables' : 'Expand tables'}>
@@ -1205,7 +1205,7 @@ export default function POSPage() {
                     if (!sectionTables.length) return null;
                     return (
                       <section key={area}>
-                        <h3 className="mb-1.5 px-1 text-xs font-bold uppercase tracking-wide text-slate-400">{area}</h3>
+                        <h3 className="pos-reference-display mb-1.5 px-1 text-xs font-bold uppercase tracking-wide text-slate-400">{area}</h3>
                         <div className="grid grid-cols-2 gap-2">
                           {sectionTables.map(table => {
                             const held = heldOrders.hasHeldOrder(table.id) || table.status === 'held';
@@ -1225,7 +1225,7 @@ export default function POSPage() {
                                     : null);
                                 }}
                                 className={`min-h-[72px] rounded-xl p-2.5 text-left text-xs font-semibold transition active:scale-95 flex flex-col justify-between shadow-sm ${color} ${unavailable ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-                                <span className="flex items-center justify-between gap-1"><span className="truncate font-bold text-sm">{table.name}</span><span className={`h-2 w-2 shrink-0 rounded-full ${selected ? 'bg-blue-400' : held ? 'bg-slate-400' : occupied ? 'bg-amber-400' : unavailable ? 'bg-slate-500' : 'bg-emerald-400'}`} /></span>
+                                <span className="flex items-center justify-between gap-1"><span className="pos-reference-display truncate font-bold text-sm">{table.name}</span><span className={`h-2 w-2 shrink-0 rounded-full ${selected ? 'bg-blue-400' : held ? 'bg-slate-400' : occupied ? 'bg-amber-400' : unavailable ? 'bg-slate-500' : 'bg-emerald-400'}`} /></span>
                                 <span className={`flex justify-end text-[11px] font-semibold ${selected ? 'text-blue-300' : occupied ? 'text-amber-400' : held ? 'text-slate-400' : 'text-emerald-400'}`}>{selected ? 'Active' : held ? 'Hold' : occupied ? 'Occupied' : unavailable ? 'Cleaning' : 'Open'}</span>
                               </button>
                             );
