@@ -138,12 +138,12 @@ export default function ProductGrid({
     { label: 'Drinks', group: 'Non-Alcoholic', filter: null, color: '#EA580C', Icon: Coffee },
   ] as const;
   const [referenceCategory, setReferenceCategory] = useState<string | null>(null);
-  const [catalogView, setCatalogView] = useState<'photo' | 'compact'>('photo');
+  const [catalogView, setCatalogView] = useState<'photo' | 'compact'>('compact');
 
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      <div className="shrink-0 mb-4 px-4 pt-4">
-        <div className="relative mb-4">
+      <div className="shrink-0 mb-2 px-3 pt-2">
+        <div className="relative mb-2">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
             type="text"
@@ -163,17 +163,17 @@ export default function ProductGrid({
               }
             }}
             placeholder={t('searchProducts')}
-            className="w-full ps-10 pe-4 py-3 bg-card border border-border rounded-2xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
+            className="w-full ps-10 pe-4 py-2 bg-[#131d31] border border-[#1e293b] rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
         </div>
-        <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="hidden">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menu</span>
           {showProductImages && <button type="button" onClick={() => setShowMenuPhotos(v => !v)}
             className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800">
             {showMenuPhotos ? 'Compact cards' : 'Show photos'}
           </button>}
         </div>
-        <nav aria-label="Menu categories" className="grid grid-cols-6 gap-4 mb-4">
+        <nav aria-label="Menu categories" className="grid grid-cols-6 gap-2 mb-2">
           {referenceCategories.map(({ label, group, filter, color, Icon }) => {
             const selected = referenceCategory === label;
             return <button key={label} type="button" aria-pressed={selected}
@@ -183,18 +183,18 @@ export default function ProductGrid({
                 setSelectedCategory(filter ? (groups.get(group) ?? []).find(c => filter.test(c.name))?.id ?? null : null);
                 setArranging(false);
               }}
-              className={`group relative h-28 rounded-2xl overflow-hidden shadow-md flex flex-col items-center justify-center p-3 transition transform active:scale-95 text-white ${selected ? 'ring-4 ring-blue-500/80 border-2 border-blue-400 scale-[1.03] z-10 shadow-2xl' : 'hover:brightness-110 opacity-90 hover:opacity-100'}`}
+              className={`group relative h-[66px] rounded-xl overflow-hidden shadow-sm flex flex-col items-center justify-center p-1.5 transition transform active:scale-95 text-white ${selected ? 'ring-4 ring-blue-500/80 border-2 border-blue-400 scale-[1.03] z-10 shadow-2xl' : 'hover:brightness-110 opacity-90 hover:opacity-100'}`}
               style={{ backgroundColor: color }}>
               {selected && <span className="absolute -top-1 right-2 px-2 py-0.5 rounded-full bg-blue-300 text-slate-900 font-extrabold text-[10px] uppercase">Active</span>}
-              <Icon size={selected ? 36 : 32} strokeWidth={2} className="mb-2" />
-              <span className={`font-bold text-sm tracking-wide text-white drop-shadow ${selected ? 'text-base font-black' : ''}`}>{label}</span>
+              <Icon size={selected ? 23 : 21} strokeWidth={2} className="mb-1" />
+              <span className={`font-bold text-[11px] tracking-wide text-white drop-shadow ${selected ? 'text-xs font-black' : ''}`}>{label}</span>
             </button>;
           })}
         </nav>
         {activeGroup && activeGroup !== 'Favorites' && (
-          <nav aria-label="Menu subcategories" className="flex gap-2 overflow-x-auto py-2">
+          <nav aria-label="Menu subcategories" className="flex gap-1.5 overflow-x-auto py-1">
             <button type="button" onClick={() => setSelectedCategory(null)}
-              className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold ${!selectedCategory ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card'}`}>All {activeGroup}</button>
+              className={`shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${!selectedCategory ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card'}`}>All {activeGroup}</button>
             {[
               ...(showVirtualBurgers ? [{ id: '__virtual_burgers__', name: 'Burgers' }] : []),
               ...children.map(cat => ({ id: cat.id, name: activeGroup === 'Cocktails' ? cat.name.replace(/\\s+Cocktails?$/i, '') : cat.name.replace(/^Spirits\s*[—–-]\s*/i, '') })),
@@ -204,15 +204,15 @@ export default function ProductGrid({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-20 md:pb-0 px-4">
+      <div className="flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
         {activeGroup === 'Favorites' && <h2 className="text-xl font-bold tracking-tight mb-3">Favorites</h2>}
         {!activeGroup && !search.trim() && (
           <p className="text-sm text-muted-foreground py-4 text-center">Select a menu category above to browse products.</p>
         )}
         {(!!activeGroup || !!search.trim()) && <>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2 gap-2">
             <div className="flex items-center gap-3">
-              <h2 className="text-xl font-bold text-white tracking-tight">{referenceCategory || activeGroup || 'Search'} · {selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : 'All'}</h2>
+              <h2 className="text-sm font-bold text-white tracking-tight">{referenceCategory || activeGroup || 'Search'} · {selectedCategory ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : 'All'}</h2>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length} Items Shown</span>
             </div>
             <div className="flex items-center bg-[#131d31] p-1 rounded-xl border border-[#1e293b] gap-1 shadow-sm">
@@ -220,7 +220,7 @@ export default function ProductGrid({
               <button type="button" onClick={() => setCatalogView('compact')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'compact' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}>Quick-Tap Grid</button>
             </div>
           </div>
-          <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 ${catalogView === 'photo' ? 'gap-4' : 'gap-3'} pb-8`}>
+          <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
           {displayed.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
             
@@ -239,7 +239,7 @@ export default function ProductGrid({
                 className="group flex flex-col justify-between bg-[#182234] text-slate-100 rounded-2xl border border-[#1e293b] hover:border-purple-500/50 shadow-sm hover:shadow-lg active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
 
               >
-                <div className="p-3 flex flex-col flex-1 justify-between"><div className="mb-2 flex items-start justify-between gap-1">
+                <div className="p-2 flex flex-col flex-1 justify-between"><div className="mb-2 flex items-start justify-between gap-1">
                   <div>
                     {!!product.track_inventory && product.stock_quantity <= 0 ? (
                       <span className="rounded-full border border-rose-800 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-rose-400">{t('outOfStock')}</span>
@@ -256,7 +256,7 @@ export default function ProductGrid({
                 </div>
 
                 {catalogView === 'photo' && (
-                  <div className="w-full h-28 mb-2 relative overflow-hidden bg-slate-900">
+                  <div className="w-full aspect-[1.3] mb-1 relative overflow-hidden bg-slate-900">
                     {/* Always-visible background tile — no flash when image loads */}
                     <div
                       className="absolute inset-0 flex items-center justify-center"
@@ -288,9 +288,9 @@ export default function ProductGrid({
                   </div>
                 )}
 
-                <h3 className="font-bold text-sm text-slate-100 leading-tight truncate">{product.name}</h3>
-                <div className="flex items-center justify-between mt-2 pt-1 border-t border-[#1e293b]/60">
-                  <p className="font-bold text-sm text-blue-400">{fmt(Number(product.price))}</p>
+                <h3 className="font-bold text-[11px] text-slate-100 leading-tight truncate">{product.name}</h3>
+                <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#1e293b]/60">
+                  <p className="font-bold text-xs text-blue-400">{fmt(Number(product.price))}</p>
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-600/20 text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition" aria-hidden="true"><Plus size={16} /></span>
                 </div></div>
                             </button>
