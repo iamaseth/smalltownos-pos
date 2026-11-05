@@ -34,13 +34,13 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
   const showTableBtn = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
 
   return (
-    <div className="relative flex shrink-0 items-center justify-between gap-3 border-b border-[#1e293b] bg-[#0d1527] px-5 py-3 text-slate-100">
+    <div className="pos-reference-font relative flex shrink-0 items-center justify-between gap-3 border-b border-[#1e293b] bg-[#0d1527] px-5 py-3 text-slate-100">
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-900/20">
           <span className="text-xl font-black">B</span>
         </div>
         <div className="min-w-0">
-          <div className="truncate text-xs font-extrabold tracking-tight text-white">{currentTenant?.business_name || 'The Bay Bar'}</div>
+          <div className="pos-reference-display truncate text-xs font-extrabold tracking-tight text-white">{currentTenant?.business_name || 'The Bay Bar'}</div>
           <div className="text-[10px] font-medium text-slate-400">SmallTownPOS</div>
         </div>
       </div>
