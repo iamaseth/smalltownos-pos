@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Zap, LayoutGrid } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
@@ -59,6 +59,7 @@ export default function ProductGrid({
   search, setSearch, onProductClick, sidebarOpen = true, canArrange = false, onOrderSaved,
 }: Props) {
   const cart = useCartStore();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [arranging, setArranging] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ids, setIds] = useState<string[]>([]);
@@ -140,12 +141,37 @@ export default function ProductGrid({
   const [referenceCategory, setReferenceCategory] = useState<string | null>(null);
   const [catalogView, setCatalogView] = useState<'photo' | 'compact'>('compact');
 
+  useEffect(() => {
+    const handleTyping = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        if (target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"]')) return;
+      }
+      if (event.key === 'Escape') {
+        if (search) { setSearch(''); event.preventDefault(); }
+        return;
+      }
+      if (event.key.length !== 1 || !/^[\\p{L}\\p{N} ]$/u.test(event.key)) return;
+      // Don't hijack barcode readers or text entry elsewhere; only start a search
+      // when the register itself has keyboard focus.
+      const grid = document.querySelector('[data-testid="pos-product-grid"]');
+      if (!grid || (target instanceof Node && !grid.contains(target))) return;
+      event.preventDefault();
+      setSearch(search + event.key);
+      searchInputRef.current?.focus();
+    };
+    document.addEventListener('keydown', handleTyping);
+    return () => document.removeEventListener('keydown', handleTyping);
+  }, [search, setSearch]);
+
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <div className="shrink-0 mb-2 px-3 pt-2">
         <div className="relative mb-2">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
+            ref={searchInputRef}
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
