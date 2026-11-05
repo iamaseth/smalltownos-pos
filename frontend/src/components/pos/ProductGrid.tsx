@@ -145,18 +145,18 @@ export default function ProductGrid({
     const handleTyping = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
       const target = event.target;
-      if (target instanceof HTMLElement) {
-        if (target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"]')) return;
-      }
+      if (target instanceof HTMLElement &&
+          target.closest('input, textarea, select, [contenteditable], [role="dialog"], [role="alertdialog"]')) return;
+      // The cashier may have clicked a category, product, or empty part of the
+      // register; all should support typing without requiring a search click.
+      // Do not steal keystrokes from other app screens or modal dialogs.
+      if (!document.querySelector('[data-testid="pos-product-grid"]')) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
       if (event.key === 'Escape') {
-        if (search) { setSearch(''); event.preventDefault(); }
+        if (search) { event.preventDefault(); setSearch(''); }
         return;
       }
-      if (event.key.length !== 1 || !/^[\\p{L}\\p{N} ]$/u.test(event.key)) return;
-      // Don't hijack barcode readers or text entry elsewhere; only start a search
-      // when the register itself has keyboard focus.
-      const grid = document.querySelector('[data-testid="pos-product-grid"]');
-      if (!grid || (target instanceof Node && !grid.contains(target))) return;
+      if (event.key.length !== 1 || !/^[\p{L}\p{N} ]$/u.test(event.key)) return;
       event.preventDefault();
       setSearch(search + event.key);
       searchInputRef.current?.focus();
