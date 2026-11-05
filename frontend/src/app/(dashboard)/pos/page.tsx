@@ -1180,7 +1180,7 @@ export default function POSPage() {
       />
 
       {/* Main content area */}
-      <div className="pos-reference-font pos-cashier-preview flex flex-1 min-h-0 overflow-hidden bg-[#0b0f17] gap-0 font-[Geist,sans-serif] text-slate-100">
+      <div className="pos-reference-font pos-cashier-preview flex flex-1 min-h-0 overflow-hidden bg-[#0b0f17] gap-0 text-slate-100">
         {/* Collapsible desktop table rail; reuses the same table actions as the picker. */}
         {isRestaurant && tablesRequired && cart.orderType === 'dine_in' && (
           <aside className={`hidden lg:flex shrink-0 flex-col border-r border-slate-700/50 bg-[#10192b] ${tableRailOpen ? 'w-44 xl:w-48' : 'w-12'}`}>
