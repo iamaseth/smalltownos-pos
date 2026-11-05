@@ -109,10 +109,10 @@ export default function ProductGrid({
       : selectedCategory ? p.category_id === selectedCategory
       : activeGroup === 'Favorites' ? favorites.includes(String(p.id))
       : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
-    // Search all menu items by the beginning of the product name, not any substring.
+    // Search all menu items by any part of the name, independent of category.
     // When searching, ignore the currently selected category.
     const query = search.trim().toLocaleLowerCase();
-    if (query) return p.name.trimStart().toLocaleLowerCase().startsWith(query);
+    if (query) return p.name.toLocaleLowerCase().includes(query);
     return matchCat;
   });
   const ordered = [...filtered].sort((a,b) => (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name));
@@ -162,9 +162,10 @@ export default function ProductGrid({
                 setSearch('');
               }
             }}
-            placeholder={t('searchProducts')}
-            className="w-full ps-10 pe-4 py-2 bg-[#131d31] border border-[#1e293b] rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
+            placeholder="Search all products (e.g. mojito, coffee, burger)…"
+            className="w-full ps-10 pe-10 py-2 bg-[#131d31] border border-[#1e293b] rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
+          {search && <button type="button" aria-label="Clear product search" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-300 hover:text-white">Clear</button>}
         </div>
         <div className="hidden">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menu</span>
@@ -179,6 +180,7 @@ export default function ProductGrid({
             return <button key={label} type="button" aria-pressed={selected}
               onClick={() => {
                 setReferenceCategory(label);
+                setSearch('');
                 setOpenGroup(group);
                 setSelectedCategory(filter ? (groups.get(group) ?? []).find(c => filter.test(c.name))?.id ?? null : null);
                 setArranging(false);
@@ -220,7 +222,7 @@ export default function ProductGrid({
               <button type="button" onClick={() => setCatalogView('compact')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'compact' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><Zap size={12} className="inline-block mr-1.5 align-[-2px] text-amber-300 fill-amber-300" />Quick-Tap Grid</button>
             </div>
           </div>
-          <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
+          <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
           {displayed.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
             const categoryAccent = referenceCategories.find(c => c.label === referenceCategory)?.color
@@ -243,7 +245,7 @@ export default function ProductGrid({
                 style={catalogView === 'compact' ? { borderLeftColor: categoryAccent } : undefined}
 
               >
-                <div className="p-2 flex flex-col flex-1 justify-between"><div className="mb-2 flex items-start justify-between gap-1">
+                <div className="p-3 min-h-[112px] flex flex-col flex-1 justify-between"><div className="mb-2 flex items-start justify-between gap-1">
                   <div>
                     {!!product.track_inventory && product.stock_quantity <= 0 ? (
                       <span className="rounded-full border border-rose-800 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-rose-400">{t('outOfStock')}</span>
@@ -292,7 +294,7 @@ export default function ProductGrid({
                   </div>
                 )}
 
-                <h3 className="font-bold text-[11px] text-slate-100 leading-tight truncate">{product.name}</h3>
+                <h3 className="font-bold text-[13px] text-slate-100 leading-snug line-clamp-2 min-h-[2.4em] break-words">{product.name}</h3>
                 <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#1e293b]/60">
                   <p className="font-bold text-xs text-blue-400">{fmt(Number(product.price))}</p>
                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-600/20 text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition" aria-hidden="true"><Plus size={16} /></span>
