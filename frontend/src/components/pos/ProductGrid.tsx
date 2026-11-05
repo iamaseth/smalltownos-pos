@@ -223,6 +223,11 @@ export default function ProductGrid({
           <div className={`grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
           {displayed.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
+            const accentTag = (product.tags?.[0] || '').toLowerCase();
+            const quickTapAccent = /signature|premium|local/.test(accentTag) ? 'border-l-purple-500'
+              : /fast|serve/.test(accentTag) ? 'border-l-amber-400'
+              : /tropical|fresh/.test(accentTag) ? 'border-l-emerald-400'
+              : 'border-l-blue-500';
             
 
             return (
@@ -236,7 +241,7 @@ export default function ProductGrid({
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
                 onClick={() => {if(!arranging)onProductClick(product);}}
-                className="group flex flex-col justify-between bg-[#182234] text-slate-100 rounded-2xl border border-[#1e293b] hover:border-purple-500/50 shadow-sm hover:shadow-lg active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className={`group flex flex-col justify-between bg-[#182234] text-slate-100 rounded-xl border border-[#1e293b] ${catalogView === 'compact' ? `border-l-4 ${quickTapAccent}` : ''} hover:border-[#334155] shadow-sm hover:shadow-lg active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}
 
               >
                 <div className="p-2 flex flex-col flex-1 justify-between"><div className="mb-2 flex items-start justify-between gap-1">
