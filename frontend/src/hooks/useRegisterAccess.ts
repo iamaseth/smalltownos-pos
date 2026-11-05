@@ -8,6 +8,8 @@ export function useRegisterAccess(enabled: boolean) {
   const [locked, setLocked] = useState(true);
   const [operator, setOperator] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState('');
+  // An operator session is intentionally not persisted across reloads.
+  // A verified PIN must be entered again after a restart.
   useEffect(() => {
     if (!enabled || locked) return;
     let lastActivity = Date.now();
@@ -21,10 +23,12 @@ export function useRegisterAccess(enabled: boolean) {
     const events = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
     events.forEach(e => window.addEventListener(e, activity));
     window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
     const timer = window.setInterval(check, 1000);
     return () => {
       events.forEach(e => window.removeEventListener(e, activity));
       window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', check);
       window.clearInterval(timer);
     };
   }, [enabled, locked]);
