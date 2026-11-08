@@ -16,6 +16,7 @@ COPY --from=dependencies /app/frontend/node_modules ./frontend/node_modules
 COPY frontend ./frontend
 COPY shared ./shared
 COPY main/countries.ts ./main/countries.ts
+RUN ln -s /app/frontend/node_modules /app/node_modules
 
 WORKDIR /app/frontend
 RUN npm run build
@@ -36,6 +37,7 @@ COPY --from=builder /app/frontend/public ./frontend/public
 COPY --from=builder /app/frontend/next.config.ts ./frontend/next.config.ts
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/main/countries.ts ./main/countries.ts
+RUN ln -s /app/frontend/node_modules /app/node_modules
 
 WORKDIR /app/frontend
 
