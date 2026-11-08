@@ -9,7 +9,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts \
+    && npm rebuild better-sqlite3
 
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
