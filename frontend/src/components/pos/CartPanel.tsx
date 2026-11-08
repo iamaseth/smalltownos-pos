@@ -165,7 +165,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
     <div className={
       isDrawer
         ? 'flex flex-col w-full'
-        : 'relative w-full h-full max-h-full min-h-0 overflow-hidden bg-[#131d31] text-slate-100 flex flex-col shadow-2xl'
+        : 'absolute inset-0 grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden bg-[#131d31] text-slate-100 shadow-2xl'
     }>
       {/* Order Type */}
       <div className="shrink-0 px-3 py-2 border-b border-[#1e293b] space-y-1.5 bg-[#131d31]">
@@ -326,7 +326,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       </div>
 
       {/* Cart Footer */}
-      <div className="sticky bottom-0 z-10 shrink-0 px-3 py-2 border-t border-[#1e293b] bg-[#10192b] space-y-1">
+      <div className="z-10 min-h-0 px-3 py-2 border-t border-[#1e293b] bg-[#10192b] space-y-1">
         {/* Order Notes */}
         {cart.items.length > 0 && (
           <div>
