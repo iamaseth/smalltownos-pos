@@ -326,7 +326,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       </div>
 
       {/* Cart Footer */}
-      <div className="z-10 min-h-0 px-3 py-2 border-t border-[#1e293b] bg-[#10192b] space-y-1">
+      <div className="z-10 shrink-0 px-3 py-2 border-t border-[#1e293b] bg-[#10192b] space-y-1">
         {/* Order Notes */}
         {cart.items.length > 0 && (
           <div>
@@ -344,9 +344,15 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           <span className="text-muted-foreground">{t('items')}</span>
           <span className="font-medium">{cart.itemCount()}</span>
         </div>
-        <div className="flex items-center justify-between pt-1 border-t border-[#1e293b]/70 text-base">
-          <span className="font-bold text-white">{t('subtotal')}</span>
-          <span className="font-black text-xl text-white">
+        <div className="flex justify-between border-t border-[#1e293b]/70 pt-1 text-xs">
+          <span className="text-muted-foreground">{t('subtotal')}</span>
+          <span className="font-semibold text-slate-200">
+            {fmt(cart.subtotal())}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-base">
+          <span className="font-bold text-white">{t('total')}</span>
+          <span className="text-xl font-black text-white">
             {fmt(cart.subtotal())}
           </span>
         </div>
