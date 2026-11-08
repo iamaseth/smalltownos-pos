@@ -5,8 +5,16 @@ import path from "node:path";
  * NEXT_BUILD_MODE unset    →  standard Next.js server mode (FloPOS cloud)
  */
 const isDesktop = process.env.NEXT_BUILD_MODE === "desktop";
+const isExternallyTypeChecked = process.env.NEXT_BUILD_TYPECHECKED === "1";
 
 const nextConfig: NextConfig = {
+  // Railway runs `tsc --noEmit` explicitly before the production build.
+  // Avoid Next's duplicate typecheck there because Next 16.3.5 fails while
+  // parsing TypeScript's valid `--showConfig` output for this cross-root app.
+  typescript: {
+    ignoreBuildErrors: isExternallyTypeChecked,
+  },
+
   // Static export: required for Electron — served via embedded Express,
   // not file:// so no CORS/routing issues.
   output: isDesktop ? "export" : undefined,
