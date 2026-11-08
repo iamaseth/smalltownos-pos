@@ -1,0 +1,17 @@
+.git
+.github
+.next
+**/.next
+**/node_modules
+frontend/out
+dist
+release
+backups
+*.db
+*.db-shm
+*.db-wal
+*.bak
+.env
+.env.*
+whatsapp-auth
+test-results
