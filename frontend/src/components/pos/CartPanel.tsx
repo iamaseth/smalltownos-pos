@@ -273,13 +273,31 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             <p className="mt-2 text-sm">{existingOrder ? t('addNewItemsAbove') : t('cartEmpty')}</p>
           </div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {cart.items.map((item) => (
-              <div key={item.id} className="group rounded-lg bg-[#182234] border border-[#1e293b] hover:border-[#334155] px-2 py-1.5 shadow-sm">
-                <div className="flex items-start gap-2">
-                  <p className="min-w-0 flex-1 break-words text-sm font-bold leading-snug text-slate-100">
-                    {item.product.name}
-                  </p>
+              <div key={item.id} className="group rounded-lg border border-[#1e293b] bg-[#182234] px-1.5 py-1 shadow-sm hover:border-[#334155]">
+                <div className="flex items-center gap-1">
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm font-bold leading-tight text-slate-100" title={item.product.name}>
+                      {item.product.name}
+                    </p>
+                    <p className="mt-0.5 text-xs font-medium text-slate-400">
+                      {fmt(Number(item.product.price))}
+                    </p>
+                  </div>
+                  {onEditItem && (
+                    <button
+                      onClick={() => onEditItem(item)}
+                      className="touch-target shrink-0 rounded-full bg-amber-100 text-amber-700 transition-colors hover:bg-amber-200 active:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60 dark:active:bg-amber-950/60"
+                      aria-label={tCommon('edit')}
+                      title={tCommon('edit')}
+                    >
+                      <SquarePen size={15} />
+                    </button>
+                  )}
+                  <div className="flex shrink-0 items-center gap-1">
+                    <ItemQuantityControl item={item} updateQuantity={cart.updateQuantity} />
+                  </div>
                   <button
                     onClick={() => cart.removeItem(item.id)}
                     className="touch-target shrink-0 rounded-lg text-slate-500 transition-colors hover:bg-red-950/40 hover:text-red-400 active:scale-90"
@@ -288,36 +306,19 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                     <Trash2 size={16} />
                   </button>
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 px-0.5">
                   {item.addons.length > 0 && (
-                    <div className="mt-0.5">
+                    <div>
                       {item.addons.map((a) => (
-                        <p key={a.id} className="break-words text-xs text-muted-foreground">
+                        <p key={a.id} className="truncate text-[11px] leading-tight text-muted-foreground">
                           + {a.name}{(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''} {Number(a.price) > 0 && `(${fmt(Number(a.price) * (a.quantity || 1))})`}
                         </p>
                       ))}
                     </div>
                   )}
                   {item.special_instructions && (
-                    <p className="text-xs text-muted-foreground italic mt-0.5 break-words">{item.special_instructions}</p>
+                    <p className="truncate text-[11px] italic leading-tight text-muted-foreground">{item.special_instructions}</p>
                   )}
-                </div>
-                <div className="mt-1 flex flex-wrap items-center justify-between gap-1">
-                  <p className="text-sm text-muted-foreground">
-                    {fmt(Number(item.product.price))}
-                  </p>
-                  <div className="flex items-center gap-1.5">
-                    {onEditItem && (
-                      <button
-                        onClick={() => onEditItem(item)}
-                        className="min-h-8 shrink-0 gap-1 rounded-full bg-amber-100 px-2 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60 dark:active:bg-amber-950/60 transition-colors hover:bg-amber-200 active:bg-amber-200"
-                      >
-                        <SquarePen size={12} />
-                        {tCommon('edit')}
-                      </button>
-                    )}
-                    <ItemQuantityControl item={item} updateQuantity={cart.updateQuantity} />
-                  </div>
                 </div>
               </div>
             ))}
