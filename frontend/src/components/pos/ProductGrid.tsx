@@ -89,6 +89,7 @@ interface Props {
   setSearch: (s: string) => void;
   currency: string;
   onProductClick: (product: Product) => void;
+  onQuickAdd: (product: Product) => void;
   sidebarOpen?: boolean;
   canArrange?: boolean;
   onOrderSaved?: () => Promise<void>;
@@ -96,7 +97,7 @@ interface Props {
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, onProductClick, sidebarOpen = true, canArrange = false, onOrderSaved,
+  search, setSearch, onProductClick, onQuickAdd, sidebarOpen = true, canArrange = false, onOrderSaved,
 }: Props) {
   const cart = useCartStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -299,21 +300,22 @@ export default function ProductGrid({
             
 
             return (
-              <button
+              <div
                 key={product.id}
                 data-testid="pos-product-card"
-                type="button"
                 draggable={arranging}
                 onDragStart={e => {setDragId(String(product.id));e.dataTransfer.effectAllowed='move';}}
                 onDragOver={e => {if(arranging)e.preventDefault();}}
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
-                onClick={() => {if(!arranging)onProductClick(product);}}
                 className={`group flex flex-col justify-between bg-[#182234] text-slate-100 rounded-xl border border-[#1e293b] ${catalogView === 'compact' ? 'border-l-4' : ''} hover:border-[#334155] shadow-sm hover:shadow-lg active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}
                 style={catalogView === 'compact' ? { borderLeftColor: categoryAccent } : undefined}
 
               >
-                <div className="p-3 min-h-[112px] flex flex-col flex-1 justify-between"><div className="mb-2 flex items-start justify-between gap-1">
+                <button type="button" aria-label={`Edit ${product.name}`}
+                  onClick={() => { if (!arranging) onProductClick(product); }}
+                  className="absolute inset-0 z-0 w-full h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl" />
+                <div className="pointer-events-none relative z-[1] p-3 min-h-[112px] flex flex-col flex-1 justify-between"><div className="mb-2 flex items-start justify-between gap-1">
                   <div>
                     {!!product.track_inventory && product.stock_quantity <= 0 ? (
                       <span className="rounded-full border border-rose-800 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-rose-400">{t('outOfStock')}</span>
@@ -365,9 +367,12 @@ export default function ProductGrid({
                 <h3 className="font-bold text-[13px] text-slate-100 leading-snug line-clamp-2 min-h-[2.4em] break-words">{product.name}</h3>
                 <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#1e293b]/60">
                   <p className="font-bold text-xs text-blue-400">{fmt(Number(product.price))}</p>
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-600/20 text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition" aria-hidden="true"><Plus size={16} /></span>
+                  <button type="button" aria-label={`Quick add ${product.name}`}
+                    disabled={arranging}
+                    onClick={(event) => { event.stopPropagation(); onQuickAdd(product); }}
+                    className="pointer-events-auto relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Plus size={16} /></button>
                 </div></div>
-                            </button>
+                            </div>
             );
           })}
           </div></>}

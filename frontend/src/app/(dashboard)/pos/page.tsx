@@ -562,6 +562,17 @@ export default function POSPage() {
     setAddonProduct(product);
   };
 
+  const handleQuickAdd = (product: Product) => {
+    const requiredGroups = (product.addon_groups || []).filter(
+      group => group.is_active && (group.is_required || group.min_selection > 0)
+    );
+    if (requiredGroups.length > 0) {
+      setAddonProduct(product);
+      return;
+    }
+    cart.addItem(product, 1, [], '');
+  };
+
   const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string) => {
     cart.addItem(product, quantity, addons, instructions);
   };
@@ -1261,12 +1272,13 @@ export default function POSPage() {
             canArrange={tenantCan(currentTenant, 'catalog.manage')}
             onOrderSaved={async () => { const response = await api.get('/products?active=1'); setProducts((response.data.products as Product[]) || []); }}
             onProductClick={handleProductClick}
+            onQuickAdd={handleQuickAdd}
             sidebarOpen={leftSidebarOpen}
           />
         </div>
 
         {/* Desktop Cart — always open, hidden on mobile */}
-        <div className="hidden md:flex md:w-[25%] md:min-w-[220px] md:max-w-[320px] md:shrink-0 h-full border-l border-[#1e293b] bg-[#131d31]">
+        <div className="hidden md:flex md:w-[25%] md:min-w-[220px] md:max-w-[320px] md:shrink-0 h-full min-h-0 overflow-hidden border-l border-[#1e293b] bg-[#131d31]">
           <CartPanel {...cartPanelProps} />
         </div>
       </div>
