@@ -1278,7 +1278,7 @@ export default function POSPage() {
         </div>
 
         {/* Desktop Cart — always open, hidden on mobile */}
-        <div className="pos-desktop-cart relative w-[25%] min-w-[220px] max-w-[320px] shrink-0 h-full max-h-full min-h-0 overflow-hidden border-l border-[#1e293b] bg-[#131d31]">
+        <div className="hidden md:flex md:w-[25%] md:min-w-[220px] md:max-w-[320px] md:shrink-0 h-full min-h-0 overflow-hidden border-l border-[#1e293b] bg-[#131d31]">
           <CartPanel {...cartPanelProps} />
         </div>
       </div>
@@ -1286,7 +1286,7 @@ export default function POSPage() {
       {/* Mobile: Floating Cart Button + Bottom Sheet — outside flex container */}
       <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
         <DrawerTrigger asChild>
-          <button className="pos-mobile-cart-trigger fixed bottom-5 end-5 z-40 h-14 w-14 items-center justify-center bg-brand text-white rounded-full shadow-lg hover:bg-brand-hover active:bg-brand-hover transition-colors" aria-label={t('cart')}>
+          <button className="touch-target fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg hover:bg-brand-hover active:bg-brand-hover transition-colors md:hidden" aria-label={t('cart')}>
             <ShoppingCart size={22} />
             {itemCount > 0 && (
               <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">

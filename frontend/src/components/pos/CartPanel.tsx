@@ -78,7 +78,7 @@ function ItemQuantityControl({
       <>
         <button
           onClick={() => stepBy(-1)}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
           aria-label={t('remove')}
         >
           <Minus size={16} />
@@ -86,7 +86,7 @@ function ItemQuantityControl({
         <span className="w-6 text-center text-base font-semibold tabular-nums">{item.quantity}</span>
         <button
           onClick={() => stepBy(1)}
-          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
           aria-label={t('addItems')}
         >
           <Plus size={16} />
@@ -99,7 +99,7 @@ function ItemQuantityControl({
     <>
       <button
         onClick={() => stepBy(-1)}
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
         aria-label={t('remove')}
       >
         <Minus size={16} />
@@ -120,7 +120,7 @@ function ItemQuantityControl({
       />
       <button
         onClick={() => stepBy(1)}
-        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
         aria-label={t('addItems')}
       >
         <Plus size={16} />
@@ -165,10 +165,10 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
     <div className={
       isDrawer
         ? 'flex flex-col w-full'
-        : 'absolute inset-0 grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden bg-[#131d31] text-slate-100 shadow-2xl'
+        : 'w-full h-full min-h-0 overflow-hidden bg-[#131d31] text-slate-100 flex flex-col shadow-2xl'
     }>
       {/* Order Type */}
-      <div className="shrink-0 px-3 py-2 border-b border-[#1e293b] space-y-1.5 bg-[#131d31]">
+      <div className="px-5 py-4 border-b border-[#1e293b] space-y-2 bg-[#131d31]">
         <div className="flex gap-1 bg-[#182234] rounded-xl p-1 border border-[#1e293b]">
           {(['dine_in', 'takeaway', 'delivery'] as const)
             .filter((type) => isRestaurant || type !== 'dine_in')
@@ -180,7 +180,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                 <button
                   key={type}
                   onClick={() => cart.setOrderType(type)}
-                  className={`inline-flex h-10 flex-1 items-center justify-center gap-1 px-2 rounded-md text-xs font-medium transition-colors ${showIcon ? '' : 'whitespace-nowrap'} ${
+                  className={`touch-target flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors ${showIcon ? '' : 'whitespace-nowrap'} ${
                     cart.orderType === type
                       ? 'bg-blue-600 text-white shadow-sm'
                       : 'text-slate-400 hover:text-white'
@@ -194,12 +194,12 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         </div>
 
         {cart.orderType === 'dine_in' && (
-          <div className="flex items-center justify-between rounded-full border border-[#1e293b] bg-[#182234] px-3 py-1">
+          <div className="flex items-center justify-between rounded-full border border-[#1e293b] bg-[#182234] px-3 py-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground"><Users size={15} /><span>{t('pax')}</span></div>
             <div className="flex items-center gap-2">
-              <button type="button" aria-label={t('decreasePax')} onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))} className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-muted"><Minus size={15} /></button>
-              <input aria-label={t('pax')} inputMode="numeric" type="number" min="1" max="99" value={cart.guestCount} onChange={(e) => cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))} className="w-9 text-center text-sm font-semibold border-0 outline-none bg-transparent" />
-              <button type="button" aria-label={t('increasePax')} onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))} className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-muted"><Plus size={15} /></button>
+              <button type="button" aria-label={t('decreasePax')} onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))} className="touch-target rounded-full bg-muted"><Minus size={15} /></button>
+              <input aria-label={t('pax')} inputMode="numeric" type="number" min="1" max="99" value={cart.guestCount} onChange={(e) => cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))} className="w-12 text-center text-base font-semibold border-0 outline-none bg-transparent" />
+              <button type="button" aria-label={t('increasePax')} onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))} className="touch-target rounded-full bg-muted"><Plus size={15} /></button>
             </div>
           </div>
         )}
@@ -243,11 +243,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       </div>
 
       {!isDrawer && (
-        <div className="shrink-0 flex items-center justify-between border-b border-[#1e293b] px-3 py-2.5">
-          <span className="text-base font-extrabold text-white">
+        <div className="flex items-center justify-between border-b border-[#1e293b] px-5 py-4">
+          <span className="text-lg font-extrabold text-white">
             {cart.orderType === 'takeaway' ? 'Quick Tab' : cart.tableId ? tables.find(table => table.id === cart.tableId)?.name || 'Table Order' : 'Order'}
           </span>
-          <span className="text-xs font-semibold rounded-full bg-[#182234] border border-[#1e293b] text-slate-300 px-2.5 py-1">{cart.itemCount()} items</span>
+          <span className="text-xs font-semibold rounded-full bg-[#182234] border border-[#1e293b] text-slate-300 px-3 py-1.5">{cart.itemCount()} items</span>
         </div>
       )}
       {/* Cart Items */}
@@ -273,16 +273,16 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             <p className="mt-2 text-sm">{existingOrder ? t('addNewItemsAbove') : t('cartEmpty')}</p>
           </div>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {cart.items.map((item) => (
-              <div key={item.id} className="group rounded-lg bg-[#182234] border border-[#1e293b] hover:border-[#334155] px-2 py-1 shadow-sm">
+              <div key={item.id} className="group rounded-lg bg-[#182234] border border-[#1e293b] hover:border-[#334155] px-2 py-1.5 shadow-sm">
                 <div className="flex items-start gap-2">
                   <p className="min-w-0 flex-1 break-words text-sm font-bold leading-snug text-slate-100">
                     {item.product.name}
                   </p>
                   <button
                     onClick={() => cart.removeItem(item.id)}
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-red-950/40 hover:text-red-400 active:scale-90"
+                    className="touch-target shrink-0 rounded-lg text-slate-500 transition-colors hover:bg-red-950/40 hover:text-red-400 active:scale-90"
                     aria-label={t('remove')}
                   >
                     <Trash2 size={16} />
@@ -326,33 +326,28 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       </div>
 
       {/* Cart Footer */}
-      <div className="z-10 shrink-0 px-3 py-2 border-t border-[#1e293b] bg-[#10192b] space-y-1">
+      <div className="shrink-0 px-3 py-2 border-t border-[#1e293b] bg-[#10192b] space-y-1.5">
         {/* Order Notes */}
         {cart.items.length > 0 && (
-          <div>
+          <div className="mb-1">
             <textarea
               value={cart.orderNotes}
               onChange={(e) => cart.setOrderNotes(e.target.value.slice(0, 200))}
               placeholder={t('orderNotesPlaceholder')}
               rows={1}
               maxLength={200}
-              className="block h-8 w-full px-2 py-1 text-sm border border-border bg-card rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+              className="w-full min-h-9 px-2 py-1.5 text-sm border border-border bg-card rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
+            <p className="text-xs text-muted-foreground text-end mt-0.5">{cart.orderNotes.length}/200</p>
           </div>
         )}
-        <div className="flex justify-between text-xs">
+        <div className="flex justify-between mb-1 text-sm">
           <span className="text-muted-foreground">{t('items')}</span>
           <span className="font-medium">{cart.itemCount()}</span>
         </div>
-        <div className="flex justify-between border-t border-[#1e293b]/70 pt-1 text-xs">
-          <span className="text-muted-foreground">{t('subtotal')}</span>
-          <span className="font-semibold text-slate-200">
-            {fmt(cart.subtotal())}
-          </span>
-        </div>
-        <div className="flex items-center justify-between text-base">
-          <span className="font-bold text-white">{t('total')}</span>
-          <span className="text-xl font-black text-white">
+        <div className="flex justify-between mb-1 pt-1 border-t border-[#1e293b]/70 text-lg">
+          <span className="font-bold text-white">{t('subtotal')}</span>
+          <span className="font-black text-2xl text-white">
             {fmt(cart.subtotal())}
           </span>
         </div>
@@ -365,7 +360,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           <Button
             onClick={onPlaceOrder}
             disabled={submitting || cart.items.length === 0}
-            className="flex-1 h-10 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl font-bold text-base shadow-md shadow-blue-600/20"
+            className="flex-1 h-12 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-2xl font-bold text-lg shadow-lg shadow-blue-600/30"
             size="lg"
           >
             {submitting ? t('placing') : t('placeOrderButton')}
