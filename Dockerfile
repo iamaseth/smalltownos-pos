@@ -19,7 +19,7 @@ COPY main/countries.ts ./main/countries.ts
 RUN ln -s /app/frontend/node_modules /app/node_modules
 
 WORKDIR /app/frontend
-RUN npx tsc --noEmit --pretty false
+RUN npx tsc --project tsconfig.build.json --noEmit --pretty false
 RUN NEXT_BUILD_TYPECHECKED=1 npm run build
 RUN npm prune --omit=dev
 
