@@ -78,6 +78,26 @@ input[type="number"] {
   touch-action: manipulation;
 }
 
+/* POS checkout stays visible on registers even when browser zoom makes the
+ * CSS viewport narrower than Tailwind's desktop breakpoint. */
+.pos-desktop-cart {
+  display: flex;
+}
+
+.pos-mobile-cart-trigger {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .pos-desktop-cart {
+    display: none;
+  }
+
+  .pos-mobile-cart-trigger {
+    display: inline-flex;
+  }
+}
+
 /* Desktop title bar: native-overlay mode supplies the caption buttons through
  * Electron; html-fallback mode mounts equivalent controls in the renderer.
  * The safe-area env values exclude native buttons and update on geometrychange;
