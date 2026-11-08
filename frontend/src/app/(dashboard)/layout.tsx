@@ -11,8 +11,9 @@ import { usePrinterStatusSync } from '@/hooks/usePrinter';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPos = pathname === '/pos' || pathname === '/kds';
-  const isSettings = pathname === '/settings';
+  const normalizedPath = pathname?.replace(/\/+$/, '') || '/';
+  const isPos = normalizedPath === '/pos' || normalizedPath === '/kds';
+  const isSettings = normalizedPath === '/settings';
   // Sync printer status early so hardware and WebUSB reconnect before first print.
   usePrinterStatusSync();
 
