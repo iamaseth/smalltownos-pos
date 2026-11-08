@@ -1,16 +1,14 @@
-FROM node:22-bookworm-slim AS frontend-dependencies
-
-WORKDIR /app/frontend
-
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-
-
-FROM node:22-bookworm-slim AS application-dependencies
+FROM node:22-bookworm-slim AS dependencies
 
 WORKDIR /app
 
+ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
+
 COPY package.json package-lock.json ./
+RUN npm ci
+
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 
@@ -20,8 +18,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 WORKDIR /app
 
-COPY --from=application-dependencies /app/node_modules ./node_modules
-COPY --from=frontend-dependencies /app/frontend/node_modules ./frontend/node_modules
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY --from=dependencies /app/frontend/node_modules ./frontend/node_modules
 COPY . .
 
 # Build the Electron backend modules for headless Node execution, then create
