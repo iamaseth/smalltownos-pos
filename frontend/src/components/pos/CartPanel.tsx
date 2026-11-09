@@ -21,6 +21,7 @@ interface Props {
   submitting: boolean;
   onPlaceOrder: () => void;
   onShowTablePicker: () => void;
+  onPayNow: () => void;
   onEditItem?: (item: CartItem) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
@@ -120,7 +121,7 @@ function ItemQuantityControl({
   );
 }
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTablePicker, onEditItem, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTablePicker, onPayNow, onEditItem, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -203,10 +204,23 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTabl
         <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>Subtotal</span><span>{fmt(cart.subtotal())}</span></div>
         <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>Tax</span><span>Calculated at checkout</span></div>
         <div className="flex justify-between pb-2 pt-[6px] text-[18px] font-medium"><span>Total before tax</span><span>{fmt(total)}</span></div>
-        <button type="button" onClick={onPlaceOrder} disabled={submitting || cart.items.length === 0}
-          className="flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-[#2563eb] text-[14px] font-medium text-white disabled:opacity-40">
-          <CreditCard size={15}/>{submitting ? t('placing') : 'Pay '+fmt(total)}
-        </button>
+        {(() => {
+          const empty = submitting || cart.items.length === 0;
+          const primary = 'flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#2563eb] text-[14px] font-medium text-white disabled:opacity-40';
+          if (billingType === 'prepaid') {
+            return <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${primary} w-full`}><CreditCard size={15}/>{submitting ? t('placing') : 'Pay '+fmt(total)}</button>;
+          }
+          if (existingOrder) {
+            return <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${primary} w-full`}>{submitting ? t('placing') : `Add to order #${existingOrder.order_number}`}</button>;
+          }
+          return (
+            <div className="flex gap-[6px]">
+              <button type="button" onClick={onPlaceOrder} disabled={empty}
+                className="flex h-10 flex-1 items-center justify-center rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[14px] font-medium text-white disabled:opacity-40">{submitting ? t('placing') : cart.tableId ? 'Send order' : 'Add to tab'}</button>
+              <button type="button" onClick={onPayNow} disabled={empty} className={primary}><CreditCard size={15}/>Pay {fmt(total)}</button>
+            </div>
+          );
+        })()}
         <div className="mt-[6px] flex gap-[6px]">
           <button type="button" disabled={!canHold} onClick={handleHold} className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[12px] disabled:opacity-40"><Pause size={14}/>Hold</button>
           <button type="button" disabled title="Save not connected" className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[12px] opacity-40"><Save size={14}/>Save</button>

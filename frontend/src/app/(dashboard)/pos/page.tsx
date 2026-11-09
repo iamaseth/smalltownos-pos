@@ -127,6 +127,7 @@ export default function POSPage() {
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
+  const [payNow, setPayNow] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [supportError, setSupportError] = useState<{ title: string; subject: string; code: string; message: string; payload: Record<string, unknown> } | null>(null);
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
@@ -595,6 +596,24 @@ export default function POSPage() {
     }
   }, !anyModalOpen);
 
+  const handlePayNow = () => {
+    if (pendingOrder) return;
+    if (cart.items.length === 0) {
+      toast.error(t('cartEmpty'));
+      return;
+    }
+    if (customerMandatory && !cart.customerId) {
+      setShowCustomerPrompt(true);
+      return;
+    }
+    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
+      setShowTablePicker(true);
+      return;
+    }
+    setPayNow(true);
+    setShowPrepaidCheckout(true);
+  };
+
   const handlePlaceOrder = async () => {
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
@@ -716,7 +735,8 @@ export default function POSPage() {
 
   // Handle prepaid checkout - place order and pay in one step
   const handlePrepaidCheckout = async (payments: PrepaidPayment[], walletAmount: number, discount: PrepaidDiscount | null) => {
-    const isPrepaidCheckout = shouldTakePaymentNow;
+    const isPrepaidCheckout = shouldTakePaymentNow || payNow;
+    setPayNow(false);
     setShowPrepaidCheckout(false);
     setSubmitting(true);
     const orderItems = cart.items.map((item) => ({
@@ -1078,6 +1098,7 @@ export default function POSPage() {
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
+    onPayNow: handlePayNow,
     onShowTablePicker: () => setShowTablePicker(true),
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
@@ -1318,7 +1339,7 @@ export default function POSPage() {
       {showPrepaidCheckout && (
         <PrepaidCheckoutModal
           currency={currency}
-          onClose={() => setShowPrepaidCheckout(false)}
+          onClose={() => { setShowPrepaidCheckout(false); setPayNow(false); }}
           onConfirm={handlePrepaidCheckout}
         />
       )}
