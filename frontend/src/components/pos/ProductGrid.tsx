@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Zap, LayoutGrid } from 'lucide-react';
+import { Plus, Search, Keyboard, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Zap, LayoutGrid } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { nameToColor } from '@/lib/image-utils';
 import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import TagBadge from './DietaryBadge';
+import OnScreenKeyboard from './OnScreenKeyboard';
 import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -75,6 +76,16 @@ function menuSearchScore(name: string, rawQuery: string): number {
   return 0;
 }
 
+const FAVORITES_KEY = 'pos-favorite-products';
+const SUBCATEGORY_LIMIT = 8;
+
+const subscribeCoarsePointer = (callback: () => void) => {
+  const query = window.matchMedia('(pointer: coarse)');
+  query.addEventListener('change', callback);
+  return () => query.removeEventListener('change', callback);
+};
+const getCoarsePointer = () => window.matchMedia('(pointer: coarse)').matches;
+
 function getCategoryColorClasses(color: string | null | undefined) {
   if (!color) return null;
   return CATEGORY_COLORS[color.toLowerCase()] || null;
@@ -119,7 +130,12 @@ export default function ProductGrid({
 
   // UI-only grouping: preserve original categories, products, and database.
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const [favorites] = useState<string[]>([]);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const toggleFavorite = (id: string) => setFavorites(prev => {
+    const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); } catch {}
+    return next;
+  });
   // Bundled illustrations load locally, including when Flo is offline.
   const groupLabels = ['Favorites', 'Food', 'Cocktails', 'Spirits', 'Beer & Wine', 'Non-Alcoholic'] as const;
   const groups = useMemo(() => {
@@ -176,6 +192,7 @@ export default function ProductGrid({
   };
   // VeloxPOS category-pill styling; retain FloPOS group IDs and filtering.
   const referenceCategories = [
+    { label: 'Favorites', group: 'Favorites', filter: null, color: '#CA8A04', Icon: Star },
     { label: 'Beer', group: 'Beer & Wine', filter: /beer/i, color: '#F59E0B', Icon: Beer },
     { label: 'Wine', group: 'Beer & Wine', filter: /wine/i, color: '#DC2626', Icon: Wine },
     { label: 'Cocktails', group: 'Cocktails', filter: null, color: '#2563EB', Icon: Martini },
@@ -185,6 +202,24 @@ export default function ProductGrid({
   ] as const;
   const [referenceCategory, setReferenceCategory] = useState<string | null>(null);
   const [catalogView, setCatalogView] = useState<'photo' | 'compact'>('compact');
+  const isTouch = useSyncExternalStore(subscribeCoarsePointer, getCoarsePointer, () => false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [showAllSubcategories, setShowAllSubcategories] = useState(false);
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
+        if (Array.isArray(saved) && saved.length) {
+          setFavorites(saved.map(String));
+          setReferenceCategory('Favorites');
+          setOpenGroup('Favorites');
+        }
+      } catch {}
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const handleTyping = (event: KeyboardEvent) => {
@@ -226,6 +261,8 @@ export default function ProductGrid({
           <input
             ref={searchInputRef}
             type="text"
+            inputMode={isTouch ? 'none' : undefined}
+            onFocus={() => { if (isTouch) setKeyboardOpen(true); }}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
@@ -246,6 +283,9 @@ export default function ProductGrid({
           />
           {search && <button type="button" aria-label="Clear product search" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-300 hover:text-white">Clear</button>}
         </div>
+        <button type="button" aria-label={keyboardOpen ? 'Hide on-screen keyboard' : 'Show on-screen keyboard'} aria-pressed={keyboardOpen}
+          onClick={() => setKeyboardOpen(v => !v)}
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] ${keyboardOpen ? 'bg-blue-600 text-white' : 'bg-[#131d31] text-slate-300 hover:bg-[#182234]'}`}><Keyboard size={20} /></button>
         </div>
         <div className="hidden">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menu</span>
@@ -273,20 +313,34 @@ export default function ProductGrid({
           })}
         </nav>
         {activeGroup && activeGroup !== 'Favorites' && (
-          <nav aria-label="Menu subcategories" className="flex gap-1.5 overflow-x-auto py-1">
-            <button type="button" onClick={() => setSelectedCategory(null)}
-              className={`shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${!selectedCategory ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card'}`}>All {activeGroup}</button>
-            {[
+          (() => {
+            const subcategories = [
               ...(showVirtualBurgers ? [{ id: '__virtual_burgers__', name: 'Burgers' }] : []),
               ...children.map(cat => ({ id: cat.id, name: activeGroup === 'Cocktails' ? cat.name.replace(/\\s+Cocktails?$/i, '') : cat.name.replace(/^Spirits\s*[—–-]\s*/i, '') })),
-            ].map(cat => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
-              className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold ${selectedCategory === cat.id ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card hover:bg-muted'}`}>{cat.name}</button>)}
-          </nav>
+            ];
+            const selectedIndex = subcategories.findIndex(cat => cat.id === selectedCategory);
+            const collapsible = subcategories.length > SUBCATEGORY_LIMIT;
+            const expanded = showAllSubcategories || selectedIndex >= SUBCATEGORY_LIMIT;
+            const visible = collapsible && !expanded ? subcategories.slice(0, SUBCATEGORY_LIMIT) : subcategories;
+            const pill = (active: boolean) => `h-11 shrink-0 rounded-xl border px-4 text-sm font-semibold touch-manipulation ${active ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card hover:bg-muted'}`;
+            return (
+              <nav aria-label="Menu subcategories" className="flex flex-wrap gap-2 py-1">
+                <button type="button" onClick={() => setSelectedCategory(null)} className={pill(!selectedCategory)}>All {activeGroup}</button>
+                {visible.map(cat => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)} className={pill(selectedCategory === cat.id)}>{cat.name}</button>)}
+                {collapsible && selectedIndex < SUBCATEGORY_LIMIT && (
+                  <button type="button" onClick={() => setShowAllSubcategories(v => !v)} className={pill(false)}>{expanded ? 'Less ▴' : `More (${subcategories.length - SUBCATEGORY_LIMIT}) ▾`}</button>
+                )}
+              </nav>
+            );
+          })()
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
-        {activeGroup === 'Favorites' && <h2 className="text-xl font-bold tracking-tight mb-3">Favorites</h2>}
+      <div className="flex min-h-0 flex-1">
+      <div ref={gridScrollRef} className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
+        {activeGroup === 'Favorites' && !search.trim() && displayed.length === 0 && (
+          <p className="py-10 text-center text-sm text-slate-400">No favorites yet. Tap the ☆ on any product to pin it here.</p>
+        )}
         
         {<>
           <div className="flex items-center justify-between mb-2 gap-2">
@@ -311,6 +365,7 @@ export default function ProductGrid({
               <div
                 key={product.id}
                 data-testid="pos-product-card"
+                data-initial={product.name.trim().charAt(0).toUpperCase()}
                 draggable={arranging}
                 onDragStart={e => {setDragId(String(product.id));e.dataTransfer.effectAllowed='move';}}
                 onDragOver={e => {if(arranging)e.preventDefault();}}
@@ -375,16 +430,33 @@ export default function ProductGrid({
                 <h3 className="font-bold text-[13px] text-slate-100 leading-snug line-clamp-2 min-h-[2.4em] break-words">{product.name}</h3>
                 <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#1e293b]/60">
                   <p className="font-bold text-xs text-blue-400">{fmt(Number(product.price))}</p>
+                  <div className="flex items-center gap-1">
+                  <button type="button" aria-label={favorites.includes(String(product.id)) ? `Remove ${product.name} from favorites` : `Add ${product.name} to favorites`}
+                    aria-pressed={favorites.includes(String(product.id))}
+                    onClick={(event) => { event.stopPropagation(); toggleFavorite(String(product.id)); }}
+                    className="pointer-events-auto relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-slate-500 hover:text-amber-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Star size={15} className={favorites.includes(String(product.id)) ? 'fill-amber-400 text-amber-400' : ''} /></button>
                   <button type="button" aria-label={`Quick add ${product.name}`}
                     disabled={arranging}
                     onClick={(event) => { event.stopPropagation(); onQuickAdd(product); }}
-                    className="pointer-events-auto relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Plus size={16} /></button>
+                    className="pointer-events-auto relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Plus size={16} /></button>
+                  </div>
                 </div></div>
                             </div>
             );
           })}
           </div></>}
       </div>
+      {!arranging && !search.trim() && displayed.length > 24 && (
+        <div aria-label="Jump to letter" className="flex w-9 shrink-0 flex-col justify-between py-1">
+          {Array.from(new Set(displayed.map(p => p.name.trim().charAt(0).toUpperCase()))).map(letter => (
+            <button key={letter} type="button"
+              onClick={() => gridScrollRef.current?.querySelector(`[data-initial="${letter}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
+              className="flex min-h-0 flex-1 items-center justify-center text-xs font-bold text-slate-400 hover:text-white active:text-blue-400 touch-manipulation">{letter}</button>
+          ))}
+        </div>
+      )}
+      </div>
+      {keyboardOpen && <OnScreenKeyboard value={search} onChange={setSearch} onClose={() => setKeyboardOpen(false)} />}
     </div>
   );
 }
