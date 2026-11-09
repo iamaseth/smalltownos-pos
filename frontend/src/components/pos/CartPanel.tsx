@@ -21,7 +21,6 @@ interface Props {
   submitting: boolean;
   onPlaceOrder: () => void;
   onShowTablePicker: () => void;
-  onSelectTable?: (table: Props['tables'][number]) => void;
   onEditItem?: (item: CartItem) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
@@ -121,7 +120,7 @@ function ItemQuantityControl({
   );
 }
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTablePicker, onSelectTable, onEditItem, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTablePicker, onEditItem, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -151,7 +150,6 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTabl
   };
 
   const [moreOpen, setMoreOpen] = useState(false);
-  const [tableMenuOpen, setTableMenuOpen] = useState(false);
   const isDrawer = variant === 'drawer';
   const selectedTable = tables.find((table) => table.id === cart.tableId);
   const total = cart.subtotal(); // Preserve the existing checkout calculation; do not invent 10% tax.
@@ -161,17 +159,10 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTabl
       {/* Exact reference hierarchy: header, scrollable rows, notes, fixed totals and actions. */}
       <div className="relative flex shrink-0 items-center justify-between border-b border-[#243049] px-3 py-[10px]">
         <div className="relative">
-          <button type="button" onClick={() => { setTableMenuOpen(!tableMenuOpen); setMoreOpen(false); }}
+          <button type="button" onClick={() => { setMoreOpen(false); onShowTablePicker(); }}
             className="flex items-center gap-1.5 rounded-lg border border-[#3d4f7c] bg-[#22325a] px-[10px] py-[5px] text-[13px] font-medium">
             {cart.orderType === 'takeaway' ? 'Quick Tab' : selectedTable?.name || 'Select Table'} <ChevronDown size={14}/>
           </button>
-          {tableMenuOpen && (
-            <div className="absolute left-0 top-[38px] z-40 min-w-[130px] rounded-lg border border-[#3d4f7c] bg-[#1a2540] p-1 shadow-xl">
-              {tables.map(table => <button key={table.id} type="button" onClick={() => { if (onSelectTable) onSelectTable(table); else { cart.setTableId(table.id); cart.setOrderType('dine_in'); } setTableMenuOpen(false); }}
-                className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[#243049]"><span>{table.name}</span><span className={`h-2 w-2 rounded-full ${table.status === 'occupied' ? 'bg-amber-400' : table.status === 'held' ? 'bg-slate-400' : table.status === 'cleaning' ? 'bg-slate-500' : 'bg-emerald-400'}`} /></button>)}
-              <button type="button" onClick={() => { setTableMenuOpen(false); onShowTablePicker(); }} className="block w-full border-t border-[#3d4f7c] px-2 py-1.5 text-left text-[13px]">All tables…</button>
-            </div>
-          )}
         </div>
         {cart.orderType === 'dine_in' && (
           <div className="flex items-center gap-1 rounded-full bg-[#1a2540] px-1 py-[3px] text-[12px]">
@@ -220,7 +211,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTabl
           <button type="button" disabled={!canHold} onClick={handleHold} className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[12px] disabled:opacity-40"><Pause size={14}/>Hold</button>
           <button type="button" disabled title="Save not connected" className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[12px] opacity-40"><Save size={14}/>Save</button>
           <button type="button" disabled title="Print not connected" className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[12px] opacity-40"><Printer size={14}/>Print</button>
-          <button type="button" onClick={() => { setMoreOpen(!moreOpen); setTableMenuOpen(false); }} aria-label="More actions" aria-expanded={moreOpen}
+          <button type="button" onClick={() => { setMoreOpen(!moreOpen); }} aria-label="More actions" aria-expanded={moreOpen}
             className="flex h-8 w-10 shrink-0 items-center justify-center rounded-lg border border-[#3d4f7c] bg-[#22325a]"><MoreHorizontal size={17}/></button>
         </div>
       </div>

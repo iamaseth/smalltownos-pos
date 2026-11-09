@@ -1,10 +1,12 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { List, MapPinned, X } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { TableTurnoverBadge } from '@/components/tables/TableTurnoverBadge';
+import { shapeFor } from '@/components/tables/FloorplanEditor';
 
 interface Props {
   tables: Table[];
@@ -32,6 +34,20 @@ export default function TablePickerModal({
 }: Props) {
   const heldOrders = useHeldOrdersStore();
   const t = useTranslations('pos');
+  const tTables = useTranslations('tables');
+  const placed = (table: Table) => table.position_x != null && table.position_y != null;
+  const hasPlan = tables.some(placed);
+  const [view, setView] = useState<'plan' | 'list'>(hasPlan ? 'plan' : 'list');
+  const floors = useMemo(() => {
+    const named = [...new Set(tables.map((tb) => tb.floor).filter((f): f is string => Boolean(f)))].sort();
+    return tables.some((tb) => !tb.floor) ? [...named, ''] : named;
+  }, [tables]);
+  const [activeFloor, setActiveFloor] = useState<string | null>(null);
+  const floor = activeFloor !== null && floors.includes(activeFloor) ? activeFloor : (floors[0] ?? '');
+  const floorTables = tables.filter((tb) => (tb.floor || '') === floor);
+  const planTables = floorTables.filter(placed);
+  const unplacedTables = floorTables.filter((tb) => !placed(tb));
+  const showPlan = view === 'plan' && hasPlan;
 
   const handleClick = (table: Table) => {
     if (heldOrders.hasHeldOrder(table.id)) {
@@ -53,16 +69,62 @@ export default function TablePickerModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
+      <div className={`bg-card rounded-2xl p-6 w-full ${showPlan ? 'max-w-4xl' : 'max-w-lg'} max-h-[90vh] overflow-y-auto`}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold">{t('selectTable')}</h2>
+          <div className="flex items-center gap-2">
+          {hasPlan && (
+            <div className="flex rounded-xl border border-border p-1">
+              <button type="button" onClick={() => setView('plan')} aria-pressed={showPlan}
+                className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium ${showPlan ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-muted'}`}><MapPinned size={15} />{tTables('floorplanViewPlan')}</button>
+              <button type="button" onClick={() => setView('list')} aria-pressed={!showPlan}
+                className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium ${!showPlan ? 'bg-brand text-white' : 'text-muted-foreground hover:bg-muted'}`}><List size={15} />{tTables('floorplanViewList')}</button>
+            </div>
+          )}
           <button onClick={onClose} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />
           </button>
+          </div>
         </div>
 
+        {showPlan && floors.length > 1 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {floors.map((f) => (
+              <button key={f || '__unassigned__'} type="button" onClick={() => setActiveFloor(f)}
+                className={`h-10 rounded-full border px-4 text-sm font-medium ${f === floor ? 'border-brand bg-brand text-white' : 'border-border hover:bg-muted'}`}>{f || tTables('floor')}</button>
+            ))}
+          </div>
+        )}
+
+        {showPlan && (
+          <div className="relative mb-4 w-full overflow-hidden rounded-xl border border-border bg-muted/40" style={{ aspectRatio: '16 / 10' }}>
+            {planTables.map((table) => {
+              const isHeld = heldOrders.hasHeldOrder(table.id);
+              const isSelected = selectedTableId === table.id;
+              const isDisabled = table.status === 'cleaning';
+              const shape = shapeFor(table.capacity);
+              const order = table.current_order || table.activeOrder;
+              const tone = isSelected ? 'border-brand bg-brand-light'
+                : isHeld ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/40'
+                : (statusStyles[table.status] || statusStyles.available).border;
+              return (
+                <button key={table.id} type="button" disabled={isDisabled} onClick={() => handleClick(table)}
+                  aria-label={`${table.name} — ${t('tableSeats', { count: table.capacity })}`}
+                  style={{ left: `${table.position_x}%`, top: `${table.position_y}%`, width: `${shape.w / 10}%`, aspectRatio: `${shape.w} / ${shape.h}`, minWidth: 64, minHeight: 56, transform: 'translate(-50%, -50%)' }}
+                  className={`absolute flex flex-col items-center justify-center border-2 bg-card p-1 text-center leading-tight transition-colors ${shape.round ? 'rounded-full' : 'rounded-xl'} ${tone} ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+                  <span className="max-w-full truncate text-sm font-bold text-foreground">{table.name}</span>
+                  <span className="text-[10px] text-muted-foreground">{t('tableSeats', { count: table.capacity })}</span>
+                  {(isHeld || order) && <span className="text-[10px] font-medium text-orange-600">{isHeld ? t('tableHeld') : `#${order?.order_number}`}</span>}
+                  <span className={`absolute -top-1 -end-1 h-3 w-3 rounded-full border border-card ${isHeld ? 'bg-blue-500' : table.status === 'occupied' ? 'bg-orange-500' : table.status === 'reserved' ? 'bg-yellow-500' : table.status === 'cleaning' ? 'bg-gray-500' : 'bg-emerald-500'}`} />
+                </button>
+              );
+            })}
+            {planTables.length === 0 && <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('noTablesFound')}</p>}
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-3">
-          {tables.map((table) => {
+          {(showPlan ? unplacedTables : tables).map((table) => {
             const isHeld = heldOrders.hasHeldOrder(table.id);
             const isSelected = selectedTableId === table.id;
             const style = statusStyles[table.status] || statusStyles.available;
