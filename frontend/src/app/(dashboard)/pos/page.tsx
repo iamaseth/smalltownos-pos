@@ -6,7 +6,6 @@ import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
 import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
@@ -101,7 +100,6 @@ export default function POSPage() {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { customerMandatory, autoPrintKot, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
-  const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
@@ -1075,18 +1073,8 @@ export default function POSPage() {
     }
   };
 
-  const handleCartSelectTable = (table: Table) => {
-    if (table.status === 'cleaning') return;
-    if (heldOrders.hasHeldOrder(table.id) || table.status === 'held') void handleSelectHeldTable(table.id);
-    else if (table.status === 'occupied') void handleSelectOccupiedTable(table);
-    else handleSelectAvailableTable(table.id, table.status === 'reserved' && table.reservation_customer_id
-      ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
-      : null);
-  };
-
   const cartPanelProps = {
     tables,
-    onSelectTable: handleCartSelectTable,
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
@@ -1217,7 +1205,6 @@ export default function POSPage() {
             onOrderSaved={async () => { const response = await api.get('/products?active=1'); setProducts((response.data.products as Product[]) || []); }}
             onProductClick={handleProductClick}
             onQuickAdd={handleQuickAdd}
-            sidebarOpen={leftSidebarOpen}
           />
         </div>
 

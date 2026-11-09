@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Search, Keyboard, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Zap, LayoutGrid } from 'lucide-react';
+import { Plus, Search, Keyboard, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Zap, LayoutGrid } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -15,26 +15,6 @@ import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
-
-const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; activeBg: string; activeText: string }> = {
-  red: { bg: 'bg-red-50 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', border: 'border-red-200 dark:border-red-800/40', activeBg: 'bg-red-500', activeText: 'text-white' },
-  orange: { bg: 'bg-orange-50 dark:bg-orange-950/40', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800/40', activeBg: 'bg-orange-500', activeText: 'text-white' },
-  amber: { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800/40', activeBg: 'bg-amber-500', activeText: 'text-white' },
-  yellow: { bg: 'bg-yellow-50 dark:bg-yellow-950/40', text: 'text-yellow-700 dark:text-yellow-300', border: 'border-yellow-200 dark:border-yellow-800/40', activeBg: 'bg-yellow-500', activeText: 'text-white' },
-  lime: { bg: 'bg-lime-50 dark:bg-lime-950/40', text: 'text-lime-700 dark:text-lime-300', border: 'border-lime-200 dark:border-lime-800/40', activeBg: 'bg-lime-500', activeText: 'text-white' },
-  green: { bg: 'bg-green-50 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800/40', activeBg: 'bg-green-500', activeText: 'text-white' },
-  emerald: { bg: 'bg-emerald-50 dark:bg-emerald-950/40', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800/40', activeBg: 'bg-emerald-500', activeText: 'text-white' },
-  teal: { bg: 'bg-teal-50 dark:bg-teal-950/40', text: 'text-teal-700 dark:text-teal-300', border: 'border-teal-200 dark:border-teal-800/40', activeBg: 'bg-teal-500', activeText: 'text-white' },
-  cyan: { bg: 'bg-cyan-50 dark:bg-cyan-950/40', text: 'text-cyan-700 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-800/40', activeBg: 'bg-cyan-500', activeText: 'text-white' },
-  sky: { bg: 'bg-sky-50 dark:bg-sky-950/40', text: 'text-sky-700 dark:text-sky-300', border: 'border-sky-200 dark:border-sky-800/40', activeBg: 'bg-sky-500', activeText: 'text-white' },
-  blue: { bg: 'bg-blue-50 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800/40', activeBg: 'bg-blue-500', activeText: 'text-white' },
-  indigo: { bg: 'bg-indigo-50 dark:bg-indigo-950/40', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800/40', activeBg: 'bg-indigo-500', activeText: 'text-white' },
-  violet: { bg: 'bg-violet-50 dark:bg-violet-950/40', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-200 dark:border-violet-800/40', activeBg: 'bg-violet-500', activeText: 'text-white' },
-  purple: { bg: 'bg-purple-50 dark:bg-purple-950/40', text: 'text-purple-700 dark:text-purple-300', border: 'border-purple-200 dark:border-purple-800/40', activeBg: 'bg-purple-500', activeText: 'text-white' },
-  fuchsia: { bg: 'bg-fuchsia-50 dark:bg-fuchsia-950/40', text: 'text-fuchsia-700 dark:text-fuchsia-300', border: 'border-fuchsia-200 dark:border-fuchsia-800/40', activeBg: 'bg-fuchsia-500', activeText: 'text-white' },
-  pink: { bg: 'bg-pink-50 dark:bg-pink-950/40', text: 'text-pink-700 dark:text-pink-300', border: 'border-pink-200 dark:border-pink-800/40', activeBg: 'bg-pink-500', activeText: 'text-white' },
-  rose: { bg: 'bg-rose-50 dark:bg-rose-950/40', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800/40', activeBg: 'bg-rose-500', activeText: 'text-white' },
-};
 
 // Fast, offline menu search. No product/database changes or network calls.
 const SEARCH_ALIASES: Record<string, string[]> = {
@@ -86,10 +66,6 @@ const subscribeCoarsePointer = (callback: () => void) => {
 };
 const getCoarsePointer = () => window.matchMedia('(pointer: coarse)').matches;
 
-function getCategoryColorClasses(color: string | null | undefined) {
-  if (!color) return null;
-  return CATEGORY_COLORS[color.toLowerCase()] || null;
-}
 
 interface Props {
   categories: Category[];
@@ -101,14 +77,13 @@ interface Props {
   currency: string;
   onProductClick: (product: Product) => void;
   onQuickAdd: (product: Product) => void;
-  sidebarOpen?: boolean;
   canArrange?: boolean;
   onOrderSaved?: () => Promise<void>;
 }
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, onProductClick, onQuickAdd, sidebarOpen = true, canArrange = false, onOrderSaved,
+  search, setSearch, onProductClick, onQuickAdd, canArrange = false, onOrderSaved,
 }: Props) {
   const cart = useCartStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -348,9 +323,19 @@ export default function ProductGrid({
               <h2 className="text-sm font-bold text-white tracking-tight">{selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : referenceCategory || activeGroup || 'All Products'}</h2>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length}</span>
             </div>
+            <div className="flex items-center gap-2">
+            {canArrange && (arranging ? (
+              <>
+                <button type="button" disabled={saving} onClick={() => setArranging(false)} className="h-10 rounded-xl border border-[#1e293b] bg-[#131d31] px-3 text-xs font-semibold text-slate-300 hover:bg-[#182234]">Cancel</button>
+                <button type="button" disabled={saving} onClick={saveOrder} className="h-10 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save order'}</button>
+              </>
+            ) : (
+              <button type="button" onClick={() => { setIds(ordered.map(p => String(p.id))); setArranging(true); }} className="h-10 rounded-xl border border-[#1e293b] bg-[#131d31] px-3 text-xs font-semibold text-slate-300 hover:bg-[#182234]">Arrange</button>
+            ))}
             <div className="flex items-center bg-[#131d31] p-1 rounded-xl border border-[#1e293b] gap-1 shadow-sm">
               <button type="button" onClick={() => setCatalogView('photo')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'photo' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><LayoutGrid size={12} className="inline-block mr-1.5 align-[-2px]" />Photo View</button>
               <button type="button" onClick={() => setCatalogView('compact')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'compact' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><Zap size={12} className="inline-block mr-1.5 align-[-2px] text-amber-300 fill-amber-300" />Quick-Tap Grid</button>
+            </div>
             </div>
           </div>
           <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
