@@ -8,7 +8,7 @@ import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
-import { ShoppingCart, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ShoppingCart, X } from 'lucide-react';
 import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
@@ -115,7 +115,6 @@ export default function POSPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
-  const [tableRailOpen, setTableRailOpen] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -1076,8 +1075,18 @@ export default function POSPage() {
     }
   };
 
+  const handleCartSelectTable = (table: Table) => {
+    if (table.status === 'cleaning') return;
+    if (heldOrders.hasHeldOrder(table.id) || table.status === 'held') void handleSelectHeldTable(table.id);
+    else if (table.status === 'occupied') void handleSelectOccupiedTable(table);
+    else handleSelectAvailableTable(table.id, table.status === 'reserved' && table.reservation_customer_id
+      ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
+      : null);
+  };
+
   const cartPanelProps = {
     tables,
+    onSelectTable: handleCartSelectTable,
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
@@ -1194,73 +1203,6 @@ export default function POSPage() {
         onToggleFullscreen={toggleFullscreen}
       />
         <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Collapsible desktop table rail; reuses the same table actions as the picker. */}
-        {isRestaurant && tablesRequired && cart.orderType === 'dine_in' && (
-          <aside className={`hidden lg:flex shrink-0 flex-col border-r border-slate-700/50 bg-[#10192b] ${tableRailOpen ? 'w-44 xl:w-48' : 'w-12'}`}>
-            <div className="flex items-center justify-between gap-1 border-b border-[#1e293b] p-4">
-              {tableRailOpen && <span className="pos-reference-display text-sm font-semibold">Tables</span>}
-              <button type="button" onClick={() => setTableRailOpen(v => !v)}
-                className="rounded-md p-2 hover:bg-muted" aria-label={tableRailOpen ? 'Collapse tables' : 'Expand tables'}
-                title={tableRailOpen ? 'Collapse tables' : 'Expand tables'}>
-                {tableRailOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-              </button>
-            </div>
-            {tableRailOpen && (
-              <>
-                <div className="flex-1 overflow-y-auto p-3 space-y-4">
-                  {['Front', 'Middle', 'Back', 'Upstairs', 'Unassigned'].map(area => {
-                    const sectionTables = tables.filter(table => {
-                      const section = (table.section || '').trim().toLowerCase();
-                      return area === 'Unassigned'
-                        ? !['front', 'middle', 'back', 'upstairs'].includes(section)
-                        : section === area.toLowerCase();
-                    });
-                    if (!sectionTables.length) return null;
-                    return (
-                      <section key={area}>
-                        <h3 className="pos-reference-display mb-1.5 px-1 text-xs font-bold uppercase tracking-wide text-slate-400">{area}</h3>
-                        <div className="grid grid-cols-2 gap-2">
-                          {sectionTables.map(table => {
-                            const held = heldOrders.hasHeldOrder(table.id) || table.status === 'held';
-                            const occupied = table.status === 'occupied';
-                            const selected = cart.tableId === table.id;
-                            const unavailable = table.status === 'cleaning';
-                            const color = selected ? 'border-2 border-blue-500 bg-[#131d31] text-white shadow-lg shadow-blue-900/30 ring-2 ring-blue-500/20' : 'border border-[#1e293b] bg-[#131b2e] text-slate-100 hover:border-slate-600';
-                            return (
-                              <button key={table.id} type="button" disabled={unavailable}
-                                title={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
-                                aria-label={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
-                                onClick={() => {
-                                  if (held) void handleSelectHeldTable(table.id);
-                                  else if (occupied) void handleSelectOccupiedTable(table);
-                                  else handleSelectAvailableTable(table.id, table.status === 'reserved' && table.reservation_customer_id
-                                    ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
-                                    : null);
-                                }}
-                                className={`min-h-[72px] rounded-xl p-2.5 text-left text-xs font-semibold transition active:scale-95 flex flex-col justify-between shadow-sm ${color} ${unavailable ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-                                <span className="flex items-center justify-between gap-1"><span className="truncate font-bold text-sm font-[family-name:var(--font-geist-sans)]">{table.name}</span><span className={`h-2 w-2 shrink-0 rounded-full ${selected ? 'bg-blue-400' : held ? 'bg-slate-400' : occupied ? 'bg-amber-400' : unavailable ? 'bg-slate-500' : 'bg-emerald-400'}`} /></span>
-                                <span className="flex items-end justify-between gap-1 text-[10px] font-[family-name:var(--font-geist-sans)]">
-                                  <span className="text-slate-400">{selected ? cart.guestCount : (table.capacity || 4)} Pax</span>
-                                  <span className={`font-semibold ${selected ? 'text-blue-300' : occupied ? 'text-amber-400' : held ? 'text-slate-400' : 'text-emerald-400'}`}>{selected ? 'Active' : held ? 'Hold' : occupied ? 'Occupied' : unavailable ? 'Cleaning' : 'Open'}</span>
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    );
-                  })}
-                </div>
-                <div className="mt-auto border-t border-border p-2 text-[10px] text-muted-foreground">
-                  <div>🟢 Free · ◼ Hold</div>
-                  <div>🟠 Ordered</div>
-                  <button type="button" onClick={() => setShowTablePicker(true)}
-                    className="mt-2 w-full rounded-md border border-border px-2 py-2 text-xs font-medium text-foreground hover:bg-muted">All tables</button>
-                </div>
-              </>
-            )}
-          </aside>
-        )}
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
           <ProductGrid

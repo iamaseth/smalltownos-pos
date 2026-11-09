@@ -21,6 +21,7 @@ interface Props {
   submitting: boolean;
   onPlaceOrder: () => void;
   onShowTablePicker: () => void;
+  onSelectTable?: (table: Props['tables'][number]) => void;
   onEditItem?: (item: CartItem) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
@@ -120,7 +121,7 @@ function ItemQuantityControl({
   );
 }
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTablePicker, onEditItem, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTablePicker, onSelectTable, onEditItem, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -166,8 +167,8 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTabl
           </button>
           {tableMenuOpen && (
             <div className="absolute left-0 top-[38px] z-40 min-w-[130px] rounded-lg border border-[#3d4f7c] bg-[#1a2540] p-1 shadow-xl">
-              {tables.map(table => <button key={table.id} type="button" onClick={() => { cart.setTableId(table.id); cart.setOrderType('dine_in'); setTableMenuOpen(false); }}
-                className="block w-full rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[#243049]">{table.name}</button>)}
+              {tables.map(table => <button key={table.id} type="button" onClick={() => { if (onSelectTable) onSelectTable(table); else { cart.setTableId(table.id); cart.setOrderType('dine_in'); } setTableMenuOpen(false); }}
+                className="flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-[#243049]"><span>{table.name}</span><span className={`h-2 w-2 rounded-full ${table.status === 'occupied' ? 'bg-amber-400' : table.status === 'held' ? 'bg-slate-400' : table.status === 'cleaning' ? 'bg-slate-500' : 'bg-emerald-400'}`} /></button>)}
               <button type="button" onClick={() => { setTableMenuOpen(false); onShowTablePicker(); }} className="block w-full border-t border-[#3d4f7c] px-2 py-1.5 text-left text-[13px]">All tables…</button>
             </div>
           )}

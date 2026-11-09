@@ -213,7 +213,15 @@ export default function ProductGrid({
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <div className="shrink-0 mb-2 px-3 pt-2">
-        <div className="relative mb-2">
+        <div className="mb-2 flex items-center gap-2">
+        <div role="group" aria-label="Order type" className="flex shrink-0 rounded-xl border border-[#1e293b] bg-[#131d31] p-1">
+          {([['dine_in', 'Dine-in'], ['takeaway', 'Takeaway']] as const).map(([type, label]) => (
+            <button key={type} type="button" aria-pressed={cart.orderType === type}
+              onClick={() => cart.setOrderType(type)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${cart.orderType === type ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}>{label}</button>
+          ))}
+        </div>
+        <div className="relative min-w-0 flex-1">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
             ref={searchInputRef}
@@ -233,10 +241,11 @@ export default function ProductGrid({
                 setSearch('');
               }
             }}
-            placeholder="Type to search selected category (or all products)…"
+            placeholder="Search products…"
             className="w-full ps-10 pe-10 py-2 bg-[#131d31] border border-[#1e293b] rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
           {search && <button type="button" aria-label="Clear product search" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-300 hover:text-white">Clear</button>}
+        </div>
         </div>
         <div className="hidden">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menu</span>
@@ -245,7 +254,7 @@ export default function ProductGrid({
             {showMenuPhotos ? 'Compact cards' : 'Show photos'}
           </button>}
         </div>
-        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto pb-2 mb-2">
+        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto py-1 mb-1">
           {referenceCategories.map(({ label, group, filter, color, Icon }) => {
             const selected = referenceCategory === label;
             return <button key={label} type="button" aria-pressed={selected}
@@ -256,11 +265,10 @@ export default function ProductGrid({
                 setSelectedCategory(selected ? null : (filter ? (groups.get(group) ?? []).find(c => filter.test(c.name))?.id ?? null : null));
                 setArranging(false);
               }}
-              className={`group relative h-[74px] w-[74px] shrink-0 rounded-xl overflow-hidden border border-white/10 shadow-[inset_0_-3px_0_rgba(0,0,0,0.20),0_3px_0_rgba(0,0,0,0.18)] flex flex-col items-center justify-center p-1.5 transition-[filter,transform] active:scale-95 text-white ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17] brightness-110' : 'hover:brightness-110'}`}
+              className={`group relative h-10 shrink-0 rounded-xl overflow-hidden border border-white/10 shadow-[inset_0_-2px_0_rgba(0,0,0,0.20)] flex flex-row items-center justify-center gap-1.5 px-3.5 transition-[filter,transform] active:scale-95 text-white ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17] brightness-110' : 'hover:brightness-110'}`}
               style={{ backgroundColor: color }}>
-              {selected && <span className="absolute -top-1 right-2 px-2 py-0.5 rounded-full bg-blue-300 text-slate-900 font-extrabold text-[10px] uppercase">Active</span>}
-              <Icon size={selected ? 23 : 21} strokeWidth={2} className="mb-1 drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
-              <span className={`font-bold text-[11px] tracking-wide text-white drop-shadow ${selected ? 'text-xs font-black' : ''}`}>{label}</span>
+              <Icon size={18} strokeWidth={2} className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
+              <span className={`font-bold text-xs tracking-wide text-white drop-shadow ${selected ? 'font-black' : ''}`}>{label}</span>
             </button>;
           })}
         </nav>
@@ -283,15 +291,15 @@ export default function ProductGrid({
         {<>
           <div className="flex items-center justify-between mb-2 gap-2">
             <div className="flex items-center gap-3">
-              <h2 className="text-sm font-bold text-white tracking-tight">{referenceCategory || activeGroup || 'All Products'} · {selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : 'All'}</h2>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length} Items Shown</span>
+              <h2 className="text-sm font-bold text-white tracking-tight">{selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : referenceCategory || activeGroup || 'All Products'}</h2>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length}</span>
             </div>
             <div className="flex items-center bg-[#131d31] p-1 rounded-xl border border-[#1e293b] gap-1 shadow-sm">
               <button type="button" onClick={() => setCatalogView('photo')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'photo' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><LayoutGrid size={12} className="inline-block mr-1.5 align-[-2px]" />Photo View</button>
               <button type="button" onClick={() => setCatalogView('compact')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'compact' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><Zap size={12} className="inline-block mr-1.5 align-[-2px] text-amber-300 fill-amber-300" />Quick-Tap Grid</button>
             </div>
           </div>
-          <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
+          <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
           {displayed.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
             const categoryAccent = referenceCategories.find(c => c.label === referenceCategory)?.color
@@ -315,7 +323,7 @@ export default function ProductGrid({
                 <button type="button" aria-label={`Edit ${product.name}`}
                   onClick={() => { if (!arranging) onProductClick(product); }}
                   className="absolute inset-0 z-0 w-full h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl" />
-                <div className="pointer-events-none relative z-[1] p-3 min-h-[112px] flex flex-col flex-1 justify-between"><div className="mb-2 flex items-start justify-between gap-1">
+                <div className="pointer-events-none relative z-[1] p-2.5 min-h-[84px] flex flex-col flex-1 justify-between"><div className="mb-1 flex items-start justify-between gap-1 empty:hidden">
                   <div>
                     {!!product.track_inventory && product.stock_quantity <= 0 ? (
                       <span className="rounded-full border border-rose-800 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-rose-400">{t('outOfStock')}</span>
