@@ -17,6 +17,7 @@ interface CartState {
   onlinePlatform: string;
   externalOrderId: string;
   orderNotes: string;
+  tabName: string;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
   updateItemDetails: (cartItemId: string, quantity: number, addons: Addon[], specialInstructions: string) => void;
@@ -34,6 +35,7 @@ interface CartState {
   setOnlinePlatform: (platform: string) => void;
   setExternalOrderId: (id: string) => void;
   setOrderNotes: (notes: string) => void;
+  setTabName: (name: string) => void;
 
   subtotal: () => number;
   itemCount: () => number;
@@ -52,6 +54,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   onlinePlatform: '',
   externalOrderId: '',
   orderNotes: '',
+  tabName: '',
 
   addItem: (product, quantity = 1, addons = [], specialInstructions = '') => {
     const items = get().items;
@@ -120,7 +123,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   clearCart: () => {
-    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, customerSource: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', onlinePlatform: '', externalOrderId: '', orderNotes: '' });
+    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, customerSource: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', onlinePlatform: '', externalOrderId: '', orderNotes: '', tabName: '' });
   },
 
   loadItems: (items, tableId, customerId, guestCount, orderNotes, heldOrderId) => {
@@ -133,7 +136,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     onlinePlatform: type !== 'online' ? '' : state.onlinePlatform,
     externalOrderId: type !== 'online' ? '' : state.externalOrderId,
   })),
-  setTableId: (id) => set({ tableId: id, heldOrderId: null }),
+  setTableId: (id) => set({ tableId: id, heldOrderId: null, ...(id ? { tabName: '' } : {}) }),
   setCustomerId: (id) => set({ customerId: id, customerSource: id == null ? null : 'explicit' }),
   setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null, customerSource: customer ? 'explicit' : null }),
   setReservationCustomer: (customer) => set({ customer, customerId: customer?.id ?? null, customerSource: customer ? 'reservation' : null }),
@@ -142,6 +145,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOnlinePlatform: (platform) => set({ onlinePlatform: platform }),
   setExternalOrderId: (id) => set({ externalOrderId: id }),
   setOrderNotes: (notes) => set({ orderNotes: notes }),
+  setTabName: (name) => set({ tabName: name }),
 
   subtotal: () => {
     return get().items.reduce((sum, item) => {

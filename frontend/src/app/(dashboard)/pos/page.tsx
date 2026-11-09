@@ -19,6 +19,7 @@ import CartPanel from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
 import CustomerSearch from '@/components/pos/CustomerSearch';
 import TablePickerModal from '@/components/pos/TablePickerModal';
+import TabChoiceModal from '@/components/pos/TabChoiceModal';
 import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
 import PaymentModal from '@/components/pos/PaymentModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
@@ -121,6 +122,8 @@ export default function POSPage() {
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
+  const [showTabChoice, setShowTabChoice] = useState(false);
+  const [placeAfterChoice, setPlaceAfterChoice] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
@@ -582,7 +585,7 @@ export default function POSPage() {
 
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyModalOpen = showTablePicker || !!addonProduct || !!editingCartItem || !!checkoutTable
+  const anyModalOpen = showTablePicker || showTabChoice || !!addonProduct || !!editingCartItem || !!checkoutTable
     || !!paymentBill || showCustomerPrompt || showPrepaidCheckout || cashDrawer.open
     || shift.openModalOpen || shift.closeModalOpen;
 
@@ -606,10 +609,6 @@ export default function POSPage() {
       setShowCustomerPrompt(true);
       return;
     }
-    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
-      setShowTablePicker(true);
-      return;
-    }
     setPayNow(true);
     setShowPrepaidCheckout(true);
   };
@@ -623,8 +622,8 @@ export default function POSPage() {
       setShowCustomerPrompt(true);
       return;
     }
-    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
-      setShowTablePicker(true);
+    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId && !cart.tabName) {
+      setShowTabChoice(true);
       return;
     }
 
@@ -678,6 +677,7 @@ export default function POSPage() {
       } else {
         const orderPayload = {
           table_id: cart.tableId,
+          tab_name: cart.tabName || undefined,
           customer_id: cart.customerId,
           type: cart.orderType,
           guest_count: cart.guestCount,
@@ -981,6 +981,43 @@ export default function POSPage() {
     setCheckoutTable(table);
   };
 
+  const placeAfterDestination = () => {
+    setShowTabChoice(false);
+    setPlaceAfterChoice(true);
+  };
+
+  useEffect(() => {
+    if (!placeAfterChoice) return;
+    const timer = setTimeout(() => {
+      setPlaceAfterChoice(false);
+      void handlePlaceOrder();
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeAfterChoice]);
+
+  const handleNewTab = (name: string) => {
+    cart.setTableId(null);
+    cart.setOrderType('dine_in');
+    cart.setTabName(name);
+    placeAfterDestination();
+  };
+
+  const handleTakeawayChoice = (name: string) => {
+    cart.setTableId(null);
+    cart.setOrderType('takeaway');
+    cart.setTabName(name);
+    placeAfterDestination();
+  };
+
+  const handleOpenTab = (order: Order) => {
+    cart.setTableId(null);
+    cart.setOrderType('dine_in');
+    cart.setTabName(order.tab_name || '');
+    setPendingOrder(order);
+    placeAfterDestination();
+  };
+
   const handleSelectHeldTable = async (tableId: string) => {
     try {
       const held = await heldOrders.restoreOrder(tableId);
@@ -1099,7 +1136,7 @@ export default function POSPage() {
     submitting,
     onPlaceOrder: handlePlaceOrder,
     onPayNow: handlePayNow,
-    onShowTablePicker: () => setShowTablePicker(true),
+    onChooseDestination: () => setShowTabChoice(true),
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
   };
@@ -1261,6 +1298,16 @@ export default function POSPage() {
       <CashDrawerMovementModal model={cashDrawer} />
       <ShiftOpenModal model={shift} />
       <ShiftCloseModal model={shift} />
+      {isRestaurant && showTabChoice && (
+        <TabChoiceModal
+          onChooseTable={() => { setShowTabChoice(false); setShowTablePicker(true); }}
+          onNewTab={handleNewTab}
+          onTakeaway={handleTakeawayChoice}
+          onOpenTab={handleOpenTab}
+          onClose={() => setShowTabChoice(false)}
+        />
+      )}
+
       {isRestaurant && showTablePicker && (
         <TablePickerModal
           tables={tables}

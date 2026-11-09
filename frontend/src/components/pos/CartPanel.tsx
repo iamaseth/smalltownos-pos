@@ -20,7 +20,7 @@ interface Props {
   currency: string;
   submitting: boolean;
   onPlaceOrder: () => void;
-  onShowTablePicker: () => void;
+  onChooseDestination: () => void;
   onPayNow: () => void;
   onEditItem?: (item: CartItem) => void;
   variant?: 'sidebar' | 'drawer';
@@ -121,7 +121,7 @@ function ItemQuantityControl({
   );
 }
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTablePicker, onPayNow, onEditItem, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDestination, onPayNow, onEditItem, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -160,12 +160,12 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onShowTabl
       {/* Exact reference hierarchy: header, scrollable rows, notes, fixed totals and actions. */}
       <div className="relative flex shrink-0 items-center justify-between border-b border-[#243049] px-3 py-[10px]">
         <div className="relative">
-          <button type="button" onClick={() => { setMoreOpen(false); onShowTablePicker(); }}
+          <button type="button" onClick={() => { setMoreOpen(false); onChooseDestination(); }}
             className="flex items-center gap-1.5 rounded-lg border border-[#3d4f7c] bg-[#22325a] px-[10px] py-[5px] text-[13px] font-medium">
-            {cart.orderType === 'takeaway' ? 'Quick Tab' : selectedTable?.name || 'Select Table'} <ChevronDown size={14}/>
+            {cart.tabName ? `${cart.orderType === 'takeaway' ? 'Takeaway' : 'Tab'}: ${cart.tabName}` : cart.orderType === 'takeaway' ? 'Takeaway' : selectedTable?.name || 'Walk-in'} <ChevronDown size={14}/>
           </button>
         </div>
-        {cart.orderType === 'dine_in' && (
+        {cart.orderType === 'dine_in' && cart.tableId && (
           <div className="flex items-center gap-1 rounded-full bg-[#1a2540] px-1 py-[3px] text-[12px]">
             <button type="button" className={iconButton} aria-label="Decrease pax" onClick={() => cart.setGuestCount(Math.max(1,cart.guestCount-1))}><Minus size={14}/></button>
             <span className="min-w-[48px] text-center">{cart.guestCount} Pax</span>

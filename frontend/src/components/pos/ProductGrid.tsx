@@ -224,13 +224,6 @@ export default function ProductGrid({
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <div className="shrink-0 mb-2 px-3 pt-2">
         <div className="mb-2 flex items-center gap-2">
-        <div role="group" aria-label="Order type" className="flex shrink-0 rounded-xl border border-[#1e293b] bg-[#131d31] p-1">
-          {([['dine_in', 'Dine-in'], ['takeaway', 'Takeaway']] as const).map(([type, label]) => (
-            <button key={type} type="button" aria-pressed={cart.orderType === type}
-              onClick={() => cart.setOrderType(type)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${cart.orderType === type ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}>{label}</button>
-          ))}
-        </div>
         <div className="relative min-w-0 flex-1">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
