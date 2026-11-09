@@ -5263,6 +5263,15 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 94,
+    name: 'add_order_tab_name',
+    up: () => {
+      if (!getColumns(db, 'orders').includes('tab_name')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN tab_name TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

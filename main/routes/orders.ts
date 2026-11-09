@@ -453,7 +453,7 @@ router.get('/:id', orderReadRateLimit, requirePermission('orders.read'), (req: R
 router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
-    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id } = body;
+    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id, tab_name } = body;
     // Carries optional service charge without automatic calculation policy.
     const idempotencyKey = orderIdempotencyKey(req);
     const idempotencyUserId = String((req as any).user.userId);
@@ -496,11 +496,15 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
     if (online_platform !== undefined && online_platform !== null && typeof online_platform !== 'string') {
       return res.status(400).json({ error: 'online_platform must be a string' });
     }
+    if (tab_name !== undefined && tab_name !== null && typeof tab_name !== 'string') {
+      return res.status(400).json({ error: 'tab_name must be a string' });
+    }
     if (external_order_id !== undefined && external_order_id !== null && typeof external_order_id !== 'string') {
       return res.status(400).json({ error: 'external_order_id must be a string' });
     }
     const onlinePlatform = typeof online_platform === 'string' ? online_platform.trim().slice(0, 100) : null;
     const externalOrderId = typeof external_order_id === 'string' ? external_order_id.trim().slice(0, 100) : null;
+    const tabName = typeof tab_name === 'string' ? tab_name.trim().slice(0, 60) || null : null;
 
     const db = getDatabase();
 
@@ -570,13 +574,13 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       const orderResult = db.prepare(`
         INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
           packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
-          service_charge, service_charge_tax_category_id, online_platform, external_order_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          service_charge, service_charge_tax_category_id, online_platform, external_order_id, tab_name, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `).run(orderNumber, table_id || null, orderCustomerId, authenticatedUserId, type, guest_count || null,
         special_instructions || null, pkgCharge, delCharge,
         chargeContext.packaging_tax_category_id, chargeContext.delivery_tax_category_id,
         serviceCharge, chargeContext.service_charge_tax_category_id,
-        onlinePlatform || null, externalOrderId || null, now(), now());
+        onlinePlatform || null, externalOrderId || null, tabName, now(), now());
 
       const orderId = orderResult.lastInsertRowid;
 
