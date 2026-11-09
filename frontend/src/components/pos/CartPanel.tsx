@@ -4,7 +4,7 @@ import { useState } from 'react';
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck, Globe,
   Plus, Minus, Trash2, Pause, MapPin, SquarePen,
-  Users,
+  Users, MoreHorizontal, Save, Printer, ReceiptText, GitMerge, ArrowLeftRight, BadgePercent,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
@@ -78,12 +78,12 @@ function ItemQuantityControl({
       <>
         <button
           onClick={() => stepBy(-1)}
-          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#3b5079] bg-[#293e68] text-slate-100 transition-colors hover:bg-[#375184]"
           aria-label={t('remove')}
         >
           <Minus size={16} />
         </button>
-        <span className="w-6 text-center text-base font-semibold tabular-nums">{item.quantity}</span>
+        <span className="w-5 text-center text-sm font-semibold tabular-nums">{item.quantity}</span>
         <button
           onClick={() => stepBy(1)}
           className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
@@ -116,7 +116,7 @@ function ItemQuantityControl({
           if (e.key === 'Enter') commitDraft();
         }}
         aria-label={t('quantity')}
-        className="w-14 text-center text-base font-semibold tabular-nums border border-border bg-card rounded-md px-1 py-0.5 outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+        className="w-12 text-center text-sm font-semibold tabular-nums border border-border bg-card rounded-md px-1 py-0.5 outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
       />
       <button
         onClick={() => stepBy(1)}
@@ -159,6 +159,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
     }
   };
 
+  const [moreOpen, setMoreOpen] = useState(false);
   const isDrawer = variant === 'drawer';
 
   return (
@@ -168,7 +169,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         : 'w-full h-full min-h-0 overflow-hidden bg-[#131d31] text-slate-100 flex flex-col shadow-2xl'
     }>
       {/* Order Type */}
-      <div className="px-5 py-4 border-b border-[#1e293b] space-y-2 bg-[#131d31]">
+      <div className="px-3 py-2 border-b border-[#1e293b] space-y-1.5 bg-[#131d31]">
         <div className="flex gap-1 bg-[#182234] rounded-xl p-1 border border-[#1e293b]">
           {(['dine_in', 'takeaway', 'delivery'] as const)
             .filter((type) => isRestaurant || type !== 'dine_in')
@@ -194,7 +195,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         </div>
 
         {cart.orderType === 'dine_in' && (
-          <div className="flex items-center justify-between rounded-full border border-[#1e293b] bg-[#182234] px-3 py-2">
+          <div className="flex items-center justify-between rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1">
             <div className="flex items-center gap-2 text-sm text-muted-foreground"><Users size={15} /><span>{t('pax')}</span></div>
             <div className="flex items-center gap-2">
               <button type="button" aria-label={t('decreasePax')} onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))} className="touch-target rounded-full bg-muted"><Minus size={15} /></button>
@@ -243,7 +244,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       </div>
 
       {!isDrawer && (
-        <div className="flex items-center justify-between border-b border-[#1e293b] px-5 py-4">
+        <div className="flex items-center justify-between border-b border-[#1e293b] px-3 py-2">
           <span className="text-lg font-extrabold text-white">
             {cart.orderType === 'takeaway' ? 'Quick Tab' : cart.tableId ? tables.find(table => table.id === cart.tableId)?.name || 'Table Order' : 'Order'}
           </span>
@@ -275,7 +276,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         ) : (
           <div className="space-y-1">
             {cart.items.map((item) => (
-              <div key={item.id} className="group rounded-lg border border-[#1e293b] bg-[#182234] px-1.5 py-1 shadow-sm hover:border-[#334155]">
+              <div key={item.id} className="group rounded-lg border border-[#293853] bg-[#162139] px-2 py-1.5 shadow-sm hover:border-[#334155]">
                 <div className="flex items-center gap-1">
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 text-sm font-bold leading-tight text-slate-100" title={item.product.name}>
@@ -288,7 +289,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                   {onEditItem && (
                     <button
                       onClick={() => onEditItem(item)}
-                      className="touch-target shrink-0 rounded-full bg-amber-100 text-amber-700 transition-colors hover:bg-amber-200 active:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60 dark:active:bg-amber-950/60"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-amber-700/60 bg-amber-950/50 text-amber-300 hover:bg-amber-900/60"
                       aria-label={tCommon('edit')}
                       title={tCommon('edit')}
                     >
@@ -300,7 +301,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                   </div>
                   <button
                     onClick={() => cart.removeItem(item.id)}
-                    className="touch-target shrink-0 rounded-lg text-slate-500 transition-colors hover:bg-red-950/40 hover:text-red-400 active:scale-90"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-900/60 bg-red-950/30 text-red-300 hover:bg-red-950/60"
                     aria-label={t('remove')}
                   >
                     <Trash2 size={16} />
@@ -327,7 +328,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       </div>
 
       {/* Cart Footer */}
-      <div className="shrink-0 px-3 py-2 border-t border-[#1e293b] bg-[#10192b] space-y-1.5">
+      <div className="relative shrink-0 px-3 py-2 border-t border-[#1e293b] bg-[#10192b] space-y-1">
         {/* Order Notes */}
         {cart.items.length > 0 && (
           <div className="mb-1">
@@ -342,31 +343,44 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             <p className="text-xs text-muted-foreground text-end mt-0.5">{cart.orderNotes.length}/200</p>
           </div>
         )}
-        <div className="flex justify-between mb-1 text-sm">
-          <span className="text-muted-foreground">{t('items')}</span>
-          <span className="font-medium">{cart.itemCount()}</span>
+        <div className="flex justify-between text-xs text-slate-400"><span>{t('items')}</span><span>{cart.itemCount()}</span></div>
+        <div className="flex justify-between text-xs text-slate-400"><span>{t('subtotal')}</span><span>{fmt(cart.subtotal())}</span></div>
+        <div className="flex justify-between items-center border-t border-[#293853] pt-1">
+          <span className="font-bold text-lg text-slate-100">Total</span>
+          <span className="font-black text-xl text-white">{fmt(cart.subtotal())}</span>
         </div>
-        <div className="flex justify-between mb-1 pt-1 border-t border-[#1e293b]/70 text-lg">
-          <span className="font-bold text-white">{t('subtotal')}</span>
-          <span className="font-black text-2xl text-white">
-            {fmt(cart.subtotal())}
-          </span>
+        <Button onClick={onPlaceOrder} disabled={submitting || cart.items.length === 0}
+          className="w-full h-11 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-base">
+          {submitting ? t('placing') : t('placeOrderButton')}
+        </Button>
+        <div className="grid grid-cols-4 gap-1.5">
+          <button type="button" disabled={!canHold} onClick={handleHold}
+            className="h-9 rounded-lg border border-[#3b5079] bg-[#22345a] text-xs text-slate-100 disabled:opacity-40 flex items-center justify-center gap-1">
+            <Pause size={14}/> Hold
+          </button>
+          <button type="button" disabled title="Save action not yet connected"
+            className="h-9 rounded-lg border border-[#3b5079] bg-[#22345a] text-xs text-slate-100 opacity-40 flex items-center justify-center gap-1">
+            <Save size={14}/> Save
+          </button>
+          <button type="button" disabled title="Print action not yet connected"
+            className="h-9 rounded-lg border border-[#3b5079] bg-[#22345a] text-xs text-slate-100 opacity-40 flex items-center justify-center gap-1">
+            <Printer size={14}/> Print
+          </button>
+          <button type="button" onClick={() => setMoreOpen((open) => !open)} aria-expanded={moreOpen} aria-label="More cart actions"
+            className="h-9 rounded-lg border border-[#3b5079] bg-[#22345a] text-slate-100 flex items-center justify-center">
+            <MoreHorizontal size={18}/>
+          </button>
         </div>
-        <div className="flex gap-2">
-          {canHold && (
-            <Button variant="outline" onClick={handleHold} className="flex-1">
-              <Pause size={14} className="me-1" /> {t('holdButton')}
-            </Button>
-          )}
-          <Button
-            onClick={onPlaceOrder}
-            disabled={submitting || cart.items.length === 0}
-            className="flex-1 h-12 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-2xl font-bold text-lg shadow-lg shadow-blue-600/30"
-            size="lg"
-          >
-            {submitting ? t('placing') : t('placeOrderButton')}
-          </Button>
-        </div>
+        {moreOpen && (
+          <div className="absolute bottom-12 right-3 z-30 w-56 rounded-xl border border-[#3b5079] bg-[#1a2744] p-1.5 shadow-2xl">
+            <button type="button" disabled className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-500" title="Split bill workflow not yet connected"><ReceiptText size={16}/> Split bill <span className="ml-auto text-xs">Soon</span></button>
+            <button type="button" disabled={cart.items.length === 0} onClick={() => { if (window.confirm('Clear all items from this cart?')) { cart.clearCart(); setMoreOpen(false); } }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-100 hover:bg-[#2b3d62] disabled:opacity-40"><Trash2 size={16}/> Clear cart</button>
+            <div className="my-1 border-t border-[#3b5079]"/>
+            <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500"><GitMerge size={16}/> Combine bills <span className="ml-auto text-xs">Soon</span></div>
+            <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500"><ArrowLeftRight size={16}/> Move table <span className="ml-auto text-xs">Soon</span></div>
+            <div className="flex items-center gap-2 px-3 py-2 text-sm text-slate-500"><BadgePercent size={16}/> Discount <span className="ml-auto text-xs">Soon</span></div>
+          </div>
+        )}
       </div>
     </div>
   );
