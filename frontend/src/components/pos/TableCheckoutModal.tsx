@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart, Users } from 'lucide-react';
+import { X, ShoppingCart, Users, Trash2, BadgePercent } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -10,6 +10,10 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import toast from 'react-hot-toast';
 import type { Table, Order, Bill, OrderItem } from '@/lib/types';
 import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
+import DiscountDialog, { type DiscountInput } from '@/components/pos/DiscountDialog';
+import { useConfirm } from '@/hooks/use-confirm';
+import { useAuthStore } from '@/store/auth';
+import { tenantCan } from '@/lib/permissions';
 
 interface Props {
   table: Table;
@@ -31,6 +35,14 @@ export default function TableCheckoutModal({
   onAddCartToOrder
 }: Props) {
   const t = useTranslations('pos');
+  const tOrders = useTranslations('orders');
+  const tCommon = useTranslations('common');
+  const { confirm, ConfirmDialog } = useConfirm();
+  const { currentTenant } = useAuthStore();
+  const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
+  const canDiscount = tenantCan(currentTenant, 'orders.discount.apply');
+  const [discountTarget, setDiscountTarget] = useState<{ kind: 'order' } | { kind: 'item'; item: OrderItem } | null>(null);
+  const [removingId, setRemovingId] = useState<number | string | null>(null);
   const fmt = useFormatCurrency();
   const formatItemTotal = (value: unknown, fallback: unknown) => {
     const total = Number(value);
@@ -100,6 +112,43 @@ export default function TableCheckoutModal({
     finally { setGenerating(false); }
   };
 
+  const handleRemoveItem = async (item: OrderItem) => {
+    if (!order) return;
+    if (!await confirm(`${tOrders('removeItemConfirm')} ${item.quantity}x ${item.product_name}`, { destructive: true, confirmLabel: tCommon('remove') })) return;
+    setRemovingId(item.id);
+    try {
+      await api.patch(`/orders/${order.id}/items/${item.id}/cancel`, { reason: tOrders('removedByManager') });
+      const { data } = await api.get(`/orders/${order.id}`);
+      setOrder(data.order);
+      toast.success(tOrders('itemRemoved'));
+    } catch {
+      toast.error(tOrders('removeItemFailed'));
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  const applyDiscount = async (input: DiscountInput) => {
+    if (!order || !discountTarget) return;
+    if (discountTarget.kind === 'order') {
+      await api.patch(`/orders/${order.id}/discount`, {
+        discount_type: input.type,
+        discount_value: input.value,
+        discount_reason: input.value > 0 ? input.reason : undefined,
+        override_pin: input.pin,
+      });
+    } else {
+      await api.patch(`/orders/${order.id}/items/${discountTarget.item.id}/discount`, {
+        discount_type: input.type,
+        discount_value: input.value,
+        override_pin: input.pin,
+      });
+    }
+    const { data } = await api.get(`/orders/${order.id}`);
+    setOrder(data.order);
+    toast.success(input.value === 0 ? t('discountRemoved') : t('discountUpdated'));
+  };
+
   const handleAddCartToOrder = async () => {
     if (!order || !onAddCartToOrder) return;
     setAddingItems(true);
@@ -136,15 +185,16 @@ export default function TableCheckoutModal({
   // Filter active items (not cancelled)
   const activeItems = (order.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
   const splitBills = (order.bills || []).filter((bill) => Boolean(bill.split_group_id));
+  const canEditOrder = order.bill?.payment_status !== 'paid' && splitBills.length === 0;
 
   return (
     <>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
+      <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[92vh] flex flex-col">
         <div className="flex justify-between items-center p-5 border-b border-border">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold text-foreground">{table.name}</h2>
+              <h2 className="text-2xl font-bold text-foreground">{table.name}</h2>
               <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
                 order.bill?.payment_status === 'paid' 
                   ? 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800/40'
@@ -153,7 +203,7 @@ export default function TableCheckoutModal({
                 {order.bill?.payment_status === 'paid' ? t('paid') : t('unpaid')}
               </span>
             </div>
-            <p className="text-sm text-muted-foreground">{t('orderNumber', { number: order.order_number })}</p>
+            <p className="text-base text-muted-foreground">{t('orderNumber', { number: order.order_number })}</p>
           </div>
           <button onClick={onClose} className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />
@@ -163,21 +213,32 @@ export default function TableCheckoutModal({
         <div className="flex-1 overflow-y-auto p-5">
           {/* Existing order items - shown as disabled/reference */}
           <div className="mb-3">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">{t('previousItems')}</p>
-            <div className="space-y-1">
+            <p className="text-sm text-muted-foreground uppercase tracking-wider mb-2">{t('previousItems')}</p>
+            <div className="space-y-2">
               {activeItems.map((item) => (
-                <div key={item.id} className="flex justify-between items-start py-1.5 px-2 bg-muted rounded-lg">
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-muted px-4 py-3">
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-foreground font-medium">
+                    <p className="text-base text-foreground font-medium">
                       {item.quantity}x {item.product_name}
                     </p>
                     {item.special_instructions && (
-                      <p className="text-xs text-muted-foreground italic">{item.special_instructions}</p>
+                      <p className="text-sm text-muted-foreground italic">{item.special_instructions}</p>
                     )}
                   </div>
-                  <span className="text-xs text-muted-foreground ms-2 font-medium">
-                    {formatItemTotal(item.total, item.subtotal)}
+                  <span className="ms-2 text-end">
+                    <span className="block text-base font-semibold text-foreground">{formatItemTotal(item.total, item.subtotal)}</span>
+                    {Number(item.discount_amount) > 0 && <span className="block text-sm font-medium text-emerald-600">−{fmt(Number(item.discount_amount))}</span>}
                   </span>
+                  {canDiscount && canEditOrder && (
+                    <button type="button" onClick={() => setDiscountTarget({ kind: 'item', item })}
+                      aria-label={`Discount ${item.product_name}`}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-500/10 active:bg-emerald-500/20"><BadgePercent size={20} /></button>
+                  )}
+                  {canCancelItems && canEditOrder && (
+                    <button type="button" disabled={removingId === item.id} onClick={() => handleRemoveItem(item)}
+                      aria-label={`${tCommon('remove')} ${item.product_name}`}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-red-500 hover:bg-red-500/10 active:bg-red-500/20 disabled:opacity-40"><Trash2 size={20} /></button>
+                  )}
                 </div>
               ))}
             </div>
@@ -185,16 +246,22 @@ export default function TableCheckoutModal({
         </div>
 
         <div className="p-5 border-t border-border space-y-3">
-          <div className="flex justify-between text-sm">
+          <div className="flex justify-between text-base">
             <span className="text-muted-foreground">{t('subtotal')}</span>
             <span>{fmt(Number(order.subtotal))}</span>
           </div>
+          {Number(order.discount_amount) > 0 && (
+            <div className="flex justify-between text-base font-medium text-emerald-600">
+              <span>{t('discount')}</span>
+              <span>−{fmt(Number(order.discount_amount))}</span>
+            </div>
+          )}
           <TaxBreakdown
             taxAmount={Number(order.tax_amount)}
             taxBreakdown={order.tax_breakdown}
             theme="light"
           />
-          <div className="flex justify-between text-lg font-bold">
+          <div className="flex justify-between text-2xl font-bold">
             <span>{t('total')}</span>
             <span className="text-brand">{fmt(Number(order.total))}</span>
           </div>
@@ -207,6 +274,11 @@ export default function TableCheckoutModal({
 
           {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-muted-foreground">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pay')}</Button>}</div>)}</div>}
 
+          {canDiscount && canEditOrder && (
+            <Button variant="outline" size="lg" className="w-full h-12 text-base" onClick={() => setDiscountTarget({ kind: 'order' })}>
+              <BadgePercent size={18} className="me-2" />{Number(order.discount_amount) > 0 ? 'Change bill discount' : 'Discount whole bill'}
+            </Button>
+          )}
           {/* Show different buttons based on cart state */}
           {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}
           {cartItemCount > 0 ? (
@@ -215,23 +287,23 @@ export default function TableCheckoutModal({
               <Button 
                 onClick={handleAddCartToOrder} 
                 disabled={addingItems}
-                className="w-full"
+                className="w-full h-14 text-base"
                 size="lg"
               >
                 <ShoppingCart size={16} className="me-2" />
                 {addingItems ? t('adding') : t('addToOrder', { count: cartItemCount })}
               </Button>
-              <Button onClick={handleCheckout} variant="outline" className="w-full" disabled={generating}>
+              <Button onClick={handleCheckout} variant="outline" size="lg" className="w-full h-14 text-base" disabled={generating}>
                 {generating ? t('generating') : t('checkoutInstead')}
               </Button>
             </div>
           ) : splitBills.length === 0 ? (
             // Cart empty - show both options
             <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" onClick={() => onAddItems(table, order)}>
+              <Button variant="outline" size="lg" className="h-14 text-base" onClick={() => onAddItems(table, order)}>
                 {t('addItems')}
               </Button>
-              <Button onClick={handleCheckout} disabled={generating}>
+              <Button size="lg" className="h-14 text-base" onClick={handleCheckout} disabled={generating}>
                 {generating ? t('generating') : t('checkout')}
               </Button>
             </div>
@@ -239,6 +311,17 @@ export default function TableCheckoutModal({
         </div>
       </div>
     </div>
+    {ConfirmDialog}
+    {discountTarget && (
+      <DiscountDialog
+        title={discountTarget.kind === 'order' ? 'Discount whole bill' : `Discount ${discountTarget.item.product_name}`}
+        subtitle={discountTarget.kind === 'order' ? `${table.name} · ${t('orderNumber', { number: order.order_number })}` : `${discountTarget.item.quantity}x`}
+        baseAmount={discountTarget.kind === 'order' ? Number(order.subtotal) : Number(discountTarget.item.subtotal)}
+        canClear={discountTarget.kind === 'order' && Number(order.discount_amount) > 0}
+        onClose={() => setDiscountTarget(null)}
+        onApply={applyDiscount}
+      />
+    )}
     {splitBill && <SplitCheckModal bill={splitBill} order={order} onClose={() => setSplitBill(null)} onSplit={(bills) => { setOrder({ ...order, bill: bills[0], bills }); setSplitBill(null); }} />}
     </>
   );
