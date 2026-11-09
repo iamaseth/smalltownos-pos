@@ -39,7 +39,9 @@ export default function TablePickerModal({
   const hasPlan = tables.some(placed);
   const [view, setView] = useState<'plan' | 'list'>(hasPlan ? 'plan' : 'list');
   const floors = useMemo(() => {
-    const named = [...new Set(tables.map((tb) => tb.floor).filter((f): f is string => Boolean(f)))].sort();
+    const count = (f: string) => tables.filter((tb) => (tb.floor || '') === f).length;
+    const named = [...new Set(tables.map((tb) => tb.floor).filter((f): f is string => Boolean(f)))]
+      .sort((a, b) => count(b) - count(a) || a.localeCompare(b));
     return tables.some((tb) => !tb.floor) ? [...named, ''] : named;
   }, [tables]);
   const [activeFloor, setActiveFloor] = useState<string | null>(null);
@@ -48,6 +50,7 @@ export default function TablePickerModal({
   const planTables = floorTables.filter(placed);
   const unplacedTables = floorTables.filter((tb) => !placed(tb));
   const showPlan = view === 'plan' && hasPlan;
+  const floorHasPlan = planTables.length > 0;
 
   const handleClick = (table: Table) => {
     if (heldOrders.hasHeldOrder(table.id)) {
@@ -96,7 +99,11 @@ export default function TablePickerModal({
           </div>
         )}
 
-        {showPlan && (
+        {showPlan && !floorHasPlan && unplacedTables.length > 0 && (
+          <p className="mb-3 text-sm text-muted-foreground">No room layout is saved for this floor yet. Set it up under Tables, then Layout.</p>
+        )}
+
+        {showPlan && floorHasPlan && (
           <div className="relative mb-4 w-full overflow-hidden rounded-xl border border-border bg-muted/40" style={{ aspectRatio: '16 / 10' }}>
             {planTables.map((table) => {
               const isHeld = heldOrders.hasHeldOrder(table.id);
@@ -119,7 +126,6 @@ export default function TablePickerModal({
                 </button>
               );
             })}
-            {planTables.length === 0 && <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">{t('noTablesFound')}</p>}
           </div>
         )}
 
