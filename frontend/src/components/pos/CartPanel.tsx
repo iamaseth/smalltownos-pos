@@ -2,11 +2,9 @@
 
 import { useState } from 'react';
 import {
-  ShoppingCart, UtensilsCrossed, Package, Truck, Globe,
-  Plus, Minus, Trash2, Pause, MapPin, SquarePen,
-  Users, MoreHorizontal, Save, Printer, ReceiptText, GitMerge, ArrowLeftRight, BadgePercent, ChevronDown, CreditCard,
+  Plus, Minus, Trash2, Pause, SquarePen,
+  Users, MoreHorizontal, Save, Printer, GitMerge, ArrowLeftRight, BadgePercent, ChevronDown, CreditCard,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useAuthStore } from '@/store/auth';
@@ -27,13 +25,6 @@ interface Props {
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
 }
-
-const orderTypeIcons = {
-  dine_in: UtensilsCrossed,
-  takeaway: Package,
-  delivery: Truck,
-  online: Globe,
-};
 
 function ItemQuantityControl({
   item,
@@ -135,7 +126,6 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
   const { currentTenant } = useAuthStore();
   const billingType = usePosSettingsStore((s) => s.billingType);
   const t = useTranslations('pos');
-  const tCommon = useTranslations('common');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
