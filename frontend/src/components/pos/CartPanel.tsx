@@ -78,15 +78,15 @@ function ItemQuantityControl({
       <>
         <button
           onClick={() => stepBy(-1)}
-          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#2b3c5c] transition-colors hover:bg-[#38517a] active:bg-[#38517a]"
           aria-label={t('remove')}
         >
           <Minus size={16} />
         </button>
-        <span className="w-6 text-center text-base font-semibold tabular-nums">{item.quantity}</span>
+        <span className="w-5 text-center text-sm font-semibold tabular-nums">{item.quantity}</span>
         <button
           onClick={() => stepBy(1)}
-          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#2b3c5c] transition-colors hover:bg-[#38517a] active:bg-[#38517a]"
           aria-label={t('addItems')}
         >
           <Plus size={16} />
@@ -99,7 +99,7 @@ function ItemQuantityControl({
     <>
       <button
         onClick={() => stepBy(-1)}
-        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#2b3c5c] transition-colors hover:bg-[#38517a] active:bg-[#38517a]"
         aria-label={t('remove')}
       >
         <Minus size={16} />
@@ -116,11 +116,11 @@ function ItemQuantityControl({
           if (e.key === 'Enter') commitDraft();
         }}
         aria-label={t('quantity')}
-        className="w-14 text-center text-base font-semibold tabular-nums border border-border bg-card rounded-md px-1 py-0.5 outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+        className="w-12 text-center text-sm font-semibold tabular-nums border border-border bg-card rounded-md px-1 py-0.5 outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
       />
       <button
         onClick={() => stepBy(1)}
-        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#2b3c5c] transition-colors hover:bg-[#38517a] active:bg-[#38517a]"
         aria-label={t('addItems')}
       >
         <Plus size={16} />
@@ -251,7 +251,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         </div>
       )}
       {/* Cart Items */}
-      <div className={isDrawer ? 'overflow-y-auto p-4 max-h-[40vh]' : 'flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2'}>
+      <div className={isDrawer ? 'overflow-y-auto p-4 max-h-[40vh]' : 'flex-1 min-h-0 overflow-y-auto overscroll-contain px-2 py-1.5'}>
         {/* Previously ordered items (add-items mode) */}
         {existingOrder && existingOrder.items && existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').length > 0 && (
           <div className="mb-3 pb-3 border-b border-dashed border-border">
@@ -275,32 +275,32 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         ) : (
           <div className="space-y-1">
             {cart.items.map((item) => (
-              <div key={item.id} className="group rounded-lg border border-[#1e293b] bg-[#182234] px-1.5 py-1 shadow-sm hover:border-[#334155]">
+              <div key={item.id} className="group rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 shadow-sm hover:border-[#334155]">
                 <div className="flex items-center gap-1">
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 text-sm font-bold leading-tight text-slate-100" title={item.product.name}>
+                    <p className="line-clamp-2 text-[13px] font-semibold leading-[1.15] text-slate-100" title={item.product.name}>
                       {item.product.name}
                     </p>
-                    <p className="mt-0.5 text-xs font-medium text-slate-400">
+                    <p className="mt-0.5 text-[11px] font-medium leading-tight text-slate-400">
                       {fmt(Number(item.product.price))}
                     </p>
                   </div>
                   {onEditItem && (
                     <button
                       onClick={() => onEditItem(item)}
-                      className="touch-target shrink-0 rounded-full bg-amber-100 text-amber-700 transition-colors hover:bg-amber-200 active:bg-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60 dark:active:bg-amber-950/60"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-amber-700/50 bg-amber-950/30 text-amber-400 transition-colors hover:bg-amber-950/60"
                       aria-label={tCommon('edit')}
                       title={tCommon('edit')}
                     >
                       <SquarePen size={15} />
                     </button>
                   )}
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="flex shrink-0 items-center gap-0.5">
                     <ItemQuantityControl item={item} updateQuantity={cart.updateQuantity} />
                   </div>
                   <button
                     onClick={() => cart.removeItem(item.id)}
-                    className="touch-target shrink-0 rounded-lg text-slate-500 transition-colors hover:bg-red-950/40 hover:text-red-400 active:scale-90"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-900/50 text-red-400 transition-colors hover:bg-red-950/40 active:scale-95"
                     aria-label={t('remove')}
                   >
                     <Trash2 size={16} />
