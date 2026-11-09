@@ -40,16 +40,12 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
           <div className="truncate text-[12px] leading-tight font-bold tracking-normal text-white font-[family-name:var(--font-geist-sans)]">{currentTenant?.business_name || 'The Bay Bar'}</div>
           <div className="text-[9px] leading-tight font-normal text-slate-400">SmallTownPOS</div>
         </div>
-      </div>
-      <div className="flex items-center gap-2">
-        {showTableBtn && <button type="button" onClick={onShowTablePicker} className="hidden sm:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149]">
-          <LayoutGrid size={16} className="text-blue-400" />
-          <span>{cart.tableId ? t('tableLabel',{name:tables.find(table=>table.id===cart.tableId)?.name||cart.tableId}) : t('selectTable')}</span>
-        </button>}
         {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={onShowShift} className="hidden md:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
           {shiftHasOpenSession ? <Lock size={15} className="text-emerald-400" /> : <LockOpen size={15} className="text-amber-400" />}
           <span>{shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}</span>
         </button>}
+      </div>
+      <div className="flex items-center gap-2">
         <div className="relative">
         <button type="button" onClick={() => setActionsOpen(v => !v)} aria-expanded={actionsOpen}
           aria-label="Cashier actions" className="flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold hover:bg-[#243149]">
