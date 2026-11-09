@@ -209,6 +209,7 @@ export interface OrderItem {
   subtotal: number;
   tax_amount: number;
   total: number;
+  discount_amount?: number | null;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   tax_snapshot?: TaxSnapshot | null;
   addons: { id?: number | string | null; name: string; price?: number; quantity?: number }[] | null;
