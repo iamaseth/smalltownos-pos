@@ -672,9 +672,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             </button>
             {showQrInstructions && (
               <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-2">
-                <p>Dynamic KHQR requires the bar's receiving bank account. No QR has been generated.</p>
+                <p>Dynamic KHQR requires the bar&apos;s receiving bank account. No QR has been generated.</p>
                 <p>Until configured, verify the transfer in the bank app before recording it under a separately configured QR payment method.</p>
-                <p className="font-semibold">Never mark a QR payment as paid based only on a customer's screenshot.</p>
+                <p className="font-semibold">Never mark a QR payment as paid based only on a customer&apos;s screenshot.</p>
               </div>
             )}
             {payments.map((payment, idx) => {
