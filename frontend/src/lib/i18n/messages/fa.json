@@ -380,7 +380,20 @@
     "saveFailed": "ذخیره ناموفق بود",
     "deleteFailed": "حذف ناموفق بود",
     "confirmDeleteSupply": "ماده اولیه {name} حذف شود؟ تاریخچه جابه‌جایی‌ها حفظ می‌شود.",
-    "confirmDeleteRecipe": "دستور {name} حذف شود؟"
+    "confirmDeleteRecipe": "دستور {name} حذف شود؟",
+    "unitCost": "هزینه هر واحد",
+    "pourSize": "اندازه سرو",
+    "orderUpTo": "سفارش تا",
+    "packSize": "اندازه بسته",
+    "packLabel": "نام بسته (مثلاً بطری)",
+    "noVendor": "بدون تأمین‌کننده",
+    "receiveDelivery": "دریافت محموله",
+    "newVendor": "نام تأمین‌کننده جدید",
+    "deliveryReference": "شماره فاکتور (اختیاری)",
+    "deliverySaved": "محموله ثبت شد",
+    "packs": "بسته‌ها",
+    "packPrice": "قیمت هر بسته",
+    "totalCost": "هزینه کل"
   },
   "kds": {
     "addonsLabel": "افزودنی‌ها",

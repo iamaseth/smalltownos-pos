@@ -380,7 +380,20 @@
     "saveFailed": "保存失败",
     "deleteFailed": "删除失败",
     "confirmDeleteSupply": "要删除库存品“{name}”吗？其变动记录将保留。",
-    "confirmDeleteRecipe": "要删除{name}的配方吗？"
+    "confirmDeleteRecipe": "要删除{name}的配方吗？",
+    "unitCost": "每单位成本",
+    "pourSize": "单次倒酒量",
+    "orderUpTo": "补货上限",
+    "packSize": "包装大小",
+    "packLabel": "包装名称（例如：瓶）",
+    "noVendor": "无供应商",
+    "receiveDelivery": "收货",
+    "newVendor": "新供应商名称",
+    "deliveryReference": "发票号码（可选）",
+    "deliverySaved": "已记录收货",
+    "packs": "包装数",
+    "packPrice": "每包价格",
+    "totalCost": "总成本"
   },
   "kds": {
     "addonsLabel": "加购",

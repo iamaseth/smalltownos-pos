@@ -380,7 +380,20 @@
     "saveFailed": "Gagal menyimpan",
     "deleteFailed": "Gagal menghapus",
     "confirmDeleteSupply": "Hapus persediaan {name}? Riwayat pergerakannya akan disimpan.",
-    "confirmDeleteRecipe": "Hapus resep untuk {name}?"
+    "confirmDeleteRecipe": "Hapus resep untuk {name}?",
+    "unitCost": "Biaya per unit",
+    "pourSize": "Takaran tuang",
+    "orderUpTo": "Pesan hingga",
+    "packSize": "Ukuran kemasan",
+    "packLabel": "Nama kemasan (mis. botol)",
+    "noVendor": "Tanpa pemasok",
+    "receiveDelivery": "Terima pengiriman",
+    "newVendor": "Nama pemasok baru",
+    "deliveryReference": "Nomor faktur (opsional)",
+    "deliverySaved": "Pengiriman dicatat",
+    "packs": "Kemasan",
+    "packPrice": "Harga per kemasan",
+    "totalCost": "Total biaya"
   },
   "kds": {
     "addonsLabel": "Tambahan",

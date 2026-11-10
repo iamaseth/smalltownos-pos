@@ -380,7 +380,20 @@
     "saveFailed": "Kaydedilemedi",
     "deleteFailed": "Silinemedi",
     "confirmDeleteSupply": "{name} sarf malzemesi silinsin mi? Hareket geçmişi korunacak.",
-    "confirmDeleteRecipe": "{name} için tarif silinsin mi?"
+    "confirmDeleteRecipe": "{name} için tarif silinsin mi?",
+    "unitCost": "Birim maliyeti",
+    "pourSize": "Servis ölçüsü",
+    "orderUpTo": "Şuna kadar sipariş ver",
+    "packSize": "Paket boyutu",
+    "packLabel": "Paket adı (örn. şişe)",
+    "noVendor": "Tedarikçi yok",
+    "receiveDelivery": "Teslimat al",
+    "newVendor": "Yeni tedarikçi adı",
+    "deliveryReference": "Fatura numarası (isteğe bağlı)",
+    "deliverySaved": "Teslimat kaydedildi",
+    "packs": "Paketler",
+    "packPrice": "Paket fiyatı",
+    "totalCost": "Toplam maliyet"
   },
   "kds": {
     "addonsLabel": "Eklentiler",

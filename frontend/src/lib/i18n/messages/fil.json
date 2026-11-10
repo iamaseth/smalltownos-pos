@@ -380,7 +380,20 @@
     "saveFailed": "Hindi na-save",
     "deleteFailed": "Hindi na-delete",
     "confirmDeleteSupply": "I-delete ang supply {name}? Mapapanatili ang kasaysayan ng mga galaw nito.",
-    "confirmDeleteRecipe": "I-delete ang recipe para sa {name}?"
+    "confirmDeleteRecipe": "I-delete ang recipe para sa {name}?",
+    "unitCost": "Halaga bawat unit",
+    "pourSize": "Laki ng buhos",
+    "orderUpTo": "Mag-order hanggang",
+    "packSize": "Laki ng pakete",
+    "packLabel": "Pangalan ng pakete (hal. bote)",
+    "noVendor": "Walang supplier",
+    "receiveDelivery": "Tanggapin ang delivery",
+    "newVendor": "Pangalan ng bagong supplier",
+    "deliveryReference": "Numero ng invoice (opsyonal)",
+    "deliverySaved": "Naitala ang delivery",
+    "packs": "Mga pakete",
+    "packPrice": "Presyo bawat pakete",
+    "totalCost": "Kabuuang halaga"
   },
   "kds": {
     "addonsLabel": "Mga Addon",

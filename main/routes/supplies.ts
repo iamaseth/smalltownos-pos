@@ -7,6 +7,7 @@ import {
   getSupply,
   listSupplies,
   listSupplyMovements,
+  receiveDelivery,
   recordSupplyMovement,
   softDeleteSupply,
   updateSupply,
@@ -54,10 +55,41 @@ router.post('/', requirePermission('supplies.manage'), (req: Request, res: Respo
       baseUnit: body.base_unit,
       stockQuantity: body.stock_quantity,
       lowStockThreshold: body.low_stock_threshold,
+      unitCost: body.unit_cost,
+      packSize: body.pack_size,
+      packLabel: body.pack_label,
+      pourSize: body.pour_size,
+      orderUpTo: body.order_up_to,
+      vendorId: body.vendor_id,
       isActive: body.is_active,
       actorUserId: actorId,
     });
     res.status(201).json({ supply });
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+router.post('/deliveries', requirePermission('supplies.manage'), (req: Request, res: Response) => {
+  try {
+    const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    if (!actorId) return res.status(403).json({ error: 'Authentication required' });
+    const body = req.body || {};
+    const lines = Array.isArray(body.lines) ? body.lines : [];
+    const result = receiveDelivery(getDatabase(), {
+      vendorId: body.vendor_id,
+      reference: body.reference,
+      actorUserId: actorId,
+      lines: lines.map((line: Record<string, unknown>) => ({
+        supplyId: String(line.supply_id),
+        packs: line.packs as number | undefined,
+        packPrice: line.pack_price as number | undefined,
+        quantity: line.quantity as number | undefined,
+        unit: line.unit as string | undefined,
+        totalCost: line.total_cost as number | undefined,
+      })),
+    });
+    res.status(201).json(result);
   } catch (error: unknown) {
     sendError(res, error);
   }
@@ -109,6 +141,12 @@ router.put('/:id', requirePermission('supplies.manage'), (req: Request, res: Res
       name: body.name,
       isActive: body.is_active,
       lowStockThreshold: body.low_stock_threshold,
+      unitCost: body.unit_cost,
+      packSize: body.pack_size,
+      packLabel: body.pack_label,
+      pourSize: body.pour_size,
+      orderUpTo: body.order_up_to,
+      vendorId: body.vendor_id,
     });
     res.json({ supply });
   } catch (error: unknown) {

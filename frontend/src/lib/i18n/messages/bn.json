@@ -380,7 +380,20 @@
     "saveFailed": "সংরক্ষণ করতে ব্যর্থ হয়েছে",
     "deleteFailed": "মুছে ফেলতে ব্যর্থ হয়েছে।",
     "confirmDeleteSupply": "{name} মুছে ফেলবেন? এর সরবরাহের ইতিহাস সংরক্ষিত থাকবে।",
-    "confirmDeleteRecipe": "{name} রেসিপি মুছে ফেলবেন?"
+    "confirmDeleteRecipe": "{name} রেসিপি মুছে ফেলবেন?",
+    "unitCost": "প্রতি ইউনিটের খরচ",
+    "pourSize": "পোর সাইজ",
+    "orderUpTo": "অর্ডারের সীমা",
+    "packSize": "প্যাকের আকার",
+    "packLabel": "প্যাকের নাম (যেমন বোতল)",
+    "noVendor": "কোনো সরবরাহকারী নেই",
+    "receiveDelivery": "ডেলিভারি গ্রহণ",
+    "newVendor": "নতুন সরবরাহকারীর নাম",
+    "deliveryReference": "চালান নম্বর (ঐচ্ছিক)",
+    "deliverySaved": "ডেলিভারি নথিভুক্ত হয়েছে",
+    "packs": "প্যাক",
+    "packPrice": "প্রতি প্যাকের দাম",
+    "totalCost": "মোট খরচ"
   },
   "kds": {
     "addonsLabel": "অ্যাড-অন",

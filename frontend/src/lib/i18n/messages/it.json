@@ -380,7 +380,20 @@
     "saveFailed": "Salvataggio non riuscito",
     "deleteFailed": "Eliminazione non riuscita",
     "confirmDeleteSupply": "Eliminare la scorta {name}? La cronologia dei movimenti verrà conservata.",
-    "confirmDeleteRecipe": "Eliminare la ricetta di {name}?"
+    "confirmDeleteRecipe": "Eliminare la ricetta di {name}?",
+    "unitCost": "Costo per unità",
+    "pourSize": "Dose di servizio",
+    "orderUpTo": "Ordina fino a",
+    "packSize": "Dimensione confezione",
+    "packLabel": "Nome confezione (es. bottiglia)",
+    "noVendor": "Nessun fornitore",
+    "receiveDelivery": "Ricevi consegna",
+    "newVendor": "Nome del nuovo fornitore",
+    "deliveryReference": "Numero fattura (facoltativo)",
+    "deliverySaved": "Consegna registrata",
+    "packs": "Confezioni",
+    "packPrice": "Prezzo per confezione",
+    "totalCost": "Costo totale"
   },
   "kds": {
     "addonsLabel": "Extra",

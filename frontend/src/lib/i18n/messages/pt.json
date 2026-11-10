@@ -380,7 +380,20 @@
     "saveFailed": "Falha ao salvar",
     "deleteFailed": "Falha ao excluir",
     "confirmDeleteSupply": "Excluir o insumo {name}? O histórico de movimentações será mantido.",
-    "confirmDeleteRecipe": "Excluir a receita de {name}?"
+    "confirmDeleteRecipe": "Excluir a receita de {name}?",
+    "unitCost": "Custo por unidade",
+    "pourSize": "Medida de dose",
+    "orderUpTo": "Pedir até",
+    "packSize": "Tamanho da embalagem",
+    "packLabel": "Nome da embalagem (ex.: garrafa)",
+    "noVendor": "Sem fornecedor",
+    "receiveDelivery": "Receber entrega",
+    "newVendor": "Nome do novo fornecedor",
+    "deliveryReference": "Número da fatura (opcional)",
+    "deliverySaved": "Entrega registrada",
+    "packs": "Embalagens",
+    "packPrice": "Preço por embalagem",
+    "totalCost": "Custo total"
   },
   "kds": {
     "addonsLabel": "Adicionais",

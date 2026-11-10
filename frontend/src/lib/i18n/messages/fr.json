@@ -380,7 +380,20 @@
     "saveFailed": "Échec de l’enregistrement",
     "deleteFailed": "Échec de la suppression",
     "confirmDeleteSupply": "Supprimer l’approvisionnement {name} ? Son historique des mouvements sera conservé.",
-    "confirmDeleteRecipe": "Supprimer la recette de {name} ?"
+    "confirmDeleteRecipe": "Supprimer la recette de {name} ?",
+    "unitCost": "Coût par unité",
+    "pourSize": "Dose de service",
+    "orderUpTo": "Commander jusqu'à",
+    "packSize": "Taille du conditionnement",
+    "packLabel": "Nom du conditionnement (ex. bouteille)",
+    "noVendor": "Aucun fournisseur",
+    "receiveDelivery": "Réceptionner une livraison",
+    "newVendor": "Nom du nouveau fournisseur",
+    "deliveryReference": "Numéro de facture (facultatif)",
+    "deliverySaved": "Livraison enregistrée",
+    "packs": "Conditionnements",
+    "packPrice": "Prix par conditionnement",
+    "totalCost": "Coût total"
   },
   "kds": {
     "addonsLabel": "Options",

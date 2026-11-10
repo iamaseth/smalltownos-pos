@@ -380,7 +380,20 @@
     "saveFailed": "Speichern fehlgeschlagen",
     "deleteFailed": "Löschen fehlgeschlagen",
     "confirmDeleteSupply": "Vorrat {name} löschen? Die Bewegungshistorie bleibt erhalten.",
-    "confirmDeleteRecipe": "Rezept für {name} löschen?"
+    "confirmDeleteRecipe": "Rezept für {name} löschen?",
+    "unitCost": "Kosten pro Einheit",
+    "pourSize": "Ausschankmenge",
+    "orderUpTo": "Bestellen bis",
+    "packSize": "Packungsgröße",
+    "packLabel": "Packungsname (z. B. Flasche)",
+    "noVendor": "Kein Lieferant",
+    "receiveDelivery": "Lieferung erfassen",
+    "newVendor": "Name des neuen Lieferanten",
+    "deliveryReference": "Rechnungsnummer (optional)",
+    "deliverySaved": "Lieferung erfasst",
+    "packs": "Packungen",
+    "packPrice": "Preis pro Packung",
+    "totalCost": "Gesamtkosten"
   },
   "kds": {
     "addonsLabel": "Zusätze",

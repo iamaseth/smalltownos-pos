@@ -380,7 +380,20 @@
     "saveFailed": "Ruajtja dështoi",
     "deleteFailed": "Fshirja dështoi",
     "confirmDeleteSupply": "Të fshihet materiali {name}? Historiku i lëvizjeve do të ruhet.",
-    "confirmDeleteRecipe": "Të fshihet receta për {name}?"
+    "confirmDeleteRecipe": "Të fshihet receta për {name}?",
+    "unitCost": "Kostoja për njësi",
+    "pourSize": "Madhësia e derdhjes",
+    "orderUpTo": "Porosit deri në",
+    "packSize": "Madhësia e paketimit",
+    "packLabel": "Emri i paketimit (p.sh. shishe)",
+    "noVendor": "Pa furnizues",
+    "receiveDelivery": "Prano dorëzimin",
+    "newVendor": "Emri i furnizuesit të ri",
+    "deliveryReference": "Numri i faturës (opsionale)",
+    "deliverySaved": "Dorëzimi u regjistrua",
+    "packs": "Paketime",
+    "packPrice": "Çmimi për paketim",
+    "totalCost": "Kostoja totale"
   },
   "kds": {
     "addonsLabel": "Shtesat",

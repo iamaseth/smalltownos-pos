@@ -380,7 +380,20 @@
     "saveFailed": "保存に失敗しました",
     "deleteFailed": "削除に失敗しました",
     "confirmDeleteSupply": "食材「{name}」を削除しますか？入出庫履歴は保持されます。",
-    "confirmDeleteRecipe": "{name}のレシピを削除しますか？"
+    "confirmDeleteRecipe": "{name}のレシピを削除しますか？",
+    "unitCost": "単価",
+    "pourSize": "注ぎ量",
+    "orderUpTo": "発注上限",
+    "packSize": "パックサイズ",
+    "packLabel": "パック名（例：ボトル）",
+    "noVendor": "仕入先なし",
+    "receiveDelivery": "納品を受け取る",
+    "newVendor": "新しい仕入先名",
+    "deliveryReference": "請求書番号（任意）",
+    "deliverySaved": "納品を記録しました",
+    "packs": "パック数",
+    "packPrice": "パック単価",
+    "totalCost": "合計金額"
   },
   "kds": {
     "addonsLabel": "追加項目",

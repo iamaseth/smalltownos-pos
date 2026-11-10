@@ -380,7 +380,20 @@
     "saveFailed": "Не удалось сохранить.",
     "deleteFailed": "Не удалось удалить",
     "confirmDeleteSupply": "Удалить запас {name}? История его перемещения будет сохранена.",
-    "confirmDeleteRecipe": "Удалить рецепт {name}?"
+    "confirmDeleteRecipe": "Удалить рецепт {name}?",
+    "unitCost": "Стоимость за единицу",
+    "pourSize": "Размер порции",
+    "orderUpTo": "Заказывать до",
+    "packSize": "Размер упаковки",
+    "packLabel": "Название упаковки (напр. бутылка)",
+    "noVendor": "Без поставщика",
+    "receiveDelivery": "Принять поставку",
+    "newVendor": "Название нового поставщика",
+    "deliveryReference": "Номер счёта (необязательно)",
+    "deliverySaved": "Поставка записана",
+    "packs": "Упаковки",
+    "packPrice": "Цена за упаковку",
+    "totalCost": "Общая стоимость"
   },
   "kds": {
     "addonsLabel": "Дополнения",

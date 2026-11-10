@@ -380,7 +380,20 @@
     "saveFailed": "Không thể lưu",
     "deleteFailed": "Không thể xóa",
     "confirmDeleteSupply": "Xóa vật tư {name}? Lịch sử biến động vẫn được giữ lại.",
-    "confirmDeleteRecipe": "Xóa công thức của {name}?"
+    "confirmDeleteRecipe": "Xóa công thức của {name}?",
+    "unitCost": "Giá vốn mỗi đơn vị",
+    "pourSize": "Lượng rót",
+    "orderUpTo": "Đặt đến mức",
+    "packSize": "Kích cỡ gói",
+    "packLabel": "Tên gói (ví dụ: chai)",
+    "noVendor": "Không có nhà cung cấp",
+    "receiveDelivery": "Nhận hàng",
+    "newVendor": "Tên nhà cung cấp mới",
+    "deliveryReference": "Số hóa đơn (không bắt buộc)",
+    "deliverySaved": "Đã ghi nhận lô hàng",
+    "packs": "Số gói",
+    "packPrice": "Giá mỗi gói",
+    "totalCost": "Tổng chi phí"
   },
   "kds": {
     "addonsLabel": "Tuỳ chọn",

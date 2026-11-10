@@ -380,7 +380,20 @@
     "saveFailed": "فشل الحفظ",
     "deleteFailed": "فشل الحذف",
     "confirmDeleteSupply": "هل تريد حذف المادة {name}؟ سيتم الاحتفاظ بسجل تحركاتها.",
-    "confirmDeleteRecipe": "هل تريد حذف الوصفة الخاصة بـ {name}؟"
+    "confirmDeleteRecipe": "هل تريد حذف الوصفة الخاصة بـ {name}؟",
+    "unitCost": "التكلفة لكل وحدة",
+    "pourSize": "حجم السكب",
+    "orderUpTo": "الطلب حتى",
+    "packSize": "حجم العبوة",
+    "packLabel": "اسم العبوة (مثل زجاجة)",
+    "noVendor": "بدون مورد",
+    "receiveDelivery": "استلام شحنة",
+    "newVendor": "اسم المورد الجديد",
+    "deliveryReference": "رقم الفاتورة (اختياري)",
+    "deliverySaved": "تم تسجيل الشحنة",
+    "packs": "العبوات",
+    "packPrice": "سعر العبوة",
+    "totalCost": "التكلفة الإجمالية"
   },
   "kds": {
     "addonsLabel": "الإضافات",

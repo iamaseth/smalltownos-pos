@@ -380,7 +380,20 @@
     "saveFailed": "सहेजने में विफल",
     "deleteFailed": "हटाने में विफल",
     "confirmDeleteSupply": "आपूर्ति {name} हटाएं? इसके मूवमेंट का इतिहास रखा जाएगा।",
-    "confirmDeleteRecipe": "{name} के लिए नुस्खा हटाएं?"
+    "confirmDeleteRecipe": "{name} के लिए नुस्खा हटाएं?",
+    "unitCost": "प्रति इकाई लागत",
+    "pourSize": "पोर का आकार",
+    "orderUpTo": "इतना ऑर्डर करें",
+    "packSize": "पैक का आकार",
+    "packLabel": "पैक का नाम (जैसे बोतल)",
+    "noVendor": "कोई विक्रेता नहीं",
+    "receiveDelivery": "डिलीवरी प्राप्त करें",
+    "newVendor": "नए विक्रेता का नाम",
+    "deliveryReference": "चालान संख्या (वैकल्पिक)",
+    "deliverySaved": "डिलीवरी दर्ज हुई",
+    "packs": "पैक",
+    "packPrice": "प्रति पैक कीमत",
+    "totalCost": "कुल लागत"
   },
   "kds": {
     "addonsLabel": "ऐड-ऑन",

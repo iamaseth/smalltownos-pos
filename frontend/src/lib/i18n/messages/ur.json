@@ -380,7 +380,20 @@
     "saveFailed": "محفوظ نہیں ہو سکا",
     "deleteFailed": "حذف نہیں ہو سکا",
     "confirmDeleteSupply": "سامان {name} حذف کریں؟ اس کی حرکت کی تاریخ محفوظ رہے گی۔",
-    "confirmDeleteRecipe": "{name} کی ترکیب حذف کریں؟"
+    "confirmDeleteRecipe": "{name} کی ترکیب حذف کریں؟",
+    "unitCost": "فی یونٹ لاگت",
+    "pourSize": "ڈالنے کی مقدار",
+    "orderUpTo": "آرڈر کی حد",
+    "packSize": "پیک کا سائز",
+    "packLabel": "پیک کا نام (مثلاً بوتل)",
+    "noVendor": "کوئی سپلائر نہیں",
+    "receiveDelivery": "ڈیلیوری وصول کریں",
+    "newVendor": "نئے سپلائر کا نام",
+    "deliveryReference": "انوائس نمبر (اختیاری)",
+    "deliverySaved": "ڈیلیوری درج ہو گئی",
+    "packs": "پیکس",
+    "packPrice": "فی پیک قیمت",
+    "totalCost": "کل لاگت"
   },
   "kds": {
     "addonsLabel": "ایڈ آنز",

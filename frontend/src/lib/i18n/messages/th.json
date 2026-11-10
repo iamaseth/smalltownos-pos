@@ -380,7 +380,20 @@
     "saveFailed": "บันทึกไม่สำเร็จ",
     "deleteFailed": "ลบไม่สำเร็จ",
     "confirmDeleteSupply": "ลบวัสดุ {name} หรือไม่? ประวัติการเคลื่อนไหวจะยังคงอยู่",
-    "confirmDeleteRecipe": "ลบสูตรของ {name} หรือไม่?"
+    "confirmDeleteRecipe": "ลบสูตรของ {name} หรือไม่?",
+    "unitCost": "ต้นทุนต่อหน่วย",
+    "pourSize": "ปริมาณต่อการเทหนึ่งครั้ง",
+    "orderUpTo": "สั่งให้ถึง",
+    "packSize": "ขนาดบรรจุภัณฑ์",
+    "packLabel": "ชื่อบรรจุภัณฑ์ (เช่น ขวด)",
+    "noVendor": "ไม่มีซัพพลายเออร์",
+    "receiveDelivery": "รับสินค้า",
+    "newVendor": "ชื่อซัพพลายเออร์ใหม่",
+    "deliveryReference": "เลขที่ใบแจ้งหนี้ (ไม่บังคับ)",
+    "deliverySaved": "บันทึกการรับสินค้าแล้ว",
+    "packs": "จำนวนแพ็ก",
+    "packPrice": "ราคาต่อแพ็ก",
+    "totalCost": "ต้นทุนรวม"
   },
   "kds": {
     "addonsLabel": "ตัวเลือกเพิ่ม",

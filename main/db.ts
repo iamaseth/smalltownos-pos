@@ -5314,6 +5314,42 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 95,
+    name: 'add_supply_costing_and_vendors',
+    up: () => {
+      const supplyColumns = getColumns(db, 'supplies');
+      const supplyAdditions: Array<[string, string]> = [
+        ['unit_cost', 'REAL DEFAULT NULL'],
+        ['pack_size', 'REAL DEFAULT NULL'],
+        ['pack_label', 'TEXT DEFAULT NULL'],
+        ['pour_size', 'REAL DEFAULT NULL'],
+        ['order_up_to', 'REAL DEFAULT NULL'],
+        ['vendor_id', 'TEXT DEFAULT NULL'],
+      ];
+      for (const [column, definition] of supplyAdditions) {
+        if (!supplyColumns.includes(column)) {
+          db.exec(`ALTER TABLE supplies ADD COLUMN ${column} ${definition}`);
+        }
+      }
+      if (!getColumns(db, 'supply_movements').includes('unit_cost')) {
+        db.exec(`ALTER TABLE supply_movements ADD COLUMN unit_cost REAL DEFAULT NULL`);
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS vendors (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          phone TEXT,
+          notes TEXT,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          deleted_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_vendors_name ON vendors(name COLLATE NOCASE);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

@@ -380,7 +380,20 @@
     "saveFailed": "儲存失敗",
     "deleteFailed": "刪除失敗",
     "confirmDeleteSupply": "要刪除庫存品“{name}”嗎？其變動記錄將保留。",
-    "confirmDeleteRecipe": "要刪除{name}的配方嗎？"
+    "confirmDeleteRecipe": "要刪除{name}的配方嗎？",
+    "unitCost": "每單位成本",
+    "pourSize": "單次倒酒量",
+    "orderUpTo": "補貨上限",
+    "packSize": "包裝大小",
+    "packLabel": "包裝名稱（例如：瓶）",
+    "noVendor": "無供應商",
+    "receiveDelivery": "收貨",
+    "newVendor": "新供應商名稱",
+    "deliveryReference": "發票號碼（選填）",
+    "deliverySaved": "已記錄收貨",
+    "packs": "包裝數",
+    "packPrice": "每包價格",
+    "totalCost": "總成本"
   },
   "kds": {
     "addonsLabel": "加購",

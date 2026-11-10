@@ -25,11 +25,26 @@ export interface SupplyRecord {
   base_unit: SupplyUnit;
   stock_quantity: number;
   low_stock_threshold: number | null;
+  unit_cost: number | null;
+  pack_size: number | null;
+  pack_label: string | null;
+  pour_size: number | null;
+  order_up_to: number | null;
+  vendor_id: string | null;
   is_active: number;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
   is_low_stock?: number;
+}
+
+export interface SupplyCostingInput {
+  unitCost?: number | null;
+  packSize?: number | null;
+  packLabel?: string | null;
+  pourSize?: number | null;
+  orderUpTo?: number | null;
+  vendorId?: string | null;
 }
 
 export interface SupplyMovement {
@@ -40,6 +55,7 @@ export interface SupplyMovement {
   movement_type: SupplyMovementType;
   unit: SupplyUnit;
   stock_after: number;
+  unit_cost: number | null;
   reason: string | null;
   actor_user_id: string;
   actor_name: string | null;
@@ -48,7 +64,7 @@ export interface SupplyMovement {
   created_at: string;
 }
 
-export interface CreateSupplyInput {
+export interface CreateSupplyInput extends SupplyCostingInput {
   id?: string;
   name: string;
   baseUnit: string;
@@ -91,6 +107,51 @@ function normalizeQuantity(value: unknown, field = 'quantity'): number {
     throw new SupplyServiceError(400, `${field} must be a finite number`);
   }
   return quantity;
+}
+
+function optionalNonNegative(value: unknown, field: string, mustBePositive = false): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const parsed = normalizeQuantity(value, field);
+  if (parsed < 0 || (mustBePositive && parsed === 0)) {
+    throw new SupplyServiceError(400, `${field} must be ${mustBePositive ? 'greater than zero' : 'non-negative'}`);
+  }
+  return roundQuantity(parsed);
+}
+
+function resolveCosting(
+  input: SupplyCostingInput,
+  current: Partial<SupplyRecord> | null,
+): {
+  unit_cost: number | null;
+  pack_size: number | null;
+  pack_label: string | null;
+  pour_size: number | null;
+  order_up_to: number | null;
+  vendor_id: string | null;
+} {
+  const pick = <T>(next: T | undefined, existing: T | null | undefined): T | null =>
+    next === undefined ? (existing ?? null) : next;
+  const packLabel = input.packLabel === undefined
+    ? (current?.pack_label ?? null)
+    : (input.packLabel === null || String(input.packLabel).trim() === '' ? null : String(input.packLabel).trim().slice(0, 60));
+  const vendorId = input.vendorId === undefined
+    ? (current?.vendor_id ?? null)
+    : (input.vendorId === null || String(input.vendorId).trim() === '' ? null : String(input.vendorId).trim());
+  return {
+    unit_cost: pick(optionalNonNegative(input.unitCost, 'unit_cost'), current?.unit_cost),
+    pack_size: pick(optionalNonNegative(input.packSize, 'pack_size', true), current?.pack_size),
+    pack_label: packLabel,
+    pour_size: pick(optionalNonNegative(input.pourSize, 'pour_size', true), current?.pour_size),
+    order_up_to: pick(optionalNonNegative(input.orderUpTo, 'order_up_to'), current?.order_up_to),
+    vendor_id: vendorId,
+  };
+}
+
+function assertVendorExists(db: ReturnType<typeof getDatabase>, vendorId: string | null): void {
+  if (vendorId === null) return;
+  const vendor = db.prepare('SELECT 1 FROM vendors WHERE id = ? AND deleted_at IS NULL').get(vendorId);
+  if (!vendor) throw new SupplyServiceError(400, 'vendor_id does not match a vendor');
 }
 
 export function getSupply(db: ReturnType<typeof getDatabase>, id: string): SupplyRecord {
@@ -153,12 +214,22 @@ export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSu
   const id = input.id || newId();
   const timestamp = now();
   const isActive = input.isActive === false ? 0 : 1;
+  const costing = resolveCosting(input, null);
+  assertVendorExists(db, costing.vendor_id);
 
   withTxn(() => {
     db.prepare(`
-      INSERT INTO supplies (id, name, base_unit, stock_quantity, low_stock_threshold, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, 0, ?, ?, ?, ?)
-    `).run(id, name, baseUnit, lowStockThreshold, isActive, timestamp, timestamp);
+      INSERT INTO supplies (
+        id, name, base_unit, stock_quantity, low_stock_threshold,
+        unit_cost, pack_size, pack_label, pour_size, order_up_to, vendor_id,
+        is_active, created_at, updated_at
+      )
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id, name, baseUnit, lowStockThreshold,
+      costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id,
+      isActive, timestamp, timestamp,
+    );
 
     if (stockQuantity !== 0) {
       if (!input.actorUserId) throw new SupplyServiceError(400, 'actor_user_id is required for opening stock');
@@ -182,7 +253,7 @@ export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSu
 export function updateSupply(
   db: ReturnType<typeof getDatabase>,
   id: string,
-  input: { name?: string; isActive?: boolean; lowStockThreshold?: number | null },
+  input: { name?: string; isActive?: boolean; lowStockThreshold?: number | null } & SupplyCostingInput,
 ): SupplyRecord {
   const supply = getSupply(db, id);
   const name = input.name === undefined ? supply.name : String(input.name).trim();
@@ -199,10 +270,19 @@ export function updateSupply(
     }
   }
   const isActive = input.isActive === undefined ? supply.is_active : (input.isActive ? 1 : 0);
+  const costing = resolveCosting(input, supply);
+  assertVendorExists(db, costing.vendor_id);
   db.prepare(`
-    UPDATE supplies SET name = ?, low_stock_threshold = ?, is_active = ?, updated_at = ?
+    UPDATE supplies SET
+      name = ?, low_stock_threshold = ?, is_active = ?,
+      unit_cost = ?, pack_size = ?, pack_label = ?, pour_size = ?, order_up_to = ?, vendor_id = ?,
+      updated_at = ?
     WHERE id = ? AND deleted_at IS NULL
-  `).run(name, lowStockThreshold, isActive, now(), id);
+  `).run(
+    name, lowStockThreshold, isActive,
+    costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id,
+    now(), id,
+  );
   return getSupply(db, id);
 }
 
@@ -227,6 +307,7 @@ export function applySupplyStockChange(
     referenceType?: string | null;
     referenceId?: string | number | null;
     createdAt?: string;
+    unitCost?: number | null;
   },
 ): { stockBefore: number; stockAfter: number; movementId: number } {
   const supply = db.prepare('SELECT * FROM supplies WHERE id = ?').get(options.supplyId) as
@@ -251,8 +332,8 @@ export function applySupplyStockChange(
   const movement = db.prepare(`
     INSERT INTO supply_movements (
       supply_id, quantity_delta, movement_type, unit, stock_after,
-      reason, actor_user_id, reference_type, reference_id, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      reason, actor_user_id, reference_type, reference_id, created_at, unit_cost
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     options.supplyId,
     deltaInBase,
@@ -264,6 +345,7 @@ export function applySupplyStockChange(
     options.referenceType ?? null,
     options.referenceId === null || options.referenceId === undefined ? null : String(options.referenceId),
     timestamp,
+    options.unitCost ?? null,
   );
 
   return { stockBefore, stockAfter, movementId: Number(movement.lastInsertRowid) };
@@ -316,7 +398,7 @@ function recordSupplyMovementInTxn(db: ReturnType<typeof getDatabase>, input: Re
   const row = db.prepare(`
     SELECT
       m.id, m.supply_id, s.name AS supply_name, m.quantity_delta, m.movement_type, m.unit,
-      m.stock_after, m.reason, m.actor_user_id, u.name AS actor_name,
+      m.stock_after, m.unit_cost, m.reason, m.actor_user_id, u.name AS actor_name,
       m.reference_type, m.reference_id, m.created_at
     FROM supply_movements m
     LEFT JOIN supplies s ON s.id = m.supply_id
@@ -363,7 +445,7 @@ export function listSupplyMovements(
   const rows = db.prepare(`
     SELECT
       m.id, m.supply_id, s.name AS supply_name, m.quantity_delta, m.movement_type, m.unit,
-      m.stock_after, m.reason, m.actor_user_id, u.name AS actor_name,
+      m.stock_after, m.unit_cost, m.reason, m.actor_user_id, u.name AS actor_name,
       m.reference_type, m.reference_id, m.created_at
     FROM supply_movements m
     LEFT JOIN supplies s ON s.id = m.supply_id
@@ -379,4 +461,112 @@ export function listSupplyMovements(
     movements,
     nextCursor: hasMore ? movements[movements.length - 1].id : null,
   };
+}
+
+export interface DeliveryLineInput {
+  supplyId: string;
+  packs?: number;
+  packPrice?: number;
+  quantity?: number;
+  unit?: string;
+  totalCost?: number;
+}
+
+export interface ReceiveDeliveryInput {
+  vendorId?: string | null;
+  reference?: string | null;
+  lines: DeliveryLineInput[];
+  actorUserId: string;
+  createdAt?: string;
+}
+
+export interface DeliveryLineResult {
+  supply_id: string;
+  received_quantity: number;
+  unit_cost: number | null;
+  stock_after: number;
+  average_cost: number | null;
+}
+
+export function receiveDelivery(
+  db: ReturnType<typeof getDatabase>,
+  input: ReceiveDeliveryInput,
+): { delivery_id: string; lines: DeliveryLineResult[] } {
+  if (!input.actorUserId) throw new SupplyServiceError(400, 'actor_user_id is required');
+  if (!Array.isArray(input.lines) || input.lines.length === 0) {
+    throw new SupplyServiceError(400, 'lines must contain at least one item');
+  }
+  if (input.lines.length > 200) throw new SupplyServiceError(400, 'too many lines in one delivery');
+  const vendorId = input.vendorId === undefined || input.vendorId === null || String(input.vendorId).trim() === ''
+    ? null
+    : String(input.vendorId).trim();
+  assertVendorExists(db, vendorId);
+  const reference = input.reference ? String(input.reference).trim().slice(0, 120) : null;
+  const deliveryId = `del_${randomBytes(8).toString('hex')}`;
+  const timestamp = input.createdAt || now();
+
+  return withTxn(() => {
+    const results: DeliveryLineResult[] = [];
+    for (const line of input.lines) {
+      const supply = getSupply(db, String(line.supplyId));
+      let baseQuantity: number;
+      let totalCost: number | null = null;
+
+      if (line.packs !== undefined && line.packs !== null) {
+        const packs = normalizeQuantity(line.packs, 'packs');
+        if (packs <= 0) throw new SupplyServiceError(400, 'packs must be greater than zero');
+        if (!supply.pack_size) throw new SupplyServiceError(400, `${supply.name} has no pack size set`);
+        baseQuantity = roundQuantity(packs * Number(supply.pack_size));
+        if (line.packPrice !== undefined && line.packPrice !== null) {
+          const packPrice = normalizeQuantity(line.packPrice, 'pack_price');
+          if (packPrice < 0) throw new SupplyServiceError(400, 'pack_price must be non-negative');
+          totalCost = packs * packPrice;
+        }
+      } else {
+        const quantity = normalizeQuantity(line.quantity, 'quantity');
+        if (quantity <= 0) throw new SupplyServiceError(400, 'quantity must be greater than zero');
+        const unit = line.unit === undefined ? supply.base_unit : assertSupplyUnit(line.unit, 'unit');
+        baseQuantity = convertQuantity(quantity, unit, supply.base_unit);
+        if (line.totalCost !== undefined && line.totalCost !== null) {
+          totalCost = normalizeQuantity(line.totalCost, 'total_cost');
+          if (totalCost < 0) throw new SupplyServiceError(400, 'total_cost must be non-negative');
+        }
+      }
+      if (baseQuantity <= 0) throw new SupplyServiceError(400, 'received quantity is too small to change stock');
+
+      const lineUnitCost = totalCost === null ? null : Number((totalCost / baseQuantity).toFixed(6));
+      const onHand = Math.max(Number(supply.stock_quantity), 0);
+      let averageCost: number | null = supply.unit_cost;
+      if (lineUnitCost !== null) {
+        averageCost = supply.unit_cost === null || onHand === 0
+          ? lineUnitCost
+          : Number(((onHand * Number(supply.unit_cost) + baseQuantity * lineUnitCost) / (onHand + baseQuantity)).toFixed(6));
+      }
+
+      const change = applySupplyStockChange(db, {
+        supplyId: supply.id,
+        quantityDelta: baseQuantity,
+        movementType: 'receive',
+        unit: supply.base_unit,
+        reason: reference ? `Delivery ${reference}` : 'Delivery',
+        actorUserId: input.actorUserId,
+        referenceType: 'delivery',
+        referenceId: deliveryId,
+        createdAt: timestamp,
+        unitCost: lineUnitCost,
+      });
+
+      db.prepare('UPDATE supplies SET unit_cost = ?, vendor_id = COALESCE(vendor_id, ?), updated_at = ? WHERE id = ?')
+        .run(averageCost, vendorId, timestamp, supply.id);
+
+      results.push({
+        supply_id: supply.id,
+        received_quantity: baseQuantity,
+        unit_cost: lineUnitCost,
+        stock_after: change.stockAfter,
+        average_cost: averageCost,
+      });
+    }
+    return { delivery_id: deliveryId, lines: results };
+  });
 }

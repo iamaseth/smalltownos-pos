@@ -380,7 +380,20 @@
     "saveFailed": "Failed to save",
     "deleteFailed": "Failed to delete",
     "confirmDeleteSupply": "Delete supply {name}? Its movement history will be kept.",
-    "confirmDeleteRecipe": "Delete the recipe for {name}?"
+    "confirmDeleteRecipe": "Delete the recipe for {name}?",
+    "unitCost": "Cost per unit",
+    "pourSize": "Pour size",
+    "orderUpTo": "Order up to",
+    "packSize": "Pack size",
+    "packLabel": "Pack name (e.g. bottle)",
+    "noVendor": "No vendor",
+    "receiveDelivery": "Receive delivery",
+    "newVendor": "New vendor name",
+    "deliveryReference": "Invoice number (optional)",
+    "deliverySaved": "Delivery recorded",
+    "packs": "Packs",
+    "packPrice": "Price per pack",
+    "totalCost": "Total cost"
   },
   "kds": {
     "addonsLabel": "Add-ons",

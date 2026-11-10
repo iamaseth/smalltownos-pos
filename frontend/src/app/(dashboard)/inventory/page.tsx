@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale } from 'lucide-react';
+import { Plus, Search, X, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -22,9 +22,33 @@ interface Supply {
   base_unit: SupplyUnit;
   stock_quantity: number;
   low_stock_threshold: number | null;
+  unit_cost: number | null;
+  pack_size: number | null;
+  pack_label: string | null;
+  pour_size: number | null;
+  order_up_to: number | null;
+  vendor_id: string | null;
   is_active: number;
   is_low_stock?: number;
 }
+
+interface Vendor {
+  id: string;
+  name: string;
+}
+
+interface DeliveryLine {
+  supply_id: string;
+  amount: string;
+  price: string;
+}
+
+const emptySupplyForm = {
+  name: '', base_unit: 'each' as SupplyUnit, stock_quantity: '0', low_stock_threshold: '',
+  unit_cost: '', pack_size: '', pack_label: '', pour_size: '', order_up_to: '', vendor_id: '',
+};
+
+const optionalNumber = (value: string) => (value === '' ? null : Number(value));
 
 interface SupplyMovement {
   id: number;
@@ -93,7 +117,13 @@ export default function InventoryPage() {
 
   const [showSupplyForm, setShowSupplyForm] = useState(false);
   const [editingSupply, setEditingSupply] = useState<Supply | null>(null);
-  const [supplyForm, setSupplyForm] = useState({ name: '', base_unit: 'each' as SupplyUnit, stock_quantity: '0', low_stock_threshold: '' });
+  const [supplyForm, setSupplyForm] = useState(emptySupplyForm);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [showDelivery, setShowDelivery] = useState(false);
+  const [deliveryVendorId, setDeliveryVendorId] = useState('');
+  const [newVendorName, setNewVendorName] = useState('');
+  const [deliveryReference, setDeliveryReference] = useState('');
+  const [deliveryLines, setDeliveryLines] = useState<DeliveryLine[]>([]);
 
   const [movementSupply, setMovementSupply] = useState<Supply | null>(null);
   const [movementForm, setMovementForm] = useState({ movement_type: 'receive', quantity: '', unit: 'each' as SupplyUnit, reason: '' });
@@ -141,6 +171,15 @@ export default function InventoryPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, refreshKey, canManage]);
 
+  useEffect(() => {
+    if (!canManage) return;
+    const controller = new AbortController();
+    api.get('/vendors', { signal: controller.signal })
+      .then(({ data }) => setVendors(data.vendors || []))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [canManage, refreshKey]);
+
   const loadMovements = useCallback(async (cursor?: number | null) => {
     try {
       const params: Record<string, string | number> = { per_page: 50 };
@@ -171,7 +210,7 @@ export default function InventoryPage() {
 
   const openAddSupply = () => {
     setEditingSupply(null);
-    setSupplyForm({ name: '', base_unit: 'each', stock_quantity: '0', low_stock_threshold: '' });
+    setSupplyForm(emptySupplyForm);
     setShowSupplyForm(true);
   };
 
@@ -182,6 +221,12 @@ export default function InventoryPage() {
       base_unit: s.base_unit,
       stock_quantity: String(s.stock_quantity),
       low_stock_threshold: s.low_stock_threshold === null ? '' : String(s.low_stock_threshold),
+      unit_cost: s.unit_cost === null ? '' : String(s.unit_cost),
+      pack_size: s.pack_size === null ? '' : String(s.pack_size),
+      pack_label: s.pack_label ?? '',
+      pour_size: s.pour_size === null ? '' : String(s.pour_size),
+      order_up_to: s.order_up_to === null ? '' : String(s.order_up_to),
+      vendor_id: s.vendor_id ?? '',
     });
     setShowSupplyForm(true);
   };
@@ -193,12 +238,24 @@ export default function InventoryPage() {
         name: supplyForm.name,
         base_unit: supplyForm.base_unit,
         stock_quantity: Number(supplyForm.stock_quantity),
-        low_stock_threshold: supplyForm.low_stock_threshold === '' ? null : Number(supplyForm.low_stock_threshold),
+        low_stock_threshold: optionalNumber(supplyForm.low_stock_threshold),
+        unit_cost: optionalNumber(supplyForm.unit_cost),
+        pack_size: optionalNumber(supplyForm.pack_size),
+        pack_label: supplyForm.pack_label.trim() || null,
+        pour_size: optionalNumber(supplyForm.pour_size),
+        order_up_to: optionalNumber(supplyForm.order_up_to),
+        vendor_id: supplyForm.vendor_id || null,
       };
       if (editingSupply) {
         await api.put(`/supplies/${editingSupply.id}`, {
           name: payload.name,
           low_stock_threshold: payload.low_stock_threshold,
+          unit_cost: payload.unit_cost,
+          pack_size: payload.pack_size,
+          pack_label: payload.pack_label,
+          pour_size: payload.pour_size,
+          order_up_to: payload.order_up_to,
+          vendor_id: payload.vendor_id,
         });
         toast.success(tCommon('save'));
       } else {
@@ -228,6 +285,52 @@ export default function InventoryPage() {
       toast.success(tCommon('save'));
       setMovementSupply(null);
       setMovementForm({ movement_type: 'receive', quantity: '', unit: 'each', reason: '' });
+      refresh();
+      if (tab === 'movements') loadMovements(null);
+    } catch (err: unknown) {
+      const message = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+        : undefined;
+      toast.error(message || t('saveFailed'));
+    }
+  };
+
+  const openDelivery = () => {
+    setDeliveryVendorId('');
+    setNewVendorName('');
+    setDeliveryReference('');
+    setDeliveryLines([{ supply_id: '', amount: '', price: '' }]);
+    setShowDelivery(true);
+  };
+
+  const updateDeliveryLine = (index: number, patch: Partial<DeliveryLine>) => {
+    setDeliveryLines((lines) => lines.map((line, i) => (i === index ? { ...line, ...patch } : line)));
+  };
+
+  const handleSaveDelivery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      let vendorId = deliveryVendorId;
+      if (!vendorId && newVendorName.trim()) {
+        const { data } = await api.post('/vendors', { name: newVendorName.trim() });
+        vendorId = data.vendor.id;
+      }
+      const lines = deliveryLines
+        .filter((line) => line.supply_id && line.amount !== '')
+        .map((line) => {
+          const supply = supplies.find((s) => s.id === line.supply_id);
+          const price = line.price === '' ? undefined : Number(line.price);
+          return supply?.pack_size
+            ? { supply_id: line.supply_id, packs: Number(line.amount), pack_price: price }
+            : { supply_id: line.supply_id, quantity: Number(line.amount), total_cost: price };
+        });
+      await api.post('/supplies/deliveries', {
+        vendor_id: vendorId || undefined,
+        reference: deliveryReference.trim() || undefined,
+        lines,
+      });
+      toast.success(t('deliverySaved'));
+      setShowDelivery(false);
       refresh();
       if (tab === 'movements') loadMovements(null);
     } catch (err: unknown) {
@@ -317,7 +420,10 @@ export default function InventoryPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-foreground">{tNav('inventory')}</h1>
         {tab === 'supplies' && (
-          <Button onClick={openAddSupply}><Plus size={16} className="me-1" /> {t('addSupply')}</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={openDelivery}><Truck size={16} className="me-1" /> {t('receiveDelivery')}</Button>
+            <Button onClick={openAddSupply}><Plus size={16} className="me-1" /> {t('addSupply')}</Button>
+          </div>
         )}
         {tab === 'recipes' && (
           <Button onClick={openAddRecipe}><Plus size={16} className="me-1" /> {t('addRecipe')}</Button>
@@ -359,6 +465,8 @@ export default function InventoryPage() {
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('baseUnit')}</th>
                   <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('stock')}</th>
                   <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('threshold')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('unitCost')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('pourSize')}</th>
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{tCommon('active')}</th>
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('actions')}</th>
                 </tr>
@@ -376,6 +484,12 @@ export default function InventoryPage() {
                     <td className={`p-4 text-end text-sm font-medium ${Number(s.stock_quantity) < 0 ? 'text-red-600' : ''}`}>{fmtNum(Number(s.stock_quantity))} {s.base_unit}</td>
                     <td className="p-4 text-end text-sm text-muted-foreground">
                       {s.low_stock_threshold === null ? '—' : fmtNum(Number(s.low_stock_threshold))}
+                    </td>
+                    <td className="p-4 text-end text-sm text-muted-foreground">
+                      {s.unit_cost === null ? '—' : fmtNum(Number(s.unit_cost))}
+                    </td>
+                    <td className="p-4 text-end text-sm text-muted-foreground">
+                      {s.pour_size === null ? '—' : `${fmtNum(Number(s.pour_size))} ${s.base_unit}`}
                     </td>
                     <td className="p-4 text-center text-sm">
                       {s.is_active === 1 ? tCommon('active') : tCommon('inactive')}
@@ -524,7 +638,92 @@ export default function InventoryPage() {
               <input type="number" step="any" min="0" placeholder={t('threshold')} value={supplyForm.low_stock_threshold}
                 onChange={(e) => setSupplyForm({ ...supplyForm, low_stock_threshold: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              <input type="number" step="any" min="0" placeholder={t('orderUpTo')} value={supplyForm.order_up_to}
+                onChange={(e) => setSupplyForm({ ...supplyForm, order_up_to: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              <input type="number" step="any" min="0" placeholder={t('unitCost')} value={supplyForm.unit_cost}
+                onChange={(e) => setSupplyForm({ ...supplyForm, unit_cost: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              <div className="flex gap-2">
+                <input type="number" step="any" min="0" placeholder={t('packSize')} value={supplyForm.pack_size}
+                  onChange={(e) => setSupplyForm({ ...supplyForm, pack_size: e.target.value })}
+                  className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                <input type="text" placeholder={t('packLabel')} value={supplyForm.pack_label}
+                  onChange={(e) => setSupplyForm({ ...supplyForm, pack_label: e.target.value })}
+                  className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              </div>
+              <input type="number" step="any" min="0" placeholder={t('pourSize')} value={supplyForm.pour_size}
+                onChange={(e) => setSupplyForm({ ...supplyForm, pour_size: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              <select value={supplyForm.vendor_id}
+                onChange={(e) => setSupplyForm({ ...supplyForm, vendor_id: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
+                <option value="">{t('noVendor')}</option>
+                {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
               <Button type="submit" className="w-full">{tCommon('save')}</Button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showDelivery && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">{t('receiveDelivery')}</h2>
+              <button onClick={() => setShowDelivery(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <form onSubmit={handleSaveDelivery} className="space-y-4">
+              <div className="flex gap-2">
+                <select value={deliveryVendorId}
+                  onChange={(e) => setDeliveryVendorId(e.target.value)}
+                  className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
+                  <option value="">{t('noVendor')}</option>
+                  {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+                {!deliveryVendorId && (
+                  <input type="text" placeholder={t('newVendor')} value={newVendorName}
+                    onChange={(e) => setNewVendorName(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                )}
+              </div>
+              <input type="text" placeholder={t('deliveryReference')} value={deliveryReference}
+                onChange={(e) => setDeliveryReference(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              {deliveryLines.map((line, index) => {
+                const lineSupply = supplies.find((s) => s.id === line.supply_id);
+                const byPack = Boolean(lineSupply?.pack_size);
+                return (
+                  <div key={index} className="flex gap-2">
+                    <select value={line.supply_id}
+                      onChange={(e) => updateDeliveryLine(index, { supply_id: e.target.value })}
+                      className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card" required>
+                      <option value="">{t('supply')}</option>
+                      {supplies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <input type="number" step="any" min="0.00000001"
+                      placeholder={byPack ? `${t('packs')} (${lineSupply?.pack_label || t('packLabel')})` : `${t('quantity')} (${lineSupply?.base_unit || ''})`}
+                      value={line.amount}
+                      onChange={(e) => updateDeliveryLine(index, { amount: e.target.value })}
+                      className="w-28 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                    <input type="number" step="any" min="0"
+                      placeholder={byPack ? t('packPrice') : t('totalCost')}
+                      value={line.price}
+                      onChange={(e) => updateDeliveryLine(index, { price: e.target.value })}
+                      className="w-28 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                    <Button type="button" variant="ghost" size="icon-sm"
+                      onClick={() => setDeliveryLines((lines) => lines.filter((_, i) => i !== index))}>
+                      <X size={14} />
+                    </Button>
+                  </div>
+                );
+              })}
+              <Button type="button" variant="outline" size="sm"
+                onClick={() => setDeliveryLines((lines) => [...lines, { supply_id: '', amount: '', price: '' }])}>
+                <Plus size={14} /> {t('addComponent')}
+              </Button>
+              <Button type="submit" className="w-full" disabled={deliveryLines.length === 0}>{tCommon('save')}</Button>
             </form>
           </div>
         </div>

@@ -380,7 +380,20 @@
     "saveFailed": "बचत गर्न असफल भयो",
     "deleteFailed": "मेटाउन असफल भयो",
     "confirmDeleteSupply": "आपूर्ति मेटाउनुहोस् {name}? यसको आन्दोलनको इतिहास राखिनेछ।",
-    "confirmDeleteRecipe": "को लागि नुस्खा मेटाउनुहोस् {name}?"
+    "confirmDeleteRecipe": "को लागि नुस्खा मेटाउनुहोस् {name}?",
+    "unitCost": "प्रति इकाई लागत",
+    "pourSize": "पोर साइज",
+    "orderUpTo": "यतिसम्म अर्डर गर्ने",
+    "packSize": "प्याकको आकार",
+    "packLabel": "प्याकको नाम (जस्तै बोतल)",
+    "noVendor": "आपूर्तिकर्ता छैन",
+    "receiveDelivery": "डेलिभरी प्राप्त गर्नुहोस्",
+    "newVendor": "नयाँ आपूर्तिकर्ताको नाम",
+    "deliveryReference": "बिल नम्बर (ऐच्छिक)",
+    "deliverySaved": "डेलिभरी रेकर्ड गरियो",
+    "packs": "प्याकहरू",
+    "packPrice": "प्रति प्याक मूल्य",
+    "totalCost": "कुल लागत"
   },
   "kds": {
     "addonsLabel": "एडअनहरू",
