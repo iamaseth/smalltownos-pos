@@ -1,6 +1,7 @@
 'use client';
 
-import { Beer, Plus, CreditCard, X } from 'lucide-react';
+import { useState } from 'react';
+import { Beer, Plus, CreditCard, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import type { Order } from '@/lib/types';
@@ -24,39 +25,60 @@ function openFor(createdAt: string, now: number): string {
 
 export default function OpenTabsModal({ tabs, now, payingOrderId, onAddItems, onPay, onClose }: Props) {
   const fmt = useFormatCurrency();
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? tabs.filter((o) => `${o.tab_name ?? ''} ${o.order_number} ${o.customer?.name ?? ''}`.toLowerCase().includes(q))
+    : tabs;
+  const owedOf = (o: Order) => (o.bill?.payment_status === 'partial' ? Number(o.bill?.balance ?? o.total) : Number(o.total));
+  const totalOwed = tabs.reduce((sum, o) => sum + owedOf(o), 0);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-2xl bg-card p-5">
+      <div className="flex h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-lg font-bold"><Beer size={20} />Open tabs ({tabs.length})</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="touch-target rounded-full text-muted-foreground active:bg-muted"><X size={20} /></button>
         </div>
+        {tabs.length > 0 && (
+          <div className="relative mb-3">
+            <Search size={16} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Find a tab by name, customer or number…"
+              className="w-full rounded-xl border border-border bg-background py-2 ps-9 pe-3 text-sm outline-none focus:border-brand"
+            />
+          </div>
+        )}
         {tabs.length === 0 ? (
           <p className="py-10 text-center text-sm text-muted-foreground">No open tabs. Add items and tap Add to tab to start one.</p>
+        ) : shown.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">No tab matches “{query}”.</p>
         ) : (
-          <div className="min-h-0 space-y-2 overflow-y-auto">
-            {tabs.map((order) => {
+          <ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto rounded-xl border border-border">
+            {shown.map((order) => {
               const partial = order.bill?.payment_status === 'partial';
-              const owed = Number(order.bill?.balance ?? order.total);
               return (
-                <div key={order.id} className="rounded-xl border border-border p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-bold text-foreground">{order.tab_name}</p>
-                      <p className="text-xs text-muted-foreground">#{order.order_number} · open {openFor(order.created_at, now)}{order.customer?.name ? ` · ${order.customer.name}` : ''}</p>
-                    </div>
-                    <div className="shrink-0 text-end">
-                      <p className="text-lg font-bold tabular-nums">{fmt(partial ? owed : Number(order.total))}</p>
-                      {partial && <p className="text-xs text-amber-500">still owed</p>}
-                    </div>
+                <li key={order.id} className="flex items-center gap-2 px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-bold text-foreground">{order.tab_name || `#${order.order_number}`}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      #{order.order_number} · {openFor(order.created_at, now)}{order.customer?.name ? ` · ${order.customer.name}` : ''}{partial ? ' · part paid' : ''}
+                    </p>
                   </div>
-                  <div className="mt-3 flex gap-2">
-                    <Button variant="outline" className="flex-1" onClick={() => onAddItems(order)}><Plus size={16} className="me-1" />Add items</Button>
-                    <Button className="flex-1" disabled={payingOrderId === order.id} onClick={() => onPay(order)}><CreditCard size={16} className="me-1" />Pay</Button>
-                  </div>
-                </div>
+                  <p className="w-20 shrink-0 text-end text-base font-bold tabular-nums">{fmt(owedOf(order))}</p>
+                  <Button variant="outline" size="sm" onClick={() => onAddItems(order)}><Plus size={14} className="me-1" />Add</Button>
+                  <Button size="sm" disabled={payingOrderId === order.id} onClick={() => onPay(order)}><CreditCard size={14} className="me-1" />Pay</Button>
+                </li>
               );
             })}
+          </ul>
+        )}
+        {tabs.length > 0 && (
+          <div className="mt-3 flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">{q ? `${shown.length} of ${tabs.length} tabs` : `${tabs.length} tabs`}</span>
+            <span className="font-bold tabular-nums">Total owed {fmt(totalOwed)}</span>
           </div>
         )}
       </div>
