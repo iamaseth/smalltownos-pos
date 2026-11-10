@@ -398,9 +398,26 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     onConfirm(splitLines, walletAmt, finalDiscount, partial);
   };
 
+  const keypad = amountTarget ? (
+        <CurrencyTouchNumberPad
+              value={activeAmountValue}
+              onChange={updateActiveAmount}
+              ariaLabel={t('numericKeypad')}
+              clearLabel={t('clearAmount')}
+              backspaceLabel={t('backspaceAmount')}
+              // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
+              currencyMaxDecimals={unitAdapter.maxDecimals}
+              amountTarget={amountTarget.kind}
+              discountType={discountType}
+              max={activeAmountMax}
+              quickValues={activeAmountQuickValues}
+            />
+  ) : null;
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-card flex max-h-[95vh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:max-w-md sm:rounded-2xl">
+      <div className="flex w-full flex-col md:w-auto md:flex-row md:items-center md:gap-3">
+      <div className="bg-card flex max-h-[95vh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:max-w-md sm:rounded-2xl md:w-[28rem] md:max-w-none md:shrink-0">
 
         {/* Compact header and bill summary share one block to preserve vertical space. */}
         <div className="shrink-0 border-b border-border px-5 pb-3 pt-4">
@@ -672,21 +689,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
               </div>
             </div>
           )}
-          {amountTarget && (
-            <CurrencyTouchNumberPad
-              value={activeAmountValue}
-              onChange={updateActiveAmount}
-              ariaLabel={t('numericKeypad')}
-              clearLabel={t('clearAmount')}
-              backspaceLabel={t('backspaceAmount')}
-              // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
-              currencyMaxDecimals={unitAdapter.maxDecimals}
-              amountTarget={amountTarget.kind}
-              discountType={discountType}
-              max={activeAmountMax}
-              quickValues={activeAmountQuickValues}
-            />
-          )}
+          {amountTarget && <div className="md:hidden">{keypad}</div>}
 
           {/* Change stays at the bottom of all payment controls. */}
           {hasCash && (
@@ -744,6 +747,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
             </Button>
           )}
         </div>
+      </div>
+      {keypad && <aside className="hidden max-h-[95vh] w-72 shrink-0 overflow-y-auto rounded-2xl bg-card p-3 shadow-2xl md:block">{keypad}</aside>}
       </div>
     </div>
   );
