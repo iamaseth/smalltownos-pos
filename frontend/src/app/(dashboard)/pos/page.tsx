@@ -117,6 +117,7 @@ export default function POSPage() {
   const [tables, setTables] = useState<Table[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -1296,6 +1297,7 @@ export default function POSPage() {
         canUseShift={canUseShift}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
+        searchSlotRef={setSearchSlot}
       />
         <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
@@ -1307,6 +1309,7 @@ export default function POSPage() {
             setSelectedCategory={setSelectedCategory}
             search={search}
             setSearch={setSearch}
+            searchSlot={searchSlot}
             currency={currency}
             canArrange={tenantCan(currentTenant, 'catalog.manage')}
             onOrderSaved={async () => { const response = await api.get('/products?active=1'); setProducts((response.data.products as Product[]) || []); }}

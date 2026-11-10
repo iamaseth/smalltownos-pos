@@ -524,3 +524,69 @@ html.dark::-webkit-scrollbar-thumb:hover,
 .pos-reference-font [class*="font-mono"] {
   font-family: var(--font-geist-sans), Arial, sans-serif;
 }
+
+/* Register light theme: the register uses fixed dark palette classes, so remap them when the app theme is light. */
+html:not(.dark) .pos-reference-font {
+  --pos-page: #f1f5f9;
+  --pos-surface: #ffffff;
+  --pos-surface-2: #f8fafc;
+  --pos-raised: #e2e8f0;
+  --pos-line: #cbd5e1;
+  --pos-text: #0f172a;
+  --pos-muted: #64748b;
+}
+html:not(.dark) .pos-reference-font.pos-cashier-preview,
+html:not(.dark) .pos-reference-font .bg-\[\#0b0f17\],
+html:not(.dark) .pos-reference-font .bg-\[\#090d16\] { background-color: var(--pos-page); }
+html:not(.dark) .pos-reference-font.bg-\[\#0d1527\],
+html:not(.dark) .pos-reference-font .bg-\[\#0d1527\],
+html:not(.dark) .pos-reference-font .bg-\[\#131d31\],
+html:not(.dark) .pos-reference-font .bg-\[\#0f1729\],
+html:not(.dark) .pos-reference-font .bg-\[\#111a2e\],
+html:not(.dark) .pos-reference-font .bg-\[\#141f38\],
+html:not(.dark) .pos-reference-font .bg-\[\#1a2540\],
+html:not(.dark) .pos-reference-font .bg-slate-900 { background-color: var(--pos-surface); }
+html:not(.dark) .pos-reference-font .bg-\[\#182234\],
+html:not(.dark) .pos-reference-font .hover\:bg-\[\#182234\]:hover { background-color: var(--pos-surface-2); }
+html:not(.dark) .pos-reference-font .bg-\[\#22325a\],
+html:not(.dark) .pos-reference-font .bg-\[\#2b3d68\],
+html:not(.dark) .pos-reference-font .bg-\[\#243149\],
+html:not(.dark) .pos-reference-font .bg-\[\#243049\],
+html:not(.dark) .pos-reference-font .bg-slate-800,
+html:not(.dark) .pos-reference-font .hover\:bg-\[\#243149\]:hover,
+html:not(.dark) .pos-reference-font .hover\:bg-\[\#243049\]:hover,
+html:not(.dark) .pos-reference-font .hover\:bg-slate-700:hover,
+html:not(.dark) .pos-reference-font .hover\:bg-slate-800:hover { background-color: var(--pos-raised); }
+html:not(.dark) .pos-reference-font .bg-\[\#3a2f16\] { background-color: #fef3c7; }
+html:not(.dark) .pos-reference-font .bg-\[\#3a1d24\] { background-color: #fee2e2; }
+html:not(.dark) .pos-reference-font .border-\[\#1e293b\],
+html:not(.dark) .pos-reference-font .border-\[\#243049\],
+html:not(.dark) .pos-reference-font .border-\[\#2f3d5c\],
+html:not(.dark) .pos-reference-font .border-\[\#334155\],
+html:not(.dark) .pos-reference-font .border-\[\#3d4f7c\],
+html:not(.dark) .pos-reference-font .border-\[\#4a5f92\],
+html:not(.dark) .pos-reference-font .border-slate-700,
+html:not(.dark) .pos-reference-font .border-slate-800 { border-color: var(--pos-line); }
+html:not(.dark) .pos-reference-font.text-slate-100,
+html:not(.dark) .pos-reference-font .text-white,
+html:not(.dark) .pos-reference-font .text-slate-100,
+html:not(.dark) .pos-reference-font .text-slate-200,
+html:not(.dark) .pos-reference-font .text-\[\#e5e9f2\] { color: var(--pos-text); }
+html:not(.dark) .pos-reference-font .text-slate-300,
+html:not(.dark) .pos-reference-font .text-slate-400,
+html:not(.dark) .pos-reference-font .text-slate-500,
+html:not(.dark) .pos-reference-font .text-\[\#8f9bb8\],
+html:not(.dark) .pos-reference-font .text-\[\#6b7694\],
+html:not(.dark) .pos-reference-font .placeholder\:text-\[\#7f8bab\]::placeholder { color: var(--pos-muted); }
+html:not(.dark) .pos-reference-font .text-blue-300,
+html:not(.dark) .pos-reference-font .text-blue-400 { color: #2563eb; }
+html:not(.dark) .pos-reference-font .hover\:text-white:hover { color: var(--pos-text); }
+/* Text on coloured fills stays white. */
+html:not(.dark) .pos-reference-font [style*="background-color"] .text-white,
+html:not(.dark) .pos-reference-font [style*="background-color"].text-white,
+html:not(.dark) .pos-reference-font .bg-blue-600,
+html:not(.dark) .pos-reference-font .bg-blue-600 .text-white,
+html:not(.dark) .pos-reference-font .bg-\[\#2563eb\],
+html:not(.dark) .pos-reference-font .bg-\[\#2563eb\] .text-white,
+html:not(.dark) .pos-reference-font .bg-brand,
+html:not(.dark) .pos-reference-font .bg-brand .text-white { color: #fff; }

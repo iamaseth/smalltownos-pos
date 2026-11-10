@@ -9,6 +9,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 
 interface Props {
   tables: Table[];
@@ -21,9 +22,10 @@ interface Props {
   canUseShift: boolean;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
+  searchSlotRef?: (el: HTMLDivElement | null) => void;
 }
 
-export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen }: Props) {
+export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen, searchSlotRef }: Props) {
   const cart = useCartStore();
   const [actionsOpen, setActionsOpen] = useState(false);
   const { currentTenant } = useAuthStore();
@@ -35,15 +37,13 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
 
   return (
     <div className="pos-reference-font relative flex shrink-0 items-center justify-between gap-3 border-b border-[#1e293b] bg-[#0d1527] px-3 py-1.5 text-slate-100">
-      <div className="flex min-w-0 items-center gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-[12px] leading-tight font-bold tracking-normal text-white font-[family-name:var(--font-geist-sans)]">{currentTenant?.business_name || 'The Bay Bar'}</div>
-          <div className="text-[9px] leading-tight font-normal text-slate-400">SmallTownPOS</div>
-        </div>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <SidebarTrigger className="hidden size-9 shrink-0 md:inline-flex" aria-label="Show or hide menu" />
         {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={onShowShift} className="hidden md:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
           {shiftHasOpenSession ? <Lock size={15} className="text-emerald-400" /> : <LockOpen size={15} className="text-amber-400" />}
           <span>{shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}</span>
         </button>}
+        {searchSlotRef && <div ref={searchSlotRef} className="min-w-0 flex-1 max-w-xl" />}
       </div>
       <div className="flex items-center gap-2">
         <div className="relative">

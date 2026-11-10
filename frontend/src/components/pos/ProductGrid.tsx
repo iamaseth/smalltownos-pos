@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
 import { Plus, Search, Keyboard, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Zap, LayoutGrid } from 'lucide-react';
@@ -77,13 +78,14 @@ interface Props {
   currency: string;
   onProductClick: (product: Product) => void;
   onQuickAdd: (product: Product) => void;
+  searchSlot?: HTMLElement | null;
   canArrange?: boolean;
   onOrderSaved?: () => Promise<void>;
 }
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, onProductClick, onQuickAdd, canArrange = false, onOrderSaved,
+  search, setSearch, onProductClick, onQuickAdd, canArrange = false, onOrderSaved, searchSlot = null,
 }: Props) {
   const cart = useCartStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -167,7 +169,7 @@ export default function ProductGrid({
   };
   // VeloxPOS category-pill styling; retain FloPOS group IDs and filtering.
   const referenceCategories = [
-    { label: 'Favorites', group: 'Favorites', filter: null, color: '#CA8A04', Icon: Star },
+    { label: 'FAV', group: 'Favorites', filter: null, color: '#CA8A04', Icon: Star },
     { label: 'Beer', group: 'Beer & Wine', filter: /beer/i, color: '#F59E0B', Icon: Beer },
     { label: 'Wine', group: 'Beer & Wine', filter: /wine/i, color: '#DC2626', Icon: Wine },
     { label: 'Cocktails', group: 'Cocktails', filter: null, color: '#2563EB', Icon: Martini },
@@ -188,7 +190,7 @@ export default function ProductGrid({
         const saved = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
         if (Array.isArray(saved) && saved.length) {
           setFavorites(saved.map(String));
-          setReferenceCategory('Favorites');
+          setReferenceCategory('FAV');
           setOpenGroup('Favorites');
         }
       } catch {}
@@ -220,10 +222,8 @@ export default function ProductGrid({
     return () => document.removeEventListener('keydown', handleTyping);
   }, [search, setSearch]);
 
-  return (
-    <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      <div className="shrink-0 mb-2 px-3 pt-2">
-        <div className="mb-2 flex items-center gap-2">
+  const searchBlock = (
+    <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
@@ -254,7 +254,13 @@ export default function ProductGrid({
         <button type="button" aria-label={keyboardOpen ? 'Hide on-screen keyboard' : 'Show on-screen keyboard'} aria-pressed={keyboardOpen}
           onClick={() => setKeyboardOpen(v => !v)}
           className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] ${keyboardOpen ? 'bg-blue-600 text-white' : 'bg-[#131d31] text-slate-300 hover:bg-[#182234]'}`}><Keyboard size={20} /></button>
-        </div>
+    </div>
+  );
+
+  return (
+    <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <div className="shrink-0 mb-2 px-3 pt-2">
+        {!searchSlot && <div className="mb-2">{searchBlock}</div>}
         <div className="hidden">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menu</span>
           {showProductImages && <button type="button" onClick={() => setShowMenuPhotos(v => !v)}
@@ -434,6 +440,7 @@ export default function ProductGrid({
         </div>
       )}
       </div>
+      {searchSlot && createPortal(searchBlock, searchSlot)}
       {keyboardOpen && <OnScreenKeyboard value={search} onChange={setSearch} onClose={() => setKeyboardOpen(false)} />}
     </div>
   );
