@@ -61,6 +61,15 @@ export default function TableCheckoutModal({
     const controller = new AbortController();
     const fetchOrder = async () => {
       try {
+        const known = table.current_order || table.activeOrder;
+        if (known) {
+          const orderRes = await api.get(`/orders/${known.id}`, { signal: controller.signal });
+          const fetched = orderRes.data.order;
+          if (fetched && !['completed', 'cancelled'].includes(fetched.status)) {
+            setOrder(fetched);
+            return;
+          }
+        }
         const { data } = await api.get(`/tables/${table.id}`, { signal: controller.signal });
         const tbl = data.table;
         const activeOrder = tbl.activeOrder || tbl.current_order;
@@ -77,7 +86,7 @@ export default function TableCheckoutModal({
     };
     fetchOrder();
     return () => controller.abort();
-  }, [table.id, t]);
+  }, [table.id, table.current_order, table.activeOrder, t]);
 
   useEffect(() => {
     api.get('/settings/split_checks_enabled').then((res) => setSplitChecksEnabled(res.data?.setting?.value === 'true')).catch(() => setSplitChecksEnabled(false));
