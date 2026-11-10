@@ -26,14 +26,14 @@ export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, on
   const customer = useCartStore((st) => st.customer);
   const setCustomer = useCartStore((st) => st.setCustomer);
   const country = useAuthStore((st) => st.currentTenant?.country ?? '');
-  const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<Customer[]>([]);
   const [newPhone, setNewPhone] = useState('');
   const [creating, setCreating] = useState(false);
-  const searchText = query.trim();
+  const searchText = customer ? '' : trimmed;
+  const shownMatches = searchText.length >= 2 ? matches : [];
 
   useEffect(() => {
-    if (searchText.length < 2) { setMatches([]); return; }
+    if (searchText.length < 2) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       api.get('/customers-search', { params: { q: searchText }, signal: controller.signal })
@@ -46,7 +46,7 @@ export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, on
   const pickCustomer = (c: Customer) => {
     setCustomer(c);
     if (!name.trim()) setName(c.name);
-    setQuery(''); setMatches([]); setNewPhone('');
+    setMatches([]); setNewPhone('');
   };
 
   const createCustomer = async () => {
@@ -91,36 +91,36 @@ export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, on
           <button type="button" onClick={() => onTakeaway(trimmed)} className={big}><ShoppingBag size={22} />Takeaway</button>
         </div>
 
-        <label className="mt-4 block text-sm font-medium text-muted-foreground" htmlFor="tab-name">Name for the tab or takeaway</label>
+        <label className="mt-4 block text-sm font-medium text-muted-foreground" htmlFor="tab-name">Name (type a name, then tap Bar tab or Takeaway)</label>
         <input id="tab-name" type="text" maxLength={60} value={name} onChange={(e) => setName(e.target.value)}
           onFocus={() => setKeyboard(true)} placeholder="e.g. Tom, blue shirt" autoComplete="off"
           className="mt-1 h-12 w-full rounded-xl border border-border bg-background px-3 text-base outline-none focus:border-brand" />
 
-        <div className="mt-4">
-          <p className="text-sm font-medium text-muted-foreground">Customer (optional, keeps their history)</p>
-          {customer ? (
-            <div className="mt-1 flex items-center justify-between rounded-xl bg-brand-light px-3 py-2 text-sm">
-              <span className="truncate font-semibold">{customer.name}{customer.phone ? ` · ${customer.phone}` : ''}</span>
-              <button type="button" aria-label="Remove customer" onClick={() => setCustomer(null)} className="touch-target shrink-0"><X size={16} /></button>
-            </div>
-          ) : (
-            <>
-              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or phone"
-                autoComplete="off" className="mt-1 h-12 w-full rounded-xl border border-border bg-background px-3 text-base outline-none focus:border-brand" />
-              {matches.length > 0 && (
-                <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
-                  {matches.map((c) => (
-                    <button key={c.id} type="button" onClick={() => pickCustomer(c)}
-                      className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-start text-sm hover:bg-muted">
-                      <span className="truncate font-medium">{c.name}</span>
-                      <span className="ms-2 shrink-0 text-xs text-muted-foreground">{c.phone || 'no phone'}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {searchText.length >= 2 && matches.length === 0 && (
+        {(customer || searchText.length >= 2) && (
+          <div className="mt-3">
+            {customer ? (
+              <div className="flex items-center justify-between rounded-xl bg-brand-light px-3 py-2 text-sm">
+                <span className="truncate font-semibold">Customer: {customer.name}{customer.phone ? ` · ${customer.phone}` : ''}</span>
+                <button type="button" aria-label="Remove customer" onClick={() => setCustomer(null)} className="touch-target shrink-0"><X size={16} /></button>
+              </div>
+            ) : (
+              <>
+                {shownMatches.length > 0 && (
+                  <>
+                    <p className="mb-1 text-xs font-medium text-muted-foreground">{shownMatches.length} existing {shownMatches.length === 1 ? 'customer' : 'customers'} (tap to link, keeps their history)</p>
+                    <div className="max-h-60 space-y-1 overflow-y-auto">
+                      {shownMatches.map((c) => (
+                        <button key={c.id} type="button" onClick={() => pickCustomer(c)}
+                          className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-start text-sm hover:bg-muted">
+                          <span className="truncate font-medium">{c.name}</span>
+                          <span className="ms-2 shrink-0 text-xs text-muted-foreground">{c.phone || 'no phone'}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
                 <div className="mt-2 space-y-2 rounded-xl border border-dashed border-border p-3">
-                  <p className="text-xs text-muted-foreground">No customer found. Phone is optional.</p>
+                  <p className="text-xs text-muted-foreground">{shownMatches.length > 0 ? 'Not them?' : 'No customer found.'} Save &ldquo;{searchText}&rdquo; as a customer so their visits are remembered (phone optional).</p>
                   <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="Phone (optional)"
                     className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand" />
                   <button type="button" disabled={creating} onClick={createCustomer}
@@ -128,10 +128,10 @@ export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, on
                     <UserPlus size={16} />Add &ldquo;{searchText}&rdquo; as new customer
                   </button>
                 </div>
-              )}
-            </>
-          )}
-        </div>
+              </>
+            )}
+          </div>
+        )}
 
         {openTabs.length > 0 && (
           <div className="mt-4">
