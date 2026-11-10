@@ -14,10 +14,8 @@ export function DirectionalToaster() {
   return (
     <Toaster
       key={rtl ? 'rtl' : 'ltr'}
-      position={rtl ? 'top-left' : 'top-right'}
-      containerStyle={{
-        top: 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',
-      }}
+      position="bottom-center"
+      containerStyle={{ bottom: 24 }}
       toastOptions={{
         className: 'flo-toast-card',
         duration: 4000,
