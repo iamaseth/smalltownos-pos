@@ -391,6 +391,7 @@ Router: `main/routes/customers.ts`. Full path: `/api/customers`.
 | `GET` | `/` | `ROLE_ACCESS.sales` + customer read limiter | query: `?search`, `?filter`, `?sort`, `?order`, `?per_page` | Paginated list; `?search`, `?filter`, `?sort`, `?order`, `?per_page`. |
 | `GET` | `/:id` | `ROLE_ACCESS.sales` + customer read limiter | path: `id` | - |
 | `GET` | `/:id/wallet` | `ROLE_ACCESS.sales` + customer read limiter | path: `id` | Wallet balance and loyalty state for the customer. |
+| `POST` | `/import` | `ROLE_ACCESS.sales` + customer write limiter | body: `customers` (1–500 of `{ name, phone?, email? }`) | Bulk-adds customers in one transaction. Skips rows without a name, a phone already in use, and a no-phone name that already exists; an invalid phone is added by name only. Returns `added`, `skippedDuplicates`, `skippedNoName`, `addedWithoutPhone`. |
 | `POST` | `/` | `ROLE_ACCESS.sales` + customer write limiter | body: `phone`, `name`, `email`, `address`, `notes`, `country_code` | - |
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManagerCashier` + customer write limiter | path: `id`; body: `phone`, `name`, `email`, `address`, `notes`, `country_code` | - |
 

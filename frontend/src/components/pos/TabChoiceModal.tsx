@@ -1,9 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Armchair, Beer, ShoppingBag, X } from 'lucide-react';
+import { Armchair, Beer, ShoppingBag, UserPlus, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 import api from '@/lib/api';
-import type { Order } from '@/lib/types';
+import { useCartStore } from '@/store/cart';
+import { useAuthStore } from '@/store/auth';
+import { parsePhone } from '@/lib/phone';
+import type { Customer, Order } from '@/lib/types';
 import OnScreenKeyboard from '@/components/pos/OnScreenKeyboard';
 
 interface Props {
@@ -19,6 +23,48 @@ export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, on
   const [openTabs, setOpenTabs] = useState<Order[]>([]);
   const [keyboard, setKeyboard] = useState(false);
   const trimmed = name.trim();
+  const customer = useCartStore((st) => st.customer);
+  const setCustomer = useCartStore((st) => st.setCustomer);
+  const country = useAuthStore((st) => st.currentTenant?.country ?? '');
+  const [query, setQuery] = useState('');
+  const [matches, setMatches] = useState<Customer[]>([]);
+  const [newPhone, setNewPhone] = useState('');
+  const [creating, setCreating] = useState(false);
+  const searchText = query.trim();
+
+  useEffect(() => {
+    if (searchText.length < 2) { setMatches([]); return; }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      api.get('/customers-search', { params: { q: searchText }, signal: controller.signal })
+        .then(({ data }) => setMatches(Array.isArray(data) ? data : (data.customers || [])))
+        .catch(() => { /* search is optional */ });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [searchText]);
+
+  const pickCustomer = (c: Customer) => {
+    setCustomer(c);
+    if (!name.trim()) setName(c.name);
+    setQuery(''); setMatches([]); setNewPhone('');
+  };
+
+  const createCustomer = async () => {
+    const parsed = newPhone.trim() ? parsePhone(newPhone, country) : null;
+    if (newPhone.trim() && !parsed) { toast.error('That phone number is not valid'); return; }
+    setCreating(true);
+    try {
+      const { data } = await api.post('/customers', parsed
+        ? { name: searchText, phone: parsed.e164, country_code: parsed.countryCode }
+        : { name: searchText });
+      pickCustomer(data.customer);
+      toast.success('Customer added');
+    } catch {
+      toast.error('Could not add customer (phone may already exist)');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +95,43 @@ export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, on
         <input id="tab-name" type="text" maxLength={60} value={name} onChange={(e) => setName(e.target.value)}
           onFocus={() => setKeyboard(true)} placeholder="e.g. Tom, blue shirt" autoComplete="off"
           className="mt-1 h-12 w-full rounded-xl border border-border bg-background px-3 text-base outline-none focus:border-brand" />
+
+        <div className="mt-4">
+          <p className="text-sm font-medium text-muted-foreground">Customer (optional, keeps their history)</p>
+          {customer ? (
+            <div className="mt-1 flex items-center justify-between rounded-xl bg-brand-light px-3 py-2 text-sm">
+              <span className="truncate font-semibold">{customer.name}{customer.phone ? ` · ${customer.phone}` : ''}</span>
+              <button type="button" aria-label="Remove customer" onClick={() => setCustomer(null)} className="touch-target shrink-0"><X size={16} /></button>
+            </div>
+          ) : (
+            <>
+              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or phone"
+                autoComplete="off" className="mt-1 h-12 w-full rounded-xl border border-border bg-background px-3 text-base outline-none focus:border-brand" />
+              {matches.length > 0 && (
+                <div className="mt-2 max-h-40 space-y-1 overflow-y-auto">
+                  {matches.map((c) => (
+                    <button key={c.id} type="button" onClick={() => pickCustomer(c)}
+                      className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-start text-sm hover:bg-muted">
+                      <span className="truncate font-medium">{c.name}</span>
+                      <span className="ms-2 shrink-0 text-xs text-muted-foreground">{c.phone || 'no phone'}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {searchText.length >= 2 && matches.length === 0 && (
+                <div className="mt-2 space-y-2 rounded-xl border border-dashed border-border p-3">
+                  <p className="text-xs text-muted-foreground">No customer found. Phone is optional.</p>
+                  <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="Phone (optional)"
+                    className="h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-brand" />
+                  <button type="button" disabled={creating} onClick={createCustomer}
+                    className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand text-sm font-semibold text-white disabled:opacity-50">
+                    <UserPlus size={16} />Add &ldquo;{searchText}&rdquo; as new customer
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
         {openTabs.length > 0 && (
           <div className="mt-4">
