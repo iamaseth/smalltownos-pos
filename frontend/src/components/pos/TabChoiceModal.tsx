@@ -99,7 +99,7 @@ export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, on
         {(customer || searchText.length >= 2) && (
           <div className="mt-3">
             {customer ? (
-              <div className="flex items-center justify-between rounded-xl bg-brand-light px-3 py-2 text-sm">
+              <div className="flex items-center justify-between rounded-xl border-2 border-brand bg-muted px-3 py-2 text-sm text-foreground">
                 <span className="truncate font-semibold">Customer: {customer.name}{customer.phone ? ` · ${customer.phone}` : ''}</span>
                 <button type="button" aria-label="Remove customer" onClick={() => setCustomer(null)} className="touch-target shrink-0"><X size={16} /></button>
               </div>
