@@ -1307,7 +1307,7 @@ export default function OrdersPage() {
                 </div>
               )}
 
-              {(cancelModal.order.status !== 'pending' || cancelModal.order.items?.some((i) => ['preparing', 'ready', 'served', 'completed'].includes(i.status))) && (
+              {(cancelModal.order.status !== 'pending' || Number(cancelModal.order.bill?.paid_amount ?? 0) > 0 || cancelModal.order.items?.some((i) => ['preparing', 'ready', 'served', 'completed'].includes(i.status))) && (
                 <div>
                   <label htmlFor="overridePin" className="block text-sm font-medium text-foreground mb-1">
                     {tOrders('overridePinLabel')}

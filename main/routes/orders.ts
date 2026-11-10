@@ -1089,23 +1089,37 @@ router.patch('/:id/status', orderWriteRateLimit, requirePermission('orders.statu
       `).get(req.params.id) !== undefined;
       const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
       const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
-      const requiresOverride = (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
+      const billRows = db.prepare('SELECT payment_status, paid_amount, balance FROM bills WHERE order_id = ?').all(req.params.id) as any[];
+      const hasCollectedFunds = billRows.some((bill) => Number(bill.paid_amount || 0) > 0 && bill.payment_status !== 'refunded');
+      const settledStatuses = ['paid', 'refunded', 'partially_refunded'];
+      const hasUnsettledBalance = billRows.length === 0
+        ? Number(currentOrder.total || 0) > 0
+        : billRows.some((bill) => !settledStatuses.includes(bill.payment_status) && Number(bill.balance || 0) > 0);
+      const cancelInProgress = (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
+      const cancelWithFunds = status === 'cancelled' && hasCollectedFunds;
+      const completeUnsettled = status === 'completed' && hasUnsettledBalance;
+      const requiresOverride = cancelInProgress || cancelWithFunds || completeUnsettled;
 
       let approvedByUserId: string | undefined;
       if (requiresOverride) {
         if (!override_pin) {
-          throw Object.assign(new Error('Manager PIN required to cancel order in progress'), { statusCode: 400 });
+          const message = completeUnsettled
+            ? 'Manager PIN required to complete an unpaid order'
+            : cancelWithFunds && !cancelInProgress
+              ? 'Manager PIN required to cancel an order with collected payment'
+              : 'Manager PIN required to cancel order in progress';
+          throw Object.assign(new Error(message), { statusCode: 400 });
         }
 
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-        // Rate-limit cancellation attempts per client.
-        const rateLimitKey = `pin:${clientIp}:order-cancel`;
+        // Rate-limit override attempts per client.
+        const rateLimitKey = `pin:${clientIp}:${status === 'completed' ? 'order-complete' : 'order-cancel'}`;
         if (!checkPinRateLimit(rateLimitKey)) {
           throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
         }
 
         const user = (db.prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL').all() as any[])
-          .find((candidate) => hasRole(candidate.role, ROLE_ACCESS.ownerManager) && hasPermission(candidate.id, 'orders.item.cancel') && verifyPin(candidate.pin_hash, override_pin));
+          .find((candidate) => hasRole(candidate.role, ROLE_ACCESS.ownerManager) && hasPermission(candidate.id, status === 'completed' ? 'orders.status.update' : 'orders.item.cancel') && verifyPin(candidate.pin_hash, override_pin));
 
         if (!user) {
           throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
@@ -1193,7 +1207,7 @@ router.patch('/:id/status', orderWriteRateLimit, requirePermission('orders.statu
         orderId: req.params.id as string,
         actorUserId: authUser.userId,
         action: 'status_changed',
-        details: { from: currentOrder.status, to: status, ...(approvedByUserId && { approved_by: approvedByUserId }) },
+        details: { from: currentOrder.status, to: status, ...(approvedByUserId && { approved_by: approvedByUserId }), ...(cancelWithFunds && { collected_funds: true }), ...(completeUnsettled && { unsettled_payment: true }) },
       });
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
