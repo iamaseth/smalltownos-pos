@@ -170,7 +170,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDe
         {onShowTabs && (
           <button type="button" onClick={() => { setMoreOpen(false); onShowTabs(); }}
             className="flex items-center gap-1.5 rounded-lg border border-[#3d4f7c] bg-[#22325a] px-[10px] py-[5px] text-[13px] font-medium">
-            Tabs ({openTabCount})
+            Open ({openTabCount})
           </button>
         )}
         {cart.orderType === 'dine_in' && cart.tableId && (

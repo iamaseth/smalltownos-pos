@@ -1185,8 +1185,8 @@ export default function POSPage() {
     onPlaceOrder: handlePlaceOrder,
     onPayNow: handlePayNow,
     onChooseDestination: () => setShowTabChoice(true),
-    onShowTabs: () => { void refreshOpenTabs(); setShowOpenTabs(true); },
-    openTabCount: openTabs.length,
+    onShowTabs: () => { void refreshOpenTabs(); void refreshTables(); setShowOpenTabs(true); },
+    openTabCount: openTabs.length + tables.filter((tb) => tb.status === 'occupied' && (tb.current_order || tb.activeOrder)).length,
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
   };
@@ -1410,6 +1410,8 @@ export default function POSPage() {
       {showOpenTabs && (
         <OpenTabsModal
           tabs={openTabs}
+          tables={tables}
+          onOpenTable={(table) => { setShowOpenTabs(false); void handleSelectOccupiedTable(table); }}
           now={tabsNow}
           payingOrderId={payingTabId}
           onAddItems={handleAddToTab}
