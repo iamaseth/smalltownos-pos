@@ -76,7 +76,7 @@ interface Payment {
   amount: string;
 }
 
-type AmountTarget = { kind: 'payment'; index: number } | { kind: 'wallet' } | { kind: 'discount' } | null;
+type AmountTarget = { kind: 'payment'; index: number } | { kind: 'khr' } | { kind: 'wallet' } | { kind: 'discount' } | null;
 
 export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: Props) {
   const cart = useCartStore();
@@ -267,21 +267,31 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     ? (totalPaymentMinor - remainingMinor) / minorFactor
     : 0;
 
-  const activeAmountValue = amountTarget?.kind === 'payment'
-    ? payments[amountTarget.index]?.amount || ''
-    : amountTarget?.kind === 'wallet'
+  const cashIndex = Math.max(0, payments.findIndex((p) => p.method === 'cash' && p.payment_method_id === undefined));
+  const target: AmountTarget = amountTarget ?? { kind: 'payment', index: cashIndex };
+
+  const activeAmountValue = target?.kind === 'khr'
+    ? khrTendered
+    : target?.kind === 'payment'
+    ? payments[target.index]?.amount || ''
+    : target?.kind === 'wallet'
       ? walletAmount
-      : amountTarget?.kind === 'discount'
+      : target?.kind === 'discount'
         ? discountValue
         : '';
 
   const updateActiveAmount = (value: string) => {
-    if (!amountTarget) return;
-    if (amountTarget.kind === 'payment') {
-      updatePaymentAmount(amountTarget.index, value);
+    if (!target) return;
+    if (target.kind === 'khr') {
+      setKhrTendered(value);
+      setPaymentsTouched(true);
       return;
     }
-    if (amountTarget.kind === 'wallet') {
+    if (target.kind === 'payment') {
+      updatePaymentAmount(target.index, value);
+      return;
+    }
+    if (target.kind === 'wallet') {
       const maxWalletCurrencyStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
       const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
       const clamped = parseFloat(value) > maxDisplay ? String(maxDisplay) : value;
@@ -292,21 +302,21 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     setDiscountValue(value);
   };
 
-  const activeAmountMax = amountTarget?.kind === 'discount'
+  const activeAmountMax = target?.kind === 'discount'
     ? discountType === 'percentage' ? 100 : preview ? toDisplayUnit(preview.subtotal) : undefined
-    : amountTarget?.kind === 'wallet'
+    : target?.kind === 'wallet'
       ? toDisplayUnit(Math.min(Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE), remaining))
       : undefined;
 
   const activeAmountQuickValues = (() => {
-    if (amountTarget?.kind === 'payment') {
+    if (target?.kind === 'payment') {
       const allocatedElsewhere = payments.reduce((sum, payment, index) => (
-        index === amountTarget.index ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0)
+        index === target.index ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0)
       ), walletAmt + khrUsd);
       const dueDisplay = toDisplayUnit(Math.max(0, remaining - allocatedElsewhere));
       return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
     }
-    if (amountTarget?.kind === 'wallet') {
+    if (target?.kind === 'wallet') {
       const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
       const maxWalletStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
       const dueDisplay = toDisplayUnit(Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere)));
@@ -398,7 +408,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     onConfirm(splitLines, walletAmt, finalDiscount, partial);
   };
 
-  const keypad = amountTarget ? (
+  const keypad = (
         <CurrencyTouchNumberPad
               value={activeAmountValue}
               onChange={updateActiveAmount}
@@ -406,18 +416,18 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
               clearLabel={t('clearAmount')}
               backspaceLabel={t('backspaceAmount')}
               // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
-              currencyMaxDecimals={unitAdapter.maxDecimals}
-              amountTarget={amountTarget.kind}
+              currencyMaxDecimals={target.kind === 'khr' ? 0 : unitAdapter.maxDecimals}
+              amountTarget={target.kind === 'khr' ? 'payment' : target.kind}
               discountType={discountType}
               max={activeAmountMax}
               quickValues={activeAmountQuickValues}
             />
-  ) : null;
+  );
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="flex w-full flex-col md:w-auto md:flex-row md:items-center md:gap-3">
-      <div className="bg-card flex max-h-[95vh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:max-w-md sm:rounded-2xl md:w-[28rem] md:max-w-none md:shrink-0">
+      <div className="flex w-full flex-col min-[700px]:w-auto min-[700px]:flex-row min-[700px]:items-center min-[700px]:gap-3">
+      <div className="bg-card flex max-h-[95vh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:max-w-md sm:rounded-2xl min-[700px]:w-[24rem] min-[700px]:max-w-none min-[700px]:shrink-0">
 
         {/* Compact header and bill summary share one block to preserve vertical space. */}
         <div className="shrink-0 border-b border-border px-5 pb-3 pt-4">
@@ -598,7 +608,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                     </label>
                     <label className="block min-w-0 text-xs font-semibold text-muted-foreground">KHR (៛)
                       <input type="number" value={khrTendered} min="0" step="1" inputMode="numeric"
-                        onFocus={() => setAmountTarget(null)}
+                        onFocus={() => setAmountTarget({ kind: 'khr' })}
                         onChange={(e) => { setKhrTendered(e.target.value); setPaymentsTouched(true); }}
                         placeholder="0"
                         className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-card px-3 py-3 text-lg font-semibold text-foreground" />
@@ -689,7 +699,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
               </div>
             </div>
           )}
-          {amountTarget && <div className="md:hidden">{keypad}</div>}
+          {amountTarget && <div className="min-[700px]:hidden">{keypad}</div>}
 
           {/* Change stays at the bottom of all payment controls. */}
           {hasCash && (
@@ -748,7 +758,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           )}
         </div>
       </div>
-      {keypad && <aside className="hidden max-h-[95vh] w-72 shrink-0 overflow-y-auto rounded-2xl bg-card p-3 shadow-2xl md:block">{keypad}</aside>}
+      <aside className="hidden max-h-[95vh] w-64 shrink-0 overflow-y-auto rounded-2xl bg-card p-3 shadow-2xl min-[700px]:block">{keypad}</aside>
       </div>
     </div>
   );
