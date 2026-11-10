@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { resetDatabaseWithBackup, resetDatabaseForCurrencyChange, getCurrencyResetImpact, listBackups, deleteBackup, getCurrentSchemaVersion } from '../db';
+import { resetDatabaseWithBackup, clearTestSalesWithBackup, getTestSalesCounts, resetDatabaseForCurrencyChange, getCurrencyResetImpact, listBackups, deleteBackup, getCurrentSchemaVersion } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from '../middleware/security';
 import { requirePermission } from '../services/authorization';
 import { requireMasterPin } from '../middleware/master-pin';
@@ -91,6 +91,7 @@ router.post('/master-pin/reset', requirePermission('database.manage'), (req: Req
 });
 
 const INITIALIZE_CONFIRM_PHRASE = 'INITIALIZE';
+const CLEAR_TEST_SALES_CONFIRM_PHRASE = 'CLEAR TEST SALES';
 
 router.get('/currency-reset-impact', requirePermission('database.manage'), (_req: Request, res: Response) => {
   try {
@@ -164,6 +165,28 @@ router.post('/initialize', requirePermission('database.manage'), requireMasterPi
     res.status(500).json({ error: 'Initialize failed' });
   } finally {
     googleDrive.releaseDatabaseRestore();
+  }
+}));
+
+router.get('/clear-test-sales-impact', requirePermission('database.manage'), (_req: Request, res: Response) => {
+  try {
+    res.json({ counts: getTestSalesCounts() });
+  } catch (error: unknown) {
+    console.error('[DB Tools] clear test sales impact error:', error);
+    res.status(500).json({ error: 'Could not inspect test sales' });
+  }
+});
+
+router.post('/clear-test-sales', requirePermission('database.manage'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+  if (req.body?.confirmation_phrase !== CLEAR_TEST_SALES_CONFIRM_PHRASE) {
+    return res.status(400).json({ error: `Type "${CLEAR_TEST_SALES_CONFIRM_PHRASE}" to confirm` });
+  }
+  try {
+    const { backupPath, deleted } = await clearTestSalesWithBackup(getHttpRequestSignal(req));
+    res.json({ success: true, backupPath, deleted });
+  } catch (error: unknown) {
+    console.error('[DB Tools] clear test sales error:', error);
+    res.status(500).json({ error: 'Clearing test sales failed; nothing was changed' });
   }
 }));
 

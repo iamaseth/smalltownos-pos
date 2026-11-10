@@ -649,6 +649,8 @@ Router: `main/routes/database-tools.ts`. Full path: `/api/db-tools`.
 | `GET` | `/currency-reset-impact` | `ROLE_ACCESS.owner` | none | Active currency plus the invoice, order, refund, customer, product, and add-on counts the destructive warning uses. |
 | `POST` | `/currency-reset` | `ROLE_ACCESS.owner` + Master PIN | body: `currency` | Also needs `current_currency` and `confirmation_phrase` of the form `CHANGE TO <CODE>`. Creates a recovery backup, recreates the local database, preserves the sanitized menu catalog with monetary fields zeroed, and returns the backup path. The active session becomes invalid. |
 | `POST` | `/initialize` | `ROLE_ACCESS.owner` + Master PIN | body: `confirmation_phrase` | Master-PIN gated database initialization. |
+| `GET` | `/clear-test-sales-impact` | `ROLE_ACCESS.owner` | none | Row counts per table that clearing test sales would delete. |
+| `POST` | `/clear-test-sales` | `ROLE_ACCESS.owner` + Master PIN | body: `confirmation_phrase` (`CLEAR TEST SALES`) | Takes a full backup, then deletes orders, bills, payments, refunds, cash sessions, cash drawer movements, held orders, and bill print and message logs in one transaction (rolled back if it would orphan any row). The menu, tables, staff, customers, loyalty records, and settings are kept and occupied tables are set to available. Stock quantities are not restored. Returns `backupPath` and per-table `deleted` counts. |
 
 ### Reports
 
@@ -720,7 +722,7 @@ The KDS server reads the same database as the main API. Its whole surface:
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/health` | none | none | `{ status, service, version, timestamp }` |
+| `GET` | `/api/health` | none | none | `{ status, db, service, version, timestamp }`. `503` when the database reports unhealthy. |
 | `GET` | `/api/kds/info` | none | none | `{ language, country, kds_default_view }` for the pre-login display. `404` when KDS is disabled, so the surface is not advertised to the LAN. |
 | `POST` | `/api/auth/login` | none, `authRateLimit` | body: `email`, `password` | `{ access_token, user: { id, name, email, role, category_ids, station_ids, station_assignments_configured } }`. 24-hour token. `403` for a role outside `kitchen`. |
 | `POST` | `/api/auth/logout` | bearer token, not role-gated | none | `{ message }`. Revokes the token. |
@@ -770,7 +772,7 @@ The seven routes that are not forwards:
 
 | Method | Path | Authorization | Response |
 | --- | --- | --- | --- |
-| `GET` | `/api/health` | none | `{ status, service, version, timestamp }` |
+| `GET` | `/api/health` | none | none | `{ status, db, service, version, timestamp }`. `503` when the database reports unhealthy. |
 | `GET` | `/api/server-app/info` | none | `{ language, country, currency, currency_symbol, currency_position, currency_fraction_digits, kds_enabled }`. `404` when the feature is disabled; `409` with `error: "regional_not_configured"` when the regional snapshot cannot be resolved. |
 | `POST` | `/api/auth/login` | none, `authRateLimit` | Body `email`, `password`, `remember_me`. `{ access_token, user: { id, name, email, role } }`; 24 hours, or 10 days with `remember_me`. `403` for a role outside `ROLE_ACCESS.serverApp`. |
 | `GET` | `/api/auth/me` | `ROLE_ACCESS.serverApp` | `{ user: { id, name, email, role } }` |

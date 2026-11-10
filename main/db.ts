@@ -1473,6 +1473,48 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
   );
 }
 
+const TEST_SALES_TABLES_IN_DELETE_ORDER = [
+  'refund_idempotency', 'refunds', 'payment_transaction_ref_conflicts', 'payment_transaction_refs',
+  'payment_idempotency', 'order_idempotency', 'print_logs', 'whatsapp_messages', 'bill_items', 'bills',
+  'order_item_addons', 'order_items', 'order_audit_log', 'held_orders', 'orders',
+  'cash_drawer_movements', 'cash_sessions', 'cash_closures',
+] as const;
+
+export type TestSalesCounts = Record<string, number>;
+
+function existingTestSalesTables(dbInstance: Database.Database): string[] {
+  const present = new Set((dbInstance.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name));
+  return TEST_SALES_TABLES_IN_DELETE_ORDER.filter((table) => present.has(table));
+}
+
+export function getTestSalesCounts(dbInstance: Database.Database = getDatabase()): TestSalesCounts {
+  const counts: TestSalesCounts = {};
+  for (const table of existingTestSalesTables(dbInstance)) counts[table] = countTableRows(dbInstance, table);
+  return counts;
+}
+
+/** Deletes sales, payments and cash sessions after a full backup; menu, tables, staff, customers and settings stay. */
+export async function clearTestSalesWithBackup(signal?: AbortSignal): Promise<{ backupPath: string; deleted: TestSalesCounts }> {
+  return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
+    const { path: backupPath } = await createBackupUnlocked(undefined, maintenanceSignal);
+    throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+    const dbInstance = getDatabase();
+    const baselineViolations = getForeignKeyViolationKeys(dbInstance);
+    const deleted: TestSalesCounts = {};
+    const run = dbInstance.transaction(() => {
+      for (const table of existingTestSalesTables(dbInstance)) {
+        const where = table === 'whatsapp_messages' ? ' WHERE bill_id IS NOT NULL' : '';
+        deleted[table] = dbInstance.prepare(`DELETE FROM ${table}${where}`).run().changes;
+      }
+      dbInstance.prepare("UPDATE tables SET status = 'available' WHERE status = 'occupied'").run();
+      const introduced = [...getForeignKeyViolationKeys(dbInstance)].filter((key) => !baselineViolations.has(key));
+      if (introduced.length > 0) throw new Error(`Clearing test sales would leave orphaned rows (${introduced.length}); nothing was changed`);
+    });
+    run();
+    return { backupPath, deleted };
+  }, signal);
+}
+
 type CurrencyResetMenuSnapshot = {
   categories: Record<string, unknown>[];
   products: Record<string, unknown>[];

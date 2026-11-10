@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dialog';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import api from '@/lib/api';
+import { ClearTestSalesCard } from './ClearTestSalesCard';
 import toast from 'react-hot-toast';
 
 export type BackupInfo = {
@@ -842,6 +843,8 @@ export function DatabaseSettingsTab({
             </div>
           )}
         </div>
+
+        <ClearTestSalesCard />
 
         {/* Danger Zone: Initialize Database */}
         <div className="bg-card rounded-xl border border-red-200 p-6">
