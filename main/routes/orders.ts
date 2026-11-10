@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate, recordOrderAudit } from '../db';
+import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate, recordOrderAudit, dayBoundsInTimezone, localDateInTimezone, tenantBusinessDayStartTime } from '../db';
+import { resolveRegionalSnapshot } from '../countries';
 import {
   calculateConfiguredChargeTaxes,
   calculateItemTax,
@@ -201,6 +202,36 @@ function resolveItemAddons(
   return resolved;
 }
 
+function addDaysToDate(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** Resolves ?range=today|yesterday|week or ?business_date=YYYY-MM-DD to a UTC range in the tenant timezone and business day. */
+function resolveBusinessRange(query: Request['query']): [string, string] | null {
+  const range = typeof query.range === 'string' ? query.range : '';
+  const customDate = typeof query.business_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(query.business_date) ? query.business_date : null;
+  if (!customDate && !['today', 'yesterday', 'week'].includes(range)) return null;
+  let timezone: string;
+  try {
+    timezone = resolveRegionalSnapshot({
+      country: getSettingValue('country') ?? undefined,
+      currency: getSettingValue('currency') ?? undefined,
+      timezone: getSettingValue('timezone') ?? undefined,
+    }).timezone;
+  } catch {
+    timezone = getSettingValue('timezone') || 'UTC';
+  }
+  const startTime = tenantBusinessDayStartTime();
+  const today = localDateInTimezone(new Date(), timezone, startTime);
+  const [from, to] = customDate
+    ? [customDate, customDate]
+    : range === 'yesterday' ? [addDaysToDate(today, -1), addDaysToDate(today, -1)]
+      : range === 'week' ? [addDaysToDate(today, -6), today]
+        : [today, today];
+  return [dayBoundsInTimezone(from, timezone, startTime)[0], dayBoundsInTimezone(to, timezone, startTime)[1]];
+}
+
 router.get('/', orderReadRateLimit, requirePermission('orders.read'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -222,7 +253,14 @@ router.get('/', orderReadRateLimit, requirePermission('orders.read'), (req: Requ
       params.push(req.query.type);
     }
     // Filter by UTC day or date range across indexed created_at column.
-    if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
+    const businessRange = resolveBusinessRange(req.query);
+    if (businessRange) {
+      const includeOpen = req.query.include_open === '1' || req.query.include_open === 'true';
+      wheres.push(includeOpen
+        ? "((created_at >= ? AND created_at < ?) OR status IN ('pending', 'preparing', 'ready', 'served'))"
+        : '(created_at >= ? AND created_at < ?)');
+      params.push(businessRange[0], businessRange[1]);
+    } else if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
       const [s, e] = utcDayBounds(utcTodayDate());
       wheres.push('created_at >= ? AND created_at < ?');
       params.push(s, e);

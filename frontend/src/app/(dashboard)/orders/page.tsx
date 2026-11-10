@@ -53,13 +53,18 @@ import { OrderCard } from '@/components/orders/OrderCard';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
-type FilterType = 'all' | 'active' | 'unpaid' | 'held';
+type FilterType = 'open' | 'unpaid' | 'paid' | 'held' | 'all' | 'cancelled' | 'completed';
 
-const tabLabelKey: Record<FilterType, OrdersKey> = {
+const MAIN_TABS: FilterType[] = ['open', 'unpaid', 'paid', 'held', 'all'];
+const MORE_TABS: FilterType[] = ['cancelled', 'completed'];
+
+const tabLabelKey: Record<Exclude<FilterType, 'open'>, OrdersKey> = {
   all: 'all',
-  active: 'active',
   unpaid: 'unpaidBadge',
+  paid: 'paid',
   held: 'held',
+  cancelled: 'cancelled',
+  completed: 'completed',
 };
 
 // Consolidated state types
@@ -123,7 +128,33 @@ export default function OrdersPage() {
   // Snapshot of "now" for the "Xm ago" timestamps below — Date.now() can't be called directly
   // during render (impure), so it's held in state and refreshed periodically instead.
   const [now, setNow] = useState(() => Date.now());
-  const [tabFilter, setTabFilter] = useState<FilterType>('active');
+  const [tabFilter, setTabFilter] = useState<FilterType>('open');
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage.getItem('orders-view-mode') === 'list' ? 'list' : 'cards';
+    } catch {
+      return 'cards';
+    }
+  });
+  const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
+  type DateRange = 'today' | 'yesterday' | 'week' | 'custom';
+  const [dateRange, setDateRange] = useState<DateRange>('today');
+  const [customDate, setCustomDate] = useState('');
+  const rangeKey = dateRange === 'custom' ? customDate : dateRange;
+  const rangeKeyRef = useRef(rangeKey);
+  const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [extra, setExtra] = useState<{ key: string; orders: Order[] }>({ key: '', orders: [] });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const rangeParams = (key: string): Record<string, string | number> => {
+    const base = { per_page: 100, include_open: 1 };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(key)) return { ...base, business_date: key };
+    return { ...base, range: ['today', 'yesterday', 'week'].includes(key) ? key : 'today' };
+  };
+  const tabLabel = (f: FilterType) => (f === 'open' ? 'Open' : tOrders(tabLabelKey[f]));
+  const chooseViewMode = (mode: 'cards' | 'list') => {
+    setViewMode(mode);
+    try { window.localStorage.setItem('orders-view-mode', mode); } catch { /* storage is optional */ }
+  };
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [refundModal, setRefundModal] = useState<{ order: Order; bills: Bill[] } | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
@@ -231,9 +262,10 @@ export default function OrdersPage() {
 
   const fetchOrders = async () => {
     try {
-      const { data } = await api.get('/orders', { params: { per_page: 50 } });
+      const { data } = await api.get('/orders', { params: rangeParams(rangeKeyRef.current) });
       const orders = data.orders || [];
       setOrders(orders);
+      setNextCursor(data.nextCursor ?? null);
       // Fetch print history only for bills we haven't fetched yet
       orders.forEach((order: Order) => {
         if (order.bill?.id && !fetchedBillIdsRef.current.has(order.bill.id)) {
@@ -245,6 +277,29 @@ export default function OrdersPage() {
       toast.error(tOrders('loadOrdersFailed'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    rangeKeyRef.current = rangeKey;
+    if (dateRange === 'custom' && !customDate) return;
+    fetchOrders();
+    // fetchOrders reads the range from a ref, so only the range itself should re-run this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey]);
+
+  const loadMoreOrders = async () => {
+    if (nextCursor === null || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const { data } = await api.get('/orders', { params: { ...rangeParams(rangeKeyRef.current), before_id: nextCursor } });
+      const more: Order[] = data.orders || [];
+      setExtra((current) => ({ key: rangeKeyRef.current, orders: [...(current.key === rangeKeyRef.current ? current.orders : []), ...more] }));
+      setNextCursor(data.nextCursor ?? null);
+    } catch {
+      toast.error(tOrders('loadOrdersFailed'));
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -452,11 +507,17 @@ export default function OrdersPage() {
     return true;
   };
 
-  const filteredOrders = orders.filter((order) => {
+  const loadedOrders = extra.key === rangeKey
+    ? [...orders, ...extra.orders.filter((extraOrder) => !orders.some((order) => order.id === extraOrder.id))]
+    : orders;
+  const filteredOrders = loadedOrders.filter((order) => {
     // Tab filter
-    if (tabFilter === 'active' && !isOrderActive(order)) return false;
-    // Filter unpaid orders using resolved payment status since bills are generated at checkout.
+    if (tabFilter === 'open' && !isOrderActive(order)) return false;
+    // Payment tabs use resolved payment status since bills are generated at checkout.
     if (tabFilter === 'unpaid' && !['unpaid', 'partial'].includes(paymentStatusOf(order) || '')) return false;
+    if (tabFilter === 'paid' && paymentStatusOf(order) !== 'paid') return false;
+    if (tabFilter === 'cancelled' && order.status !== 'cancelled') return false;
+    if (tabFilter === 'completed' && order.status !== 'completed') return false;
 
     // Search by order number, customer name, or phone
     if (filters.search && !matchesOrderSearch(order, filters.search)) {
@@ -468,16 +529,6 @@ export default function OrdersPage() {
     }
     // Filter by type
     if (filters.type && order.type !== filters.type) {
-      return false;
-    }
-    // Filter by status
-    if (filters.status === 'active' && !isOrderActive(order)) {
-      return false;
-    }
-    if (filters.status === 'completed' && order.status !== 'completed') {
-      return false;
-    }
-    if (filters.status === 'cancelled' && order.status !== 'cancelled') {
       return false;
     }
     return true;
@@ -858,13 +909,68 @@ export default function OrdersPage() {
     }
   };
 
+  const renderOrderCard = (order: Order) => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              now={now}
+              canCancelItems={canCancelItems}
+              canRestoreItems={canRestoreItems}
+              canRefund={canRefund}
+              isWhatsAppReady={isWhatsAppReady}
+              printHistory={printHistory}
+              generatingBillId={generatingBill}
+              printingBillId={printingBillId}
+              sendingWaOrderId={sendingWaOrderId}
+              cancellingOrderId={cancellingOrderId}
+              convertingOrderId={convertingOrderId}
+              isLinkingCustomer={linkCustomerOrderId === order.id}
+              linkCustomerSearch={linkCustomerSearch}
+              linkCustomerResults={linkCustomerResults}
+              linkingCustomer={linkingCustomer}
+              onCheckout={handleCheckout}
+              onAddItems={openAddItemsModal}
+              onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
+              onConvertToTakeaway={handleConvertToTakeaway}
+              onCancelOrder={(ord) => setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })}
+              onPrint={(billId) => setConfirmPrintBillId(billId)}
+              onSendWhatsApp={handleSendViaFlo}
+              onLinkCustomer={(orderId) => {
+                setLinkCustomerOrderId(orderId);
+                setLinkCustomerSearch('');
+                setLinkCustomerResults([]);
+              }}
+              onCancelLinkCustomer={() => {
+                setLinkCustomerOrderId(null);
+                setLinkCustomerSearch('');
+                setLinkCustomerResults([]);
+              }}
+              onSearchCustomer={(query) => {
+                setLinkCustomerSearch(query);
+                searchCustomersForLink(query);
+              }}
+              onSelectCustomer={handleLinkCustomer}
+              onCreateCustomer={(orderId, search) => {
+                setCreateCustomerSearch(search);
+                setCreateCustomerOrderId(orderId);
+              }}
+              onCreateNewOrderForCustomer={handleCreateNewOrderForCustomer}
+              onDownloadPrintPreview={handleDownloadPrintPreview}
+              onDeleteItem={deleteItem}
+              onVoidItem={(orderId, itemId, productName) =>
+                setVoidItemModal({ orderId, itemId, productName, overridePin: '' })
+              }
+              onRestoreItem={restoreItem}
+            />
+  );
+
   return (
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-foreground">{tNav('orders')}</h1>
-        <div className="flex gap-2">
-          {(['all', 'active', 'unpaid', 'held'] as FilterType[]).map((f) => (
+        <div className="flex flex-wrap gap-2">
+          {MAIN_TABS.map((f) => (
             <button
               key={f}
               onClick={() => setTabFilter(f)}
@@ -874,9 +980,22 @@ export default function OrdersPage() {
                   : 'bg-card text-muted-foreground border border-border hover:border-gray-400'
               }`}
             >
-              {tOrders(tabLabelKey[f])}
+              {tabLabel(f)}
             </button>
           ))}
+          <select
+            aria-label="More order views"
+            value={MORE_TABS.includes(tabFilter) ? tabFilter : ''}
+            onChange={(e) => { if (e.target.value) setTabFilter(e.target.value as FilterType); }}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+              MORE_TABS.includes(tabFilter)
+                ? 'bg-brand text-white'
+                : 'bg-card text-muted-foreground border border-border hover:border-gray-400'
+            }`}
+          >
+            <option value="">More</option>
+            {MORE_TABS.map((f) => <option key={f} value={f}>{tabLabel(f)}</option>)}
+          </select>
         </div>
       </div>
 
@@ -921,17 +1040,29 @@ export default function OrdersPage() {
           <option value="online">{tOrders('online')}</option>
         </select>
 
-        {/* Status filter */}
         <select
-          value={filters.status}
-          onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+          aria-label="Date range"
+          value={dateRange}
+          onChange={(e) => setDateRange(e.target.value as DateRange)}
           className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
-          <option value="">{tOrders('allStatuses')}</option>
-          <option value="active">{tOrders('active')}</option>
-          <option value="completed">{tOrders('completed')}</option>
-          <option value="cancelled">{tOrders('cancelled')}</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="week">Last 7 days</option>
+          <option value="custom">Pick a date</option>
         </select>
+        {dateRange === 'custom' && (
+          <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)} aria-label="Order date"
+            className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand" />
+        )}
+        <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Order layout">
+          {(['cards', 'list'] as const).map((mode) => (
+            <button key={mode} type="button" onClick={() => chooseViewMode(mode)} aria-pressed={viewMode === mode}
+              className={`px-3 py-2 text-sm font-medium ${viewMode === mode ? 'bg-brand text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}>
+              {mode === 'cards' ? 'Cards' : 'List'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Orders List */}
@@ -1012,61 +1143,57 @@ export default function OrdersPage() {
           <p>{tOrders('empty')}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
-          {filteredOrders.map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              now={now}
-              canCancelItems={canCancelItems}
-              canRestoreItems={canRestoreItems}
-              canRefund={canRefund}
-              isWhatsAppReady={isWhatsAppReady}
-              printHistory={printHistory}
-              generatingBillId={generatingBill}
-              printingBillId={printingBillId}
-              sendingWaOrderId={sendingWaOrderId}
-              cancellingOrderId={cancellingOrderId}
-              convertingOrderId={convertingOrderId}
-              isLinkingCustomer={linkCustomerOrderId === order.id}
-              linkCustomerSearch={linkCustomerSearch}
-              linkCustomerResults={linkCustomerResults}
-              linkingCustomer={linkingCustomer}
-              onCheckout={handleCheckout}
-              onAddItems={openAddItemsModal}
-              onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
-              onConvertToTakeaway={handleConvertToTakeaway}
-              onCancelOrder={(ord) => setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })}
-              onPrint={(billId) => setConfirmPrintBillId(billId)}
-              onSendWhatsApp={handleSendViaFlo}
-              onLinkCustomer={(orderId) => {
-                setLinkCustomerOrderId(orderId);
-                setLinkCustomerSearch('');
-                setLinkCustomerResults([]);
-              }}
-              onCancelLinkCustomer={() => {
-                setLinkCustomerOrderId(null);
-                setLinkCustomerSearch('');
-                setLinkCustomerResults([]);
-              }}
-              onSearchCustomer={(query) => {
-                setLinkCustomerSearch(query);
-                searchCustomersForLink(query);
-              }}
-              onSelectCustomer={handleLinkCustomer}
-              onCreateCustomer={(orderId, search) => {
-                setCreateCustomerSearch(search);
-                setCreateCustomerOrderId(orderId);
-              }}
-              onCreateNewOrderForCustomer={handleCreateNewOrderForCustomer}
-              onDownloadPrintPreview={handleDownloadPrintPreview}
-              onDeleteItem={deleteItem}
-              onVoidItem={(orderId, itemId, productName) =>
-                setVoidItemModal({ orderId, itemId, productName, overridePin: '' })
-              }
-              onRestoreItem={restoreItem}
-            />
-          ))}
+        viewMode === 'cards' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
+            {filteredOrders.map((order) => renderOrderCard(order))}
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            {filteredOrders.map((order) => {
+              const payStatus = paymentStatusOf(order);
+              const label = order.tab_name || order.table?.name || (order.type === 'takeaway' ? 'Takeaway' : order.type === 'dine_in' ? 'No table' : order.type);
+              const owed = Number(order.bill?.balance ?? order.total);
+              const minutesAgo = Math.max(0, Math.floor((now - new Date(order.created_at).getTime()) / 60000));
+              const ago = minutesAgo < 60 ? `${minutesAgo}m` : minutesAgo < 1440 ? `${Math.floor(minutesAgo / 60)}h` : `${Math.floor(minutesAgo / 1440)}d`;
+              const badge = order.status === 'cancelled'
+                ? { text: tOrders('cancelled'), cls: 'bg-gray-500/20 text-gray-400' }
+                : payStatus === 'paid'
+                  ? { text: tOrders('paid'), cls: 'bg-emerald-500/20 text-emerald-400' }
+                  : payStatus === 'partial'
+                    ? { text: `Owes ${fmt(owed)}`, cls: 'bg-amber-500/20 text-amber-400' }
+                    : { text: tOrders('unpaidBadge'), cls: 'bg-red-500/20 text-red-400' };
+              const canPay = payStatus === 'unpaid' || payStatus === 'partial';
+              const expanded = expandedOrderId === order.id;
+              return (
+                <div key={order.id} className="border-b border-border last:border-b-0">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+                    <span className="w-40 shrink-0 text-sm font-bold text-foreground">#{order.order_number}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                      {label}
+                      <span className="ms-2 text-muted-foreground">{order.customer?.name || ''}</span>
+                    </span>
+                    <span className="w-12 shrink-0 text-xs text-muted-foreground">{ago}</span>
+                    <span className="w-24 shrink-0 text-end text-sm font-bold tabular-nums">{fmt(Number(order.total))}</span>
+                    <span className={`w-28 shrink-0 rounded-full px-2 py-1 text-center text-xs font-semibold ${badge.cls}`}>{badge.text}</span>
+                    {canPay && order.status !== 'cancelled' && (
+                      <Button size="sm" onClick={() => handleCheckout(order.id)} disabled={generatingBill === order.id}>{tOrders('checkout')}</Button>
+                    )}
+                    <Button size="sm" variant="outline" onClick={() => setExpandedOrderId(expanded ? null : order.id)}>{expanded ? 'Hide' : 'Details'}</Button>
+                  </div>
+                  {expanded && <div className="bg-muted/30 p-3">{renderOrderCard(order)}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {tabFilter !== 'held' && !loading && filteredOrders.length > 0 && (
+        <div className="flex items-center justify-center gap-3 py-2 text-sm text-muted-foreground">
+          <span>Showing {filteredOrders.length} {filteredOrders.length === 1 ? 'order' : 'orders'}{dateRange === 'custom' ? '' : ` (${dateRange === 'today' ? 'today' : dateRange === 'yesterday' ? 'yesterday' : 'last 7 days'}, plus anything still open)`}</span>
+          {nextCursor !== null && (
+            <Button size="sm" variant="outline" onClick={loadMoreOrders} disabled={loadingMore}>{loadingMore ? '…' : 'Load more'}</Button>
+          )}
         </div>
       )}
 
