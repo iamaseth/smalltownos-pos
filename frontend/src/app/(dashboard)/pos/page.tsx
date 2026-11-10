@@ -22,6 +22,7 @@ import TablePickerModal from '@/components/pos/TablePickerModal';
 import TabChoiceModal from '@/components/pos/TabChoiceModal';
 import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
 import PaymentModal from '@/components/pos/PaymentModal';
+import OpenTabsModal from '@/components/pos/OpenTabsModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
@@ -132,6 +133,22 @@ export default function POSPage() {
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [payNow, setPayNow] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [openTabs, setOpenTabs] = useState<Order[]>([]);
+  const [showOpenTabs, setShowOpenTabs] = useState(false);
+  const [payingTabId, setPayingTabId] = useState<number | null>(null);
+  const [tabsNow, setTabsNow] = useState(() => Date.now());
+  const refreshOpenTabs = useCallback(async () => {
+    try {
+      const { data } = await api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } });
+      setOpenTabs(((data.orders || []) as Order[]).filter((o) => !o.table_id && o.tab_name));
+      setTabsNow(Date.now());
+    } catch { /* the tab list is optional */ }
+  }, []);
+  useEffect(() => {
+    const first = setTimeout(() => { void refreshOpenTabs(); }, 0);
+    const timer = setInterval(() => { void refreshOpenTabs(); }, 15000);
+    return () => { clearTimeout(first); clearInterval(timer); };
+  }, [refreshOpenTabs]);
   const [supportError, setSupportError] = useState<{ title: string; subject: string; code: string; message: string; payload: Record<string, unknown> } | null>(null);
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
   const delivery = useSupportTicketStatus(sentTicketId);
@@ -1025,6 +1042,28 @@ export default function POSPage() {
     placeAfterDestination();
   };
 
+  const handleAddToTab = (order: Order) => {
+    cart.setTableId(null);
+    cart.setOrderType('dine_in');
+    cart.setTabName(order.tab_name || '');
+    setPendingOrder(order);
+    setShowOpenTabs(false);
+    toast.success(`Adding to tab: ${order.tab_name}. Pick items, then tap Add to tab.`);
+  };
+
+  const handlePayTab = async (order: Order) => {
+    setPayingTabId(order.id);
+    try {
+      const { data } = await api.post('/bills/generate', { order_id: order.id });
+      setShowOpenTabs(false);
+      setPaymentBill(data.bill);
+    } catch {
+      toast.error(t('generateBillFailed'));
+    } finally {
+      setPayingTabId(null);
+    }
+  };
+
   const handleSelectHeldTable = async (tableId: string) => {
     try {
       const held = await heldOrders.restoreOrder(tableId);
@@ -1127,6 +1166,7 @@ export default function POSPage() {
     setPaymentBill(null);
     setCheckoutTable(null);
     refreshTables();
+    void refreshOpenTabs();
 
     if (bill) {
       try {
@@ -1144,6 +1184,8 @@ export default function POSPage() {
     onPlaceOrder: handlePlaceOrder,
     onPayNow: handlePayNow,
     onChooseDestination: () => setShowTabChoice(true),
+    onShowTabs: () => { void refreshOpenTabs(); setShowOpenTabs(true); },
+    openTabCount: openTabs.length,
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
   };
@@ -1359,6 +1401,17 @@ export default function POSPage() {
           onAddItems={handleAddItemsToOrder}
           onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
           onAddCartToOrder={handleAddCartToOrder}
+        />
+      )}
+
+      {showOpenTabs && (
+        <OpenTabsModal
+          tabs={openTabs}
+          now={tabsNow}
+          payingOrderId={payingTabId}
+          onAddItems={handleAddToTab}
+          onPay={handlePayTab}
+          onClose={() => setShowOpenTabs(false)}
         />
       )}
 
