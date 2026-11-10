@@ -734,7 +734,7 @@ export default function POSPage() {
   };
 
   // Handle prepaid checkout - place order and pay in one step
-  const handlePrepaidCheckout = async (payments: PrepaidPayment[], walletAmount: number, discount: PrepaidDiscount | null) => {
+  const handlePrepaidCheckout = async (payments: PrepaidPayment[], walletAmount: number, discount: PrepaidDiscount | null, partial = false) => {
     const isPrepaidCheckout = shouldTakePaymentNow || payNow;
     setPayNow(false);
     setShowPrepaidCheckout(false);
@@ -907,16 +907,19 @@ export default function POSPage() {
         ? paymentResponse.data.loyaltyPointsEarned
         : 0;
 
-      if (paidBill.payment_status !== 'paid') {
+      const keepBillOpen = partial && paidBill.payment_status === 'partial';
+      if (paidBill.payment_status !== 'paid' && !keepBillOpen) {
         toast.error(t('paymentIncomplete', {
           amount: currencyFmt(Number(paidBill.balance) || 0),
         }));
         return;
       }
 
-      const successMsg = pointsEarned > 0
-        ? t('orderPaidWithPoints', { number: orderData.order.order_number, points: pointsEarned })
-        : t('orderPaid', { number: orderData.order.order_number });
+      const successMsg = keepBillOpen
+        ? `Payment recorded. ${currencyFmt(Number(paidBill.balance) || 0)} left to pay.`
+        : pointsEarned > 0
+          ? t('orderPaidWithPoints', { number: orderData.order.order_number, points: pointsEarned })
+          : t('orderPaid', { number: orderData.order.order_number });
       toast.success(successMsg);
       if (cart.tableId) {
         try {
@@ -934,6 +937,10 @@ export default function POSPage() {
 
       await printKotIfEnabled(orderData.order);
 
+      if (keepBillOpen) {
+        setPaymentBill(paidBill);
+        return;
+      }
       await printBillForTenant(paidBill, isPrepaidCheckout);
     } catch (error) {
       if (error instanceof OrderAttemptStorageError) reportOrderStorageFailure(t('processOrderFailed'));

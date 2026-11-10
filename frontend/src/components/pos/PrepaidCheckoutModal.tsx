@@ -1,5 +1,6 @@
 'use client';
 
+import SplitEvenlyRow from '@/components/pos/SplitEvenlyRow';
 import { useState, useEffect, useMemo } from 'react';
 import { X, Sparkles, ArrowLeftRight, CheckCircle2, Percent, Wallet, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -45,7 +46,7 @@ export interface PrepaidDiscount {
 interface Props {
   currency: string;
   onClose: () => void;
-  onConfirm: (payments: PrepaidPayment[], walletAmount: number, discount: PrepaidDiscount | null) => void;
+  onConfirm: (payments: PrepaidPayment[], walletAmount: number, discount: PrepaidDiscount | null, partial?: boolean) => void;
 }
 
 // Loyalty points are 1:1 with currency units. Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
@@ -100,6 +101,10 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const [walletAmount, setWalletAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
+  const [khrTendered, setKhrTendered] = useState('');
+  const [khrRate, setKhrRate] = useState(4100);
+  const [changeCurrency, setChangeCurrency] = useState<'USD' | 'KHR'>('KHR');
+  const [people, setPeople] = useState(2);
 
   // Discount state (applied to the order once checkout is confirmed)
   const [discountOpen, setDiscountOpen] = useState(false);
@@ -155,6 +160,10 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   }
 
   useEffect(() => {
+    api.get('/settings/usd_khr_exchange_rate').then(({ data }) => {
+      const value = Number(data.setting?.value);
+      if (Number.isInteger(value) && value >= 1000 && value <= 10000) setKhrRate(value);
+    }).catch(() => { /* Default to 4100 if settings are unavailable. */ });
     api.get('/settings/loyalty')
       .then((res) => setLoyaltySettings(res.data))
       .catch(() => {});
@@ -234,7 +243,9 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   }
 
   const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
-  const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt);
+  const khrAmount = Number(khrTendered) || 0;
+  const khrUsd = khrAmount / khrRate;
+  const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt) + toMinorUnits(khrUsd);
   const totalPayment = totalPaymentMinor / minorFactor;
   const remainingMinor = toMinorUnits(remaining);
 
@@ -244,14 +255,14 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   };
 
   const allocateRemainingTo = (idx: number) => {
-    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt);
+    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt + khrUsd);
     const dueStored = Math.max(0, remaining - allocatedElsewhere);
     const dueDisplay = toDisplayUnit(dueStored);
     setPaymentsTouched(true);
     setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' } : payment));
   };
 
-  const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
+  const hasCash = khrAmount > 0 || payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
   const change = hasCash && totalPaymentMinor > remainingMinor
     ? (totalPaymentMinor - remainingMinor) / minorFactor
     : 0;
@@ -291,7 +302,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     if (amountTarget?.kind === 'payment') {
       const allocatedElsewhere = payments.reduce((sum, payment, index) => (
         index === amountTarget.index ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0)
-      ), walletAmt);
+      ), walletAmt + khrUsd);
       const dueDisplay = toDisplayUnit(Math.max(0, remaining - allocatedElsewhere));
       return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
     }
@@ -304,7 +315,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     return [];
   })();
 
-  const handleConfirm = () => {
+  const handleConfirm = (partial = false) => {
     if (hasInvalidFixedDiscount) {
       toast.error(unitAdapter.maxDecimals === 0 ? t('fixedDiscountMinimum') : t('discountInvalid'));
       return;
@@ -324,6 +335,10 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       toast.error(t('paymentFailed'));
       return;
     }
+    if (khrTendered.trim() && (!/^[0-9]+$/.test(khrTendered.trim()) || !Number.isSafeInteger(khrAmount))) {
+      toast.error('KHR cash must be a non-negative whole number');
+      return;
+    }
     const nonCashTotalMinor = payments
       .filter((p) => p.method !== 'cash')
       .reduce((sum, p) => sum + toMinorUnits(toStoredUnit(Number(p.amount) || 0)), 0) + toMinorUnits(walletAmt);
@@ -331,7 +346,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       toast.error(t('paymentAboveBalance'));
       return;
     }
-    if (totalPaymentMinor < remainingMinor) {
+    if (partial ? totalPaymentMinor <= 0 : totalPaymentMinor < remainingMinor) {
       toast.error(t('paymentBelowBalance'));
       return;
     }
@@ -364,6 +379,12 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
         amount: toStoredUnit(parseFloat(p.amount) || 0),
       }))
       .filter((p) => p.amount > 0 && !isNaN(p.amount));
+    if (khrAmount > 0) {
+      const khrCashUsd = toMinorUnits(khrUsd) / minorFactor;
+      const existingCash = splitLines.find((line) => line.method === 'cash');
+      if (existingCash) existingCash.amount += khrCashUsd;
+      else splitLines.push({ method: 'cash', amount: khrCashUsd });
+    }
 
     const finalDiscount: PrepaidDiscount | null = preview.discountAmount > 0
       ? {
@@ -374,7 +395,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       }
       : null;
 
-    onConfirm(splitLines, walletAmt, finalDiscount);
+    onConfirm(splitLines, walletAmt, finalDiscount, partial);
   };
 
   return (
@@ -524,12 +545,55 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
           {/* Every method has one compact amount row; clicking its label fills the unallocated balance. */}
           <div className="space-y-2">
+            {remainingMinor > 0 && (() => {
+              const shareMinor = Math.ceil(remainingMinor / people);
+              const shareDisplay = toDisplayUnit(shareMinor / minorFactor);
+              return <SplitEvenlyRow
+                people={people}
+                onPeopleChange={setPeople}
+                shareLabel={currencyFmt(shareMinor / minorFactor)}
+                onFill={() => {
+                  setKhrTendered('');
+                  setPaymentsTouched(true);
+                  setPayments((current) => current.map((p) => p.method === 'cash' && p.payment_method_id === undefined ? { ...p, amount: formatInput(shareDisplay) } : { ...p, amount: '' }));
+                }}
+              />;
+            })()}
             {payments.map((payment, idx) => {
               const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
               const custom = customMethods.find((method) => method.id === payment.payment_method_id);
               const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : custom?.name || tCommon('unknown');
               const Icon = builtIn?.icon;
               const active = (parseFloat(payment.amount) || 0) > 0;
+              if (payment.method === 'cash' && payment.payment_method_id === undefined) {
+                return <div key="cash-both-currencies" className="space-y-3 rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold">{label}</span>
+                    <span className="text-xs text-muted-foreground">1 USD = {khrRate.toLocaleString('en-US')} KHR</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block min-w-0 text-xs font-semibold text-muted-foreground">USD ($)
+                      <input type="number" value={payment.amount} min="0" step={inputCurrencyStep} inputMode="decimal"
+                        onFocus={() => { setAmountTarget({ kind: 'payment', index: idx }); }}
+                        onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                        placeholder="0.00"
+                        className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-card px-3 py-3 text-lg font-semibold text-foreground" />
+                    </label>
+                    <label className="block min-w-0 text-xs font-semibold text-muted-foreground">KHR (៛)
+                      <input type="number" value={khrTendered} min="0" step="1" inputMode="numeric"
+                        onFocus={() => setAmountTarget(null)}
+                        onChange={(e) => { setKhrTendered(e.target.value); setPaymentsTouched(true); }}
+                        placeholder="0"
+                        className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-card px-3 py-3 text-lg font-semibold text-foreground" />
+                    </label>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-muted-foreground">KHR equivalent: {currencyFmt(khrUsd)} · both amounts count</p>
+                    <button type="button" onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }}
+                      className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:border-brand hover:text-brand">Exact in USD</button>
+                  </div>
+                </div>;
+              }
               return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex min-h-12">
                 <button type="button" title={label} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
                   {Icon && <Icon size={15} />}
@@ -649,8 +713,17 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
               <span className={`text-lg font-bold tabular-nums ${
                 change > 0 ? 'text-emerald-600' : 'text-gray-300'
               }`}>
-                {currencyFmt(change)}
+                {changeCurrency === 'KHR' ? `${Math.round(change * khrRate / 100) * 100} ៛` : currencyFmt(change)}
               </span>
+            </div>
+          )}
+          {hasCash && (
+            <div className="flex items-center justify-end gap-2 text-xs">
+              <span>Return change in:</span>
+              {(['USD', 'KHR'] as const).map((code) => (
+                <button key={code} type="button" onClick={() => setChangeCurrency(code)}
+                  className={`rounded border px-3 py-2 ${changeCurrency === code ? 'border-emerald-500 text-emerald-400' : 'border-border'}`}>{code}</button>
+              ))}
             </div>
           )}
         </div>
@@ -658,13 +731,18 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
         {/* Pay Button */}
         <div className="shrink-0 border-t border-border px-5 pb-6 pt-3">
           <Button
-            onClick={handleConfirm}
+            onClick={() => handleConfirm(false)}
             disabled={processing || taxLoading || (!preview && !hasInvalidFixedDiscount) || totalPaymentMinor < remainingMinor}
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"
           >
             {taxLoading ? t('calculatingTax') : processing ? t('processingPayment') : t('confirmPaymentAmount', { amount: currencyFmt(remaining) })}
           </Button>
+          {!processing && !taxLoading && preview && totalPaymentMinor > 0 && totalPaymentMinor < remainingMinor && (
+            <Button onClick={() => handleConfirm(true)} variant="outline" className="mt-2 w-full h-12 rounded-xl" size="lg">
+              Record part payment · {currencyFmt(totalPaymentMinor / minorFactor)}, pay the rest next
+            </Button>
+          )}
         </div>
       </div>
     </div>

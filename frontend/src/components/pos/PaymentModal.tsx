@@ -1,5 +1,6 @@
 'use client';
 
+import SplitEvenlyRow from '@/components/pos/SplitEvenlyRow';
 import { useState, useEffect, useRef } from 'react';
 import { X, Wallet, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -114,6 +115,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [khrTendered, setKhrTendered] = useState('');
   const [khrRate, setKhrRate] = useState(4100);
   const [changeCurrency, setChangeCurrency] = useState<'USD' | 'KHR'>('KHR');
+  const [people, setPeople] = useState(2);
   useEffect(() => {
     api.get('/settings/usd_khr_exchange_rate').then(({ data }) => {
       const value = Number(data.setting?.value);
@@ -340,7 +342,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     }
   };
 
-  const handlePay = async () => {
+  const handlePay = async (partial = false) => {
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
     const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
     const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
@@ -366,7 +368,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       toast.error(t('paymentAboveBalance'));
       return;
     }
-    if (totalPaymentMinor < remainingMinor) {
+    if (partial ? totalPaymentMinor <= 0 : totalPaymentMinor < remainingMinor) {
       toast.error(t('paymentBelowBalance'));
       return;
     }
@@ -412,6 +414,16 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         // new request and must not reuse the completed request's hash.
         if (updatedBill) idempotencyKeyRef.current = null;
         if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
+        if (partial && updatedBill?.payment_status === 'partial') {
+          setPayments((current) => current.map((p) => ({ ...p, amount: '' })));
+          setKhrTendered('');
+          setWalletAmount('');
+          setPaymentsTouched(false);
+          setAmountTarget(null);
+          setPeople((n) => Math.max(1, n - 1));
+          toast.success(`Payment recorded. ${currencyFmt(Number(updatedBill.balance) || 0)} left to pay.`);
+          return;
+        }
         toast.error(t('paymentIncomplete', {
           amount: currencyFmt(Number(updatedBill?.balance) || 0),
         }));
@@ -500,6 +512,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               <div>
                 <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">{t('totalDue')}</p>
                 <p className="text-4xl font-bold mt-1 tracking-tight">{currencyFmt(remaining)}</p>
+                {Number(bill.paid_amount) > 0 && (
+                  <p className="mt-1 text-xs text-slate-300">Already paid {currencyFmt(Number(bill.paid_amount))} of {currencyFmt(Number(bill.total))}</p>
+                )}
               </div>
               {cartCustomer && (
                 <div className="text-end ms-4 shrink-0">
@@ -677,6 +692,20 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 <p className="font-semibold">Never mark a QR payment as paid based only on a customer&apos;s screenshot.</p>
               </div>
             )}
+            {remainingMinor > 0 && (() => {
+              const shareMinor = Math.ceil(remainingMinor / people);
+              const shareDisplay = toDisplayUnit(shareMinor / minorFactor);
+              return <SplitEvenlyRow
+                people={people}
+                onPeopleChange={setPeople}
+                shareLabel={currencyFmt(shareMinor / minorFactor)}
+                onFill={() => {
+                  setKhrTendered('');
+                  setPaymentsTouched(true);
+                  setPayments((current) => current.map((p) => p.method === 'cash' && p.payment_method_id === undefined ? { ...p, amount: formatInput(shareDisplay) } : { ...p, amount: '' }));
+                }}
+              />;
+            })()}
             {payments.map((payment, idx) => {
               const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
               const custom = customMethods.find((method) => method.id === payment.payment_method_id);
@@ -830,9 +859,16 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               </Button>
             </>
           ) : (
-            <Button onClick={handlePay} disabled={processing || totalPaymentMinor < remainingMinor} className="w-full" size="lg">
-              {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
-            </Button>
+            <>
+              <Button onClick={() => handlePay(false)} disabled={processing || totalPaymentMinor < remainingMinor} className="w-full" size="lg">
+                {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
+              </Button>
+              {totalPaymentMinor > 0 && totalPaymentMinor < remainingMinor && (
+                <Button onClick={() => handlePay(true)} disabled={processing} variant="outline" className="w-full" size="lg">
+                  Record part payment · {currencyFmt(totalPayment)} (keep bill open)
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
