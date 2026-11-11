@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -352,6 +352,17 @@ export default function ProductsPage() {
     }
   };
 
+  const handleToggleVisible = async (product: Product) => {
+    const next = !product.is_active;
+    try {
+      await api.put(`/products/${product.id}`, { is_active: next });
+      toast.success(next ? t('shownOnMenu') : t('hiddenFromMenu'));
+      fetchData();
+    } catch {
+      toast.error(t('failedToSave'));
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!await confirm(t('deleteConfirm'), { destructive: true, confirmLabel: tCommon('delete') })) return;
     try {
@@ -664,6 +675,14 @@ export default function ProductsPage() {
                   <div className="flex gap-2 justify-end">
                     {isOwnerOrManager && (
                       <>
+                        <button
+                          onClick={() => handleToggleVisible(product)}
+                          title={product.is_active ? t('hideFromMenu') : t('showOnMenu')}
+                          aria-label={product.is_active ? t('hideFromMenu') : t('showOnMenu')}
+                          className="p-1.5 text-gray-400 hover:text-brand"
+                        >
+                          {product.is_active ? <Eye size={16} /> : <EyeOff size={16} />}
+                        </button>
                         <button onClick={() => openEdit(product)} className="p-1.5 text-gray-400 hover:text-brand">
                           <Pencil size={16} />
                         </button>

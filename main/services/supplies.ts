@@ -577,13 +577,16 @@ export interface ImportSupplyRow {
   packSize?: unknown;
   packLabel?: unknown;
   packPrice?: unknown;
+  pourSize?: unknown;
+  parLevel?: unknown;
+  orderUpTo?: unknown;
 }
 
 export interface ImportSuppliesResult {
   dry_run: boolean;
   vendor_id: string | null;
   vendor_created: boolean;
-  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null }>;
+  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null; pour_size: number | null; par_level: number | null; order_up_to: number | null }>;
   already_exist: string[];
   errors: Array<{ row: number; name: string; error: string }>;
 }
@@ -713,6 +716,13 @@ export function importSupplies(
       if (packPrice !== null && packSize === null && baseUnit !== 'each') {
         throw new SupplyServiceError(400, 'pack_price needs a pack_size');
       }
+      const optionalLevel = (value: unknown, field: string): number | null => {
+        const text = value === undefined || value === null ? '' : String(value).trim();
+        return text === '' ? null : optionalNonNegative(Number(text), field, field === 'pour_size') ?? null;
+      };
+      const pourSize = optionalLevel(row.pourSize, 'pour_size');
+      const parLevel = optionalLevel(row.parLevel, 'par_level');
+      const orderUpTo = optionalLevel(row.orderUpTo, 'order_up_to');
       const unitCost = packPrice === null ? null : (packSize === null ? packPrice : Number((packPrice / packSize).toFixed(8)));
       const key = name.toLowerCase();
       if (existingNames.has(key) || seen.has(key)) {
@@ -720,7 +730,7 @@ export function importSupplies(
         return;
       }
       seen.add(key);
-      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel, pack_price: packPrice, unit_cost: unitCost });
+      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel, pack_price: packPrice, unit_cost: unitCost, pour_size: pourSize, par_level: parLevel, order_up_to: orderUpTo });
     } catch (error: unknown) {
       result.errors.push({ row: index + 1, name, error: error instanceof Error ? error.message : 'invalid row' });
     }
@@ -750,6 +760,9 @@ export function importSupplies(
         packSize: item.pack_size ?? undefined,
         packLabel: item.pack_label ?? undefined,
         unitCost: item.unit_cost ?? undefined,
+        pourSize: item.pour_size ?? undefined,
+        lowStockThreshold: item.par_level ?? undefined,
+        orderUpTo: item.order_up_to ?? undefined,
         vendorId: vendorId ?? undefined,
         actorUserId: input.actorUserId,
       });

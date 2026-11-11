@@ -311,3 +311,95 @@ export function applyRecipeSnapshot(
     });
   }
 }
+
+export interface ImportRecipeRow {
+  productName: unknown;
+  ingredientName: unknown;
+  quantity: unknown;
+  unit: unknown;
+}
+
+export interface ImportRecipesResult {
+  dry_run: boolean;
+  to_create: Array<{ product_name: string; items: number }>;
+  already_have_recipe: string[];
+  skipped: Array<{ product_name: string; reason: string }>;
+}
+
+const MAX_IMPORT_RECIPE_ROWS = 2000;
+
+export function importRecipes(
+  db: ReturnType<typeof getDatabase>,
+  input: { rows: ImportRecipeRow[]; dryRun: boolean },
+): ImportRecipesResult {
+  if (!Array.isArray(input.rows) || input.rows.length === 0) throw new RecipeServiceError(400, 'rows is required');
+  if (input.rows.length > MAX_IMPORT_RECIPE_ROWS) throw new RecipeServiceError(400, `at most ${MAX_IMPORT_RECIPE_ROWS} rows per import`);
+
+  const products = new Map<string, string>();
+  for (const row of db.prepare('SELECT id, name FROM products').all() as Array<{ id: string; name: string }>) {
+    const key = row.name.trim().toLowerCase();
+    products.set(products.has(key) ? `${key}\u0000dup` : key, row.id);
+  }
+  const supplies = new Map<string, { id: string; baseUnit: SupplyUnit }>();
+  for (const row of db.prepare('SELECT id, name, base_unit FROM supplies WHERE deleted_at IS NULL').all() as Array<{ id: string; name: string; base_unit: SupplyUnit }>) {
+    supplies.set(row.name.trim().toLowerCase(), { id: row.id, baseUnit: row.base_unit });
+  }
+  const haveRecipe = new Set(
+    (db.prepare('SELECT product_id FROM recipes').all() as Array<{ product_id: string }>).map((r) => r.product_id),
+  );
+
+  const grouped = new Map<string, { name: string; lines: Array<{ ingredient: string; quantity: number; unit: string }>; problems: string[] }>();
+  for (const row of input.rows) {
+    const productName = String(row.productName ?? '').trim();
+    if (!productName) continue;
+    const key = productName.toLowerCase();
+    let entry = grouped.get(key);
+    if (!entry) {
+      entry = { name: productName, lines: [], problems: [] };
+      grouped.set(key, entry);
+    }
+    const ingredient = String(row.ingredientName ?? '').trim();
+    const quantity = Number(String(row.quantity ?? '').trim());
+    const unit = String(row.unit ?? '').trim().toLowerCase();
+    if (!ingredient) { entry.problems.push('ingredient name is missing'); continue; }
+    if (!Number.isFinite(quantity) || quantity <= 0) { entry.problems.push(`quantity for ${ingredient} must be greater than zero`); continue; }
+    entry.lines.push({ ingredient, quantity, unit });
+  }
+
+  const result: ImportRecipesResult = { dry_run: input.dryRun, to_create: [], already_have_recipe: [], skipped: [] };
+  const ready: Array<{ productId: string; name: string; items: { supplyId: string; quantity: number; unit: string }[] }> = [];
+  for (const [key, entry] of grouped) {
+    if (products.has(`${key}\u0000dup`)) { result.skipped.push({ product_name: entry.name, reason: 'more than one product has this name' }); continue; }
+    const productId = products.get(key);
+    if (!productId) { result.skipped.push({ product_name: entry.name, reason: 'no product with this name' }); continue; }
+    if (haveRecipe.has(productId)) { result.already_have_recipe.push(entry.name); continue; }
+    if (entry.problems.length > 0) { result.skipped.push({ product_name: entry.name, reason: entry.problems[0] }); continue; }
+    const missing = entry.lines.filter((l) => !supplies.has(l.ingredient.toLowerCase())).map((l) => l.ingredient);
+    if (missing.length > 0) { result.skipped.push({ product_name: entry.name, reason: `no ingredient named ${missing.join(', ')}` }); continue; }
+    const seen = new Set<string>();
+    const items: { supplyId: string; quantity: number; unit: string }[] = [];
+    let problem = '';
+    for (const l of entry.lines) {
+      const supply = supplies.get(l.ingredient.toLowerCase()) as { id: string; baseUnit: SupplyUnit };
+      if (seen.has(supply.id)) { problem = 'an ingredient is listed twice'; break; }
+      seen.add(supply.id);
+      try {
+        convertQuantity(l.quantity, assertSupplyUnit(l.unit, 'unit'), supply.baseUnit);
+      } catch (error: unknown) {
+        problem = `${l.ingredient}: ${error instanceof Error ? error.message : 'invalid unit'}`;
+        break;
+      }
+      items.push({ supplyId: supply.id, quantity: l.quantity, unit: l.unit });
+    }
+    if (problem) { result.skipped.push({ product_name: entry.name, reason: problem }); continue; }
+    ready.push({ productId, name: entry.name, items });
+  }
+
+  if (!input.dryRun) {
+    withTxn(() => {
+      for (const recipe of ready) saveRecipe(db, { productId: recipe.productId, isActive: false, items: recipe.items });
+    });
+  }
+  result.to_create = ready.map((r) => ({ product_name: r.name, items: r.items.length }));
+  return result;
+}

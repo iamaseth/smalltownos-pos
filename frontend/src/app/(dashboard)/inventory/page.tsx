@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload } from 'lucide-react';
+import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -119,6 +119,12 @@ const movementTypeIcons: Record<string, typeof ArrowUpCircle> = {
   recipe_restore: ArrowUpCircle,
 };
 
+interface RecipeImportPreview {
+  to_create: { product_name: string; items: number }[];
+  already_have_recipe: string[];
+  skipped: { product_name: string; reason: string }[];
+}
+
 interface ImportPreview {
   to_create: { name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null }[];
   already_exist: string[];
@@ -185,6 +191,9 @@ export default function InventoryPage() {
   const [orderGroups, setOrderGroups] = useState<OrderListGroup[]>([]);
   const [orderListLoading, setOrderListLoading] = useState(false);
 
+  const [showRecipeImport, setShowRecipeImport] = useState(false);
+  const [recipeImportRows, setRecipeImportRows] = useState<Record<string, string>[]>([]);
+  const [recipeImportPreview, setRecipeImportPreview] = useState<RecipeImportPreview | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [importRows, setImportRows] = useState<Record<string, string>[]>([]);
   const [importVendor, setImportVendor] = useState('');
@@ -496,6 +505,60 @@ export default function InventoryPage() {
     }
   };
 
+  const openRecipeImport = () => {
+    setRecipeImportRows([]);
+    setRecipeImportPreview(null);
+    setShowRecipeImport(true);
+  };
+
+  const handleRecipeImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const table = parseCsv(await file.text());
+      const header = (table[0] || []).map((h) => h.trim().toLowerCase());
+      const rows = table.slice(1).map((cells) => {
+        const record: Record<string, string> = {};
+        header.forEach((name, index) => { record[name] = (cells[index] ?? '').trim(); });
+        return record;
+      });
+      setRecipeImportRows(rows);
+      const { data } = await api.post('/recipes/import', { rows, dry_run: true });
+      setRecipeImportPreview(data);
+    } catch (err: unknown) {
+      setRecipeImportRows([]);
+      setRecipeImportPreview(null);
+      toast.error(importError(err));
+    }
+  };
+
+  const handleRecipeImportConfirm = async () => {
+    setImporting(true);
+    try {
+      const { data } = await api.post('/recipes/import', { rows: recipeImportRows, dry_run: false });
+      toast.success(t('recipeDone', { count: data.to_create.length }));
+      setShowRecipeImport(false);
+      refresh();
+    } catch (err: unknown) {
+      toast.error(importError(err));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleConfirmRecipe = async (r: Recipe) => {
+    try {
+      await api.put(`/recipes/product/${r.product_id}`, {
+        yield_quantity: Number(r.yield_quantity),
+        is_active: true,
+        items: r.items.map((item) => ({ supply_id: item.supply_id, quantity: Number(item.quantity), unit: item.unit })),
+      });
+      toast.success(t('recipeConfirmed'));
+      refresh();
+    } catch (err: unknown) {
+      toast.error(importError(err));
+    }
+  };
+
   const openAddRecipe = () => {
     setEditingRecipe(null);
     setRecipeForm({ product_id: '', yield_quantity: '1', items: [] });
@@ -517,6 +580,7 @@ export default function InventoryPage() {
     try {
       await api.put(`/recipes/product/${recipeForm.product_id}`, {
         yield_quantity: Number(recipeForm.yield_quantity),
+        is_active: editingRecipe ? editingRecipe.is_active === 1 : true,
         items: recipeForm.items.map((item) => ({
           supply_id: item.supply_id,
           quantity: Number(item.quantity),
@@ -583,7 +647,10 @@ export default function InventoryPage() {
           </div>
         )}
         {tab === 'recipes' && (
-          <Button onClick={openAddRecipe}><Plus size={16} className="me-1" /> {t('addRecipe')}</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={openRecipeImport}><Upload size={16} className="me-1" /> {t('importRecipes')}</Button>
+            <Button onClick={openAddRecipe}><Plus size={16} className="me-1" /> {t('addRecipe')}</Button>
+          </div>
         )}
       </div>
 
@@ -698,7 +765,10 @@ export default function InventoryPage() {
               <tbody className="divide-y divide-border">
                 {recipes.map((r) => (
                   <tr key={r.id} className="hover:bg-muted">
-                    <td className="p-4 font-medium text-foreground">{r.product_name || r.product_id}</td>
+                    <td className="p-4 font-medium text-foreground">
+                      {r.product_name || r.product_id}
+                      {r.is_active !== 1 && <Badge variant="secondary" className="ms-2">{t('draft')}</Badge>}
+                    </td>
                     <td className="p-4 text-center text-sm">{fmtNum(Number(r.yield_quantity))}</td>
                     <td className="p-4 text-sm text-muted-foreground">
                       <ul className="space-y-0.5">
@@ -721,6 +791,11 @@ export default function InventoryPage() {
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        {r.is_active !== 1 && (
+                          <Button variant="ghost" size="sm" onClick={() => handleConfirmRecipe(r)} title={t('confirmRecipe')}>
+                            <Check size={14} />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => openEditRecipe(r)} title={tCommon('edit')}>
                           <Edit size={14} />
                         </Button>
@@ -877,6 +952,45 @@ export default function InventoryPage() {
                 <Button onClick={copyOrderList}>{t('orderListCopy')}</Button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showRecipeImport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">{t('importRecipes')}</h2>
+              <button onClick={() => setShowRecipeImport(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">{t('importRecipesHelp')}</p>
+              <input type="file" accept=".csv,text/csv"
+                onChange={(e) => handleRecipeImportFile(e.target.files?.[0])}
+                className="w-full text-sm" />
+              {recipeImportPreview && (
+                <div className="space-y-2 text-sm">
+                  <p className="font-medium">{t('recipeNew', { count: recipeImportPreview.to_create.length })}</p>
+                  {recipeImportPreview.already_have_recipe.length > 0 && (
+                    <p className="text-muted-foreground">{t('recipeHave', { count: recipeImportPreview.already_have_recipe.length })}</p>
+                  )}
+                  {recipeImportPreview.skipped.length > 0 && (
+                    <div>
+                      <p className="text-amber-600">{t('recipeSkipped', { count: recipeImportPreview.skipped.length })}</p>
+                      <ul className="max-h-40 overflow-y-auto text-xs text-muted-foreground list-disc ps-5">
+                        {recipeImportPreview.skipped.map((s, i) => <li key={i}>{s.product_name}: {s.reason}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex justify-end">
+                <Button onClick={handleRecipeImportConfirm}
+                  disabled={importing || !recipeImportPreview || recipeImportPreview.to_create.length === 0}>
+                  {t('recipeImportConfirm', { count: recipeImportPreview?.to_create.length ?? 0 })}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}
