@@ -401,7 +401,19 @@
     "importSkipped": "มีอยู่ในรายการแล้ว {count} รายการ (ข้าม)",
     "importErrors": "มี {count} แถวที่มีปัญหา",
     "importConfirm": "นำเข้าวัตถุดิบ {count} รายการ",
-    "importDone": "นำเข้าวัตถุดิบ {count} รายการแล้ว"
+    "importDone": "นำเข้าวัตถุดิบ {count} รายการแล้ว",
+    "costPerServing": "ต้นทุน",
+    "sellingPrice": "ราคา",
+    "margin": "กำไรขั้นต้น",
+    "costMissing": "ไม่มีต้นทุน: {names}",
+    "orderList": "รายการสั่งซื้อ",
+    "orderListHelp": "วัตถุดิบที่ถึงระดับสต็อกต่ำหรือต่ำกว่า เติมให้ถึงระดับสั่งซื้อสูงสุด และปัดขึ้นเป็นแพ็กเต็ม",
+    "orderListEmpty": "ไม่มีสิ่งที่ต้องสั่ง วัตถุดิบทั้งหมดอยู่เหนือระดับสต็อกต่ำ",
+    "orderListNeedTarget": "ตั้งระดับสั่งซื้อสูงสุด",
+    "orderListCopy": "คัดลอกเป็นข้อความ",
+    "orderListCopied": "คัดลอกรายการสั่งซื้อแล้ว",
+    "orderListTotal": "ประมาณ: {amount}",
+    "orderListMissing": "{count} รายการไม่มีราคาหรือจำนวน"
   },
   "kds": {
     "addonsLabel": "ตัวเลือกเพิ่ม",

@@ -401,7 +401,19 @@
     "importSkipped": "{count}개는 이미 목록에 있음(건너뜀)",
     "importErrors": "{count}개 행에 문제가 있음",
     "importConfirm": "재료 {count}개 가져오기",
-    "importDone": "재료 {count}개를 가져왔습니다"
+    "importDone": "재료 {count}개를 가져왔습니다",
+    "costPerServing": "원가",
+    "sellingPrice": "가격",
+    "margin": "마진",
+    "costMissing": "원가 없음: {names}",
+    "orderList": "발주 목록",
+    "orderListHelp": "재고 하한 이하인 재료를 발주 상한까지 채우고 팩 단위로 올림하여 표시합니다.",
+    "orderListEmpty": "발주할 항목이 없습니다. 모든 재료가 재고 하한을 넘었습니다.",
+    "orderListNeedTarget": "발주 상한을 설정하세요",
+    "orderListCopy": "텍스트로 복사",
+    "orderListCopied": "발주 목록을 복사했습니다",
+    "orderListTotal": "예상: {amount}",
+    "orderListMissing": "가격 또는 수량 없음 {count}개"
   },
   "kds": {
     "addonsLabel": "추가 메뉴",

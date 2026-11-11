@@ -401,7 +401,19 @@
     "importSkipped": "{count} already in your list (skipped)",
     "importErrors": "{count} rows have problems",
     "importConfirm": "Import {count} ingredients",
-    "importDone": "{count} ingredients imported"
+    "importDone": "{count} ingredients imported",
+    "costPerServing": "Cost",
+    "sellingPrice": "Price",
+    "margin": "Margin",
+    "costMissing": "Missing cost: {names}",
+    "orderList": "Order list",
+    "orderListHelp": "Ingredients at or below their low-stock level, topped up to their order-up-to level and rounded up to whole packs.",
+    "orderListEmpty": "Nothing to order. Every ingredient is above its low-stock level.",
+    "orderListNeedTarget": "Set an order-up-to level",
+    "orderListCopy": "Copy as text",
+    "orderListCopied": "Order list copied",
+    "orderListTotal": "Estimated: {amount}",
+    "orderListMissing": "{count} without a price or quantity"
   },
   "kds": {
     "addonsLabel": "Add-ons",

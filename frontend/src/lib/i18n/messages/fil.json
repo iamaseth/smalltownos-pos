@@ -401,7 +401,19 @@
     "importSkipped": "{count} nasa listahan na (nilaktawan)",
     "importErrors": "{count} hanay ang may problema",
     "importConfirm": "I-import ang {count} sangkap",
-    "importDone": "{count} sangkap ang na-import"
+    "importDone": "{count} sangkap ang na-import",
+    "costPerServing": "Gastos",
+    "sellingPrice": "Presyo",
+    "margin": "Tubo",
+    "costMissing": "Kulang ang halaga: {names}",
+    "orderList": "Listahan ng order",
+    "orderListHelp": "Mga sangkap na nasa o mas mababa sa low-stock level, pupunuin hanggang sa order-up-to level at ibibilog pataas sa buong pack.",
+    "orderListEmpty": "Walang o-orderin. Lahat ng sangkap ay mas mataas sa low-stock level.",
+    "orderListNeedTarget": "Magtakda ng order-up-to level",
+    "orderListCopy": "Kopyahin bilang teksto",
+    "orderListCopied": "Nakopya ang listahan ng order",
+    "orderListTotal": "Tantya: {amount}",
+    "orderListMissing": "{count} na walang presyo o dami"
   },
   "kds": {
     "addonsLabel": "Mga Addon",

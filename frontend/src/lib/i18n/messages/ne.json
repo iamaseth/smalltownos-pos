@@ -401,7 +401,19 @@
     "importSkipped": "{count} पहिल्यै सूचीमा छन् (छोडिए)",
     "importErrors": "{count} पङ्क्तिमा समस्या छ",
     "importConfirm": "{count} सामग्री आयात गर्नुहोस्",
-    "importDone": "{count} सामग्री आयात भयो"
+    "importDone": "{count} सामग्री आयात भयो",
+    "costPerServing": "लागत",
+    "sellingPrice": "मूल्य",
+    "margin": "मार्जिन",
+    "costMissing": "लागत छैन: {names}",
+    "orderList": "अर्डर सूची",
+    "orderListHelp": "कम स्टक तहमा वा त्योभन्दा तल रहेका सामग्री, अर्डर-अप-टु तहसम्म भरेर पूर्ण प्याकमा माथितिर राउन्ड गरिएको।",
+    "orderListEmpty": "अर्डर गर्न केही छैन। सबै सामग्री कम स्टक तहभन्दा माथि छन्।",
+    "orderListNeedTarget": "अर्डर-अप-टु तह सेट गर्नुहोस्",
+    "orderListCopy": "पाठको रूपमा कपी गर्नुहोस्",
+    "orderListCopied": "अर्डर सूची कपी भयो",
+    "orderListTotal": "अनुमान: {amount}",
+    "orderListMissing": "{count} मूल्य वा मात्रा बिना"
   },
   "kds": {
     "addonsLabel": "एडअनहरू",

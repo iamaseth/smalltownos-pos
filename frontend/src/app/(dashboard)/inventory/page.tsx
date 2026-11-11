@@ -37,6 +37,24 @@ interface Vendor {
   name: string;
 }
 
+interface OrderListItem {
+  supply_id: string;
+  name: string;
+  base_unit: SupplyUnit;
+  pack_label: string | null;
+  packs: number | null;
+  order_quantity: number | null;
+  estimated_cost: number | null;
+}
+
+interface OrderListGroup {
+  vendor_id: string | null;
+  vendor_name: string | null;
+  items: OrderListItem[];
+  estimated_cost: number;
+  missing_cost_count: number;
+}
+
 interface DeliveryLine {
   supply_id: string;
   amount: string;
@@ -79,6 +97,12 @@ interface Recipe {
   yield_quantity: number;
   is_active: number;
   items: RecipeItem[];
+  selling_price: number | null;
+  cost_per_serving: number | null;
+  cost_complete: boolean;
+  missing_cost_supplies: string[];
+  margin: number | null;
+  margin_percent: number | null;
 }
 
 interface Product {
@@ -156,6 +180,10 @@ export default function InventoryPage() {
   const [newVendorName, setNewVendorName] = useState('');
   const [deliveryReference, setDeliveryReference] = useState('');
   const [deliveryLines, setDeliveryLines] = useState<DeliveryLine[]>([]);
+
+  const [showOrderList, setShowOrderList] = useState(false);
+  const [orderGroups, setOrderGroups] = useState<OrderListGroup[]>([]);
+  const [orderListLoading, setOrderListLoading] = useState(false);
 
   const [showImport, setShowImport] = useState(false);
   const [importRows, setImportRows] = useState<Record<string, string>[]>([]);
@@ -379,6 +407,40 @@ export default function InventoryPage() {
     }
   };
 
+  const openOrderList = async () => {
+    setShowOrderList(true);
+    setOrderListLoading(true);
+    try {
+      const { data } = await api.get('/supplies/order-list');
+      setOrderGroups(data.groups || []);
+    } catch {
+      setOrderGroups([]);
+      toast.error(t('loadFailed'));
+    } finally {
+      setOrderListLoading(false);
+    }
+  };
+
+  const orderLine = (item: OrderListItem) => {
+    if (item.order_quantity === null) return `${item.name}: ${t('orderListNeedTarget')}`;
+    const amount = item.packs !== null
+      ? `${fmtNum(item.packs)} ${item.pack_label || t('packs')} (${fmtNum(item.order_quantity)} ${item.base_unit})`
+      : `${fmtNum(item.order_quantity)} ${item.base_unit}`;
+    return `${item.name}: ${amount}`;
+  };
+
+  const copyOrderList = async () => {
+    const text = orderGroups
+      .map((g) => [g.vendor_name || t('noVendor'), ...g.items.map((i) => `- ${orderLine(i)}`)].join('\n'))
+      .join('\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(t('orderListCopied'));
+    } catch {
+      toast.error(t('saveFailed'));
+    }
+  };
+
   const openImport = () => {
     setImportRows([]);
     setImportVendor('');
@@ -514,6 +576,7 @@ export default function InventoryPage() {
         <h1 className="text-2xl font-bold text-foreground">{tNav('inventory')}</h1>
         {tab === 'supplies' && (
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={openOrderList}><ClipboardList size={16} className="me-1" /> {t('orderList')}</Button>
             <Button variant="outline" onClick={openImport}><Upload size={16} className="me-1" /> {t('importIngredients')}</Button>
             <Button variant="outline" onClick={openDelivery}><Truck size={16} className="me-1" /> {t('receiveDelivery')}</Button>
             <Button onClick={openAddSupply}><Plus size={16} className="me-1" /> {t('addSupply')}</Button>
@@ -620,6 +683,9 @@ export default function InventoryPage() {
                   <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('product')}</th>
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('yield')}</th>
                   <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('components')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('costPerServing')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('sellingPrice')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('margin')}</th>
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('actions')}</th>
                 </tr>
               </thead>
@@ -636,6 +702,16 @@ export default function InventoryPage() {
                           </li>
                         ))}
                       </ul>
+                    </td>
+                    <td className="p-4 text-end text-sm">
+                      {r.cost_per_serving === null ? '-' : fmtNum(r.cost_per_serving)}
+                      {!r.cost_complete && r.missing_cost_supplies.length > 0 && (
+                        <p className="text-xs text-amber-600">{t('costMissing', { names: r.missing_cost_supplies.join(', ') })}</p>
+                      )}
+                    </td>
+                    <td className="p-4 text-end text-sm">{r.selling_price === null ? '-' : fmtNum(r.selling_price)}</td>
+                    <td className="p-4 text-end text-sm">
+                      {r.margin === null ? '-' : `${fmtNum(r.margin)} (${fmtNum(r.margin_percent ?? 0)}%)`}
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex items-center justify-center gap-1">
@@ -757,6 +833,44 @@ export default function InventoryPage() {
               </select>
               <Button type="submit" className="w-full">{tCommon('save')}</Button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showOrderList && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">{t('orderList')}</h2>
+              <button onClick={() => setShowOrderList(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">{t('orderListHelp')}</p>
+            {!orderListLoading && orderGroups.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('orderListEmpty')}</p>
+            )}
+            <div className="space-y-4">
+              {orderGroups.map((g) => (
+                <div key={g.vendor_id || 'none'} className="border rounded-lg p-3">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-semibold">{g.vendor_name || t('noVendor')}</span>
+                    {g.estimated_cost > 0 && (
+                      <span className="text-sm text-muted-foreground">{t('orderListTotal', { amount: fmtNum(g.estimated_cost) })}</span>
+                    )}
+                  </div>
+                  <ul className="space-y-1 text-sm">
+                    {g.items.map((i) => <li key={i.supply_id}>{orderLine(i)}</li>)}
+                  </ul>
+                  {g.missing_cost_count > 0 && (
+                    <p className="text-xs text-amber-600 mt-2">{t('orderListMissing', { count: g.missing_cost_count })}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+            {orderGroups.length > 0 && (
+              <div className="flex justify-end mt-4">
+                <Button onClick={copyOrderList}>{t('orderListCopy')}</Button>
+              </div>
+            )}
           </div>
         </div>
       )}

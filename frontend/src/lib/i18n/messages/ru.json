@@ -401,7 +401,19 @@
     "importSkipped": "Уже в списке: {count} (пропущено)",
     "importErrors": "Строк с ошибками: {count}",
     "importConfirm": "Импортировать ингредиенты: {count}",
-    "importDone": "Импортировано ингредиентов: {count}"
+    "importDone": "Импортировано ингредиентов: {count}",
+    "costPerServing": "Себестоимость",
+    "sellingPrice": "Цена",
+    "margin": "Маржа",
+    "costMissing": "Нет себестоимости: {names}",
+    "orderList": "Список заказа",
+    "orderListHelp": "Ингредиенты на уровне минимального запаса или ниже, пополненные до целевого уровня и округлённые вверх до целых упаковок.",
+    "orderListEmpty": "Заказывать нечего. Все ингредиенты выше минимального запаса.",
+    "orderListNeedTarget": "Задайте целевой уровень заказа",
+    "orderListCopy": "Копировать как текст",
+    "orderListCopied": "Список заказа скопирован",
+    "orderListTotal": "Оценка: {amount}",
+    "orderListMissing": "{count} без цены или количества"
   },
   "kds": {
     "addonsLabel": "Дополнения",

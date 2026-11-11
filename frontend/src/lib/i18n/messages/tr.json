@@ -401,7 +401,19 @@
     "importSkipped": "{count} zaten listenizde (atlandı)",
     "importErrors": "{count} satırda sorun var",
     "importConfirm": "{count} malzemeyi içe aktar",
-    "importDone": "{count} malzeme içe aktarıldı"
+    "importDone": "{count} malzeme içe aktarıldı",
+    "costPerServing": "Maliyet",
+    "sellingPrice": "Fiyat",
+    "margin": "Marj",
+    "costMissing": "Eksik maliyet: {names}",
+    "orderList": "Sipariş listesi",
+    "orderListHelp": "Düşük stok seviyesinde veya altındaki malzemeler, sipariş seviyesine kadar tamamlanıp tam paketlere yukarı yuvarlanır.",
+    "orderListEmpty": "Sipariş edilecek bir şey yok. Tüm malzemeler düşük stok seviyesinin üzerinde.",
+    "orderListNeedTarget": "Bir sipariş seviyesi belirleyin",
+    "orderListCopy": "Metin olarak kopyala",
+    "orderListCopied": "Sipariş listesi kopyalandı",
+    "orderListTotal": "Tahmini: {amount}",
+    "orderListMissing": "{count} fiyatsız veya miktarsız"
   },
   "kds": {
     "addonsLabel": "Eklentiler",

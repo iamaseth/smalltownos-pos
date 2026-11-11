@@ -401,7 +401,19 @@
     "importSkipped": "{count} đã có trong danh sách (bỏ qua)",
     "importErrors": "{count} dòng có vấn đề",
     "importConfirm": "Nhập {count} nguyên liệu",
-    "importDone": "Đã nhập {count} nguyên liệu"
+    "importDone": "Đã nhập {count} nguyên liệu",
+    "costPerServing": "Giá vốn",
+    "sellingPrice": "Giá bán",
+    "margin": "Biên lợi nhuận",
+    "costMissing": "Thiếu giá vốn: {names}",
+    "orderList": "Danh sách đặt hàng",
+    "orderListHelp": "Nguyên liệu ở mức tồn kho thấp hoặc dưới đó, bổ sung đến mức đặt hàng và làm tròn lên thành gói nguyên.",
+    "orderListEmpty": "Không có gì cần đặt. Mọi nguyên liệu đều trên mức tồn kho thấp.",
+    "orderListNeedTarget": "Đặt mức đặt hàng",
+    "orderListCopy": "Sao chép dạng văn bản",
+    "orderListCopied": "Đã sao chép danh sách đặt hàng",
+    "orderListTotal": "Ước tính: {amount}",
+    "orderListMissing": "{count} chưa có giá hoặc số lượng"
   },
   "kds": {
     "addonsLabel": "Tuỳ chọn",

@@ -401,7 +401,19 @@
     "importSkipped": "{count} موجودة بالفعل في قائمتك (تم تخطيها)",
     "importErrors": "{count} صفوف بها مشاكل",
     "importConfirm": "استيراد {count} مكونات",
-    "importDone": "تم استيراد {count} مكونات"
+    "importDone": "تم استيراد {count} مكونات",
+    "costPerServing": "التكلفة",
+    "sellingPrice": "السعر",
+    "margin": "الهامش",
+    "costMissing": "التكلفة مفقودة: {names}",
+    "orderList": "قائمة الطلب",
+    "orderListHelp": "المكونات التي وصلت إلى حد المخزون المنخفض أو أقل، مع تعبئتها حتى مستوى الطلب وتقريبها إلى عبوات كاملة.",
+    "orderListEmpty": "لا شيء للطلب. جميع المكونات فوق حد المخزون المنخفض.",
+    "orderListNeedTarget": "حدّد مستوى الطلب",
+    "orderListCopy": "نسخ كنص",
+    "orderListCopied": "تم نسخ قائمة الطلب",
+    "orderListTotal": "التقدير: {amount}",
+    "orderListMissing": "{count} بدون سعر أو كمية"
   },
   "kds": {
     "addonsLabel": "الإضافات",

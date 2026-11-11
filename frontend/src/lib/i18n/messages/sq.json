@@ -401,7 +401,19 @@
     "importSkipped": "{count} janë tashmë në listë (u anashkaluan)",
     "importErrors": "{count} rreshta kanë probleme",
     "importConfirm": "Importo {count} përbërës",
-    "importDone": "{count} përbërës u importuan"
+    "importDone": "{count} përbërës u importuan",
+    "costPerServing": "Kostoja",
+    "sellingPrice": "Çmimi",
+    "margin": "Marzhi",
+    "costMissing": "Kosto që mungon: {names}",
+    "orderList": "Lista e porosisë",
+    "orderListHelp": "Përbërësit në nivelin e stokut të ulët ose nën të, të plotësuar deri në nivelin e porosisë dhe të rrumbullakosur lart në paketime të plota.",
+    "orderListEmpty": "Nuk ka çfarë të porositet. Të gjithë përbërësit janë mbi nivelin e stokut të ulët.",
+    "orderListNeedTarget": "Vendos nivelin e porosisë",
+    "orderListCopy": "Kopjo si tekst",
+    "orderListCopied": "Lista e porosisë u kopjua",
+    "orderListTotal": "Vlerësim: {amount}",
+    "orderListMissing": "{count} pa çmim ose sasi"
   },
   "kds": {
     "addonsLabel": "Shtesat",

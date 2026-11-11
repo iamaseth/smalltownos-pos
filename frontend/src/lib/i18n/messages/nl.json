@@ -401,7 +401,19 @@
     "importSkipped": "{count} staan al in je lijst (overgeslagen)",
     "importErrors": "{count} rijen hebben problemen",
     "importConfirm": "{count} ingrediënten importeren",
-    "importDone": "{count} ingrediënten geïmporteerd"
+    "importDone": "{count} ingrediënten geïmporteerd",
+    "costPerServing": "Kosten",
+    "sellingPrice": "Prijs",
+    "margin": "Marge",
+    "costMissing": "Ontbrekende kosten: {names}",
+    "orderList": "Bestellijst",
+    "orderListHelp": "Ingrediënten op of onder hun minimumvoorraad, aangevuld tot het bestelniveau en naar boven afgerond op hele verpakkingen.",
+    "orderListEmpty": "Niets te bestellen. Alle ingrediënten zitten boven hun minimumvoorraad.",
+    "orderListNeedTarget": "Stel een bestelniveau in",
+    "orderListCopy": "Kopiëren als tekst",
+    "orderListCopied": "Bestellijst gekopieerd",
+    "orderListTotal": "Geschat: {amount}",
+    "orderListMissing": "{count} zonder prijs of hoeveelheid"
   },
   "kds": {
     "addonsLabel": "Add-ons",

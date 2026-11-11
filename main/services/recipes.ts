@@ -25,6 +25,7 @@ export interface RecipeComponent {
   quantity: number;
   unit: SupplyUnit;
   quantity_in_base: number;
+  unit_cost: number | null;
 }
 
 export interface RecipeSnapshot {
@@ -49,7 +50,18 @@ export interface RecipeRecord {
   created_at: string;
   updated_at: string;
   items: RecipeComponent[];
+  selling_price: number | null;
+  cost_per_serving: number | null;
+  cost_complete: boolean;
+  missing_cost_supplies: string[];
+  margin: number | null;
+  margin_percent: number | null;
 }
+
+type RecipeRow = Omit<RecipeRecord, 'items' | 'selling_price' | 'cost_per_serving' | 'cost_complete' | 'missing_cost_supplies' | 'margin' | 'margin_percent'> & {
+  product_name: string | null;
+  selling_price: number | null;
+};
 
 export interface SaveRecipeInput {
   productId: string;
@@ -79,6 +91,7 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
       ri.supply_id,
       s.name AS supply_name,
       s.base_unit,
+      s.unit_cost,
       ri.quantity,
       ri.unit
     FROM recipe_items ri
@@ -89,6 +102,7 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
     supply_id: string;
     supply_name: string;
     base_unit: SupplyUnit;
+    unit_cost: number | null;
     quantity: number;
     unit: SupplyUnit;
   }[];
@@ -98,36 +112,57 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
   }));
 }
 
+function withCosting(db: ReturnType<typeof getDatabase>, row: RecipeRow): RecipeRecord {
+  const items = loadRecipeItems(db, row.id);
+  const missing = items.filter((item) => item.unit_cost === null).map((item) => item.supply_name);
+  const total = items.reduce((sum, item) => sum + (item.unit_cost === null ? 0 : item.quantity_in_base * Number(item.unit_cost)), 0);
+  const complete = missing.length === 0 && items.length > 0;
+  const costPerServing = items.length === 0 ? null : Number((total / row.yield_quantity).toFixed(6));
+  const price = row.selling_price === null || row.selling_price === undefined ? null : Number(row.selling_price);
+  const margin = complete && costPerServing !== null && price !== null ? Number((price - costPerServing).toFixed(6)) : null;
+  const marginPercent = margin !== null && price !== null && price > 0 ? Number(((margin / price) * 100).toFixed(2)) : null;
+  return {
+    ...row,
+    items,
+    selling_price: price,
+    cost_per_serving: costPerServing,
+    cost_complete: complete,
+    missing_cost_supplies: missing,
+    margin,
+    margin_percent: marginPercent,
+  };
+}
+
 export function getRecipeByProduct(db: ReturnType<typeof getDatabase>, productId: string): RecipeRecord | null {
   const row = db.prepare(`
-    SELECT r.*, p.name AS product_name
+    SELECT r.*, p.name AS product_name, p.price AS selling_price
     FROM recipes r
     LEFT JOIN products p ON p.id = r.product_id
     WHERE r.product_id = ?
-  `).get(productId) as (Omit<RecipeRecord, 'items'> & { product_name: string | null }) | undefined;
+  `).get(productId) as RecipeRow | undefined;
   if (!row) return null;
-  return { ...row, items: loadRecipeItems(db, row.id) };
+  return withCosting(db, row);
 }
 
 export function getRecipe(db: ReturnType<typeof getDatabase>, id: string): RecipeRecord | null {
   const row = db.prepare(`
-    SELECT r.*, p.name AS product_name
+    SELECT r.*, p.name AS product_name, p.price AS selling_price
     FROM recipes r
     LEFT JOIN products p ON p.id = r.product_id
     WHERE r.id = ?
-  `).get(id) as (Omit<RecipeRecord, 'items'> & { product_name: string | null }) | undefined;
+  `).get(id) as RecipeRow | undefined;
   if (!row) return null;
-  return { ...row, items: loadRecipeItems(db, row.id) };
+  return withCosting(db, row);
 }
 
 export function listRecipes(db: ReturnType<typeof getDatabase>): RecipeRecord[] {
   const rows = db.prepare(`
-    SELECT r.*, p.name AS product_name
+    SELECT r.*, p.name AS product_name, p.price AS selling_price
     FROM recipes r
     LEFT JOIN products p ON p.id = r.product_id
     ORDER BY p.name COLLATE NOCASE
-  `).all() as (Omit<RecipeRecord, 'items'> & { product_name: string | null })[];
-  return rows.map((row) => ({ ...row, items: loadRecipeItems(db, row.id) }));
+  `).all() as RecipeRow[];
+  return rows.map((row) => withCosting(db, row));
 }
 
 export function saveRecipe(db: ReturnType<typeof getDatabase>, input: SaveRecipeInput): RecipeRecord {

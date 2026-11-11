@@ -401,7 +401,19 @@
     "importSkipped": "{count} già presenti nell'elenco (saltati)",
     "importErrors": "{count} righe hanno problemi",
     "importConfirm": "Importa {count} ingredienti",
-    "importDone": "{count} ingredienti importati"
+    "importDone": "{count} ingredienti importati",
+    "costPerServing": "Costo",
+    "sellingPrice": "Prezzo",
+    "margin": "Margine",
+    "costMissing": "Costo mancante: {names}",
+    "orderList": "Lista d'ordine",
+    "orderListHelp": "Ingredienti al livello di scorta minima o sotto, riportati al livello obiettivo e arrotondati a confezioni intere.",
+    "orderListEmpty": "Niente da ordinare. Tutti gli ingredienti sono sopra la scorta minima.",
+    "orderListNeedTarget": "Imposta un livello obiettivo d'ordine",
+    "orderListCopy": "Copia come testo",
+    "orderListCopied": "Lista d'ordine copiata",
+    "orderListTotal": "Stima: {amount}",
+    "orderListMissing": "{count} senza prezzo o quantità"
   },
   "kds": {
     "addonsLabel": "Extra",

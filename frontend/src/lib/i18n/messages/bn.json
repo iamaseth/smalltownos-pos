@@ -401,7 +401,19 @@
     "importSkipped": "{count}টি ইতিমধ্যে তালিকায় আছে (বাদ দেওয়া হয়েছে)",
     "importErrors": "{count}টি সারিতে সমস্যা আছে",
     "importConfirm": "{count}টি উপাদান ইমপোর্ট করুন",
-    "importDone": "{count}টি উপাদান ইমপোর্ট হয়েছে"
+    "importDone": "{count}টি উপাদান ইমপোর্ট হয়েছে",
+    "costPerServing": "খরচ",
+    "sellingPrice": "দাম",
+    "margin": "মার্জিন",
+    "costMissing": "খরচ নেই: {names}",
+    "orderList": "অর্ডার তালিকা",
+    "orderListHelp": "কম স্টক সীমায় বা তার নিচে থাকা উপাদান, অর্ডার-আপ-টু স্তর পর্যন্ত পূরণ করে পূর্ণ প্যাকে গোল করা।",
+    "orderListEmpty": "অর্ডার করার কিছু নেই। সব উপাদান কম স্টক সীমার উপরে আছে।",
+    "orderListNeedTarget": "অর্ডার-আপ-টু স্তর নির্ধারণ করুন",
+    "orderListCopy": "টেক্সট হিসেবে কপি করুন",
+    "orderListCopied": "অর্ডার তালিকা কপি হয়েছে",
+    "orderListTotal": "আনুমানিক: {amount}",
+    "orderListMissing": "{count}টির দাম বা পরিমাণ নেই"
   },
   "kds": {
     "addonsLabel": "অ্যাড-অন",

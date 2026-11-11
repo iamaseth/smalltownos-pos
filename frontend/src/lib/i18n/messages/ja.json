@@ -401,7 +401,19 @@
     "importSkipped": "{count} 件は既にリストにあります（スキップ）",
     "importErrors": "{count} 行に問題があります",
     "importConfirm": "{count} 件の材料をインポート",
-    "importDone": "{count} 件の材料をインポートしました"
+    "importDone": "{count} 件の材料をインポートしました",
+    "costPerServing": "原価",
+    "sellingPrice": "価格",
+    "margin": "利益率",
+    "costMissing": "原価未設定：{names}",
+    "orderList": "発注リスト",
+    "orderListHelp": "在庫が下限以下の材料を、発注上限まで補充し、パック単位に切り上げて表示します。",
+    "orderListEmpty": "発注するものはありません。すべての材料が在庫下限を上回っています。",
+    "orderListNeedTarget": "発注上限を設定してください",
+    "orderListCopy": "テキストとしてコピー",
+    "orderListCopied": "発注リストをコピーしました",
+    "orderListTotal": "概算：{amount}",
+    "orderListMissing": "価格または数量がないもの：{count}件"
   },
   "kds": {
     "addonsLabel": "追加項目",

@@ -401,7 +401,19 @@
     "importSkipped": "{count} 項已在清單中（略過）",
     "importErrors": "{count} 列有問題",
     "importConfirm": "匯入 {count} 項食材",
-    "importDone": "已匯入 {count} 項食材"
+    "importDone": "已匯入 {count} 項食材",
+    "costPerServing": "成本",
+    "sellingPrice": "售價",
+    "margin": "毛利",
+    "costMissing": "缺少成本：{names}",
+    "orderList": "訂購清單",
+    "orderListHelp": "庫存低於或等於下限的食材，補足至訂購上限並無條件進位為整包。",
+    "orderListEmpty": "沒有需要訂購的項目。所有食材都高於庫存下限。",
+    "orderListNeedTarget": "請設定訂購上限",
+    "orderListCopy": "複製為文字",
+    "orderListCopied": "已複製訂購清單",
+    "orderListTotal": "預估：{amount}",
+    "orderListMissing": "{count} 項沒有價格或數量"
   },
   "kds": {
     "addonsLabel": "加購",

@@ -3,6 +3,7 @@ import { getDatabase } from '../db';
 import { requirePermission } from '../services/authorization';
 import {
   SupplyMovementType,
+  buildOrderList,
   createSupply,
   getSupply,
   importSupplies,
@@ -115,6 +116,14 @@ router.post('/deliveries', requirePermission('supplies.manage'), (req: Request, 
       })),
     });
     res.status(201).json(result);
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+router.get('/order-list', requirePermission('supplies.manage'), (_req: Request, res: Response) => {
+  try {
+    res.json(buildOrderList(getDatabase()));
   } catch (error: unknown) {
     sendError(res, error);
   }

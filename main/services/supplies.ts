@@ -590,6 +590,92 @@ export interface ImportSuppliesResult {
 
 const MAX_IMPORT_ROWS = 500;
 
+export interface OrderListItem {
+  supply_id: string;
+  name: string;
+  base_unit: SupplyUnit;
+  stock_quantity: number;
+  order_up_to: number | null;
+  pack_size: number | null;
+  pack_label: string | null;
+  packs: number | null;
+  order_quantity: number | null;
+  unit_cost: number | null;
+  estimated_cost: number | null;
+}
+
+export interface OrderListGroup {
+  vendor_id: string | null;
+  vendor_name: string | null;
+  items: OrderListItem[];
+  estimated_cost: number;
+  missing_cost_count: number;
+}
+
+export function buildOrderList(db: ReturnType<typeof getDatabase>): { groups: OrderListGroup[] } {
+  const rows = db.prepare(`
+    SELECT s.*, v.name AS vendor_name
+    FROM supplies s
+    LEFT JOIN vendors v ON v.id = s.vendor_id AND v.deleted_at IS NULL
+    WHERE s.deleted_at IS NULL AND s.is_active = 1
+      AND s.low_stock_threshold IS NOT NULL
+      AND s.stock_quantity <= s.low_stock_threshold
+    ORDER BY s.name COLLATE NOCASE
+  `).all() as Array<SupplyRecord & { vendor_name: string | null }>;
+
+  const groups = new Map<string, OrderListGroup>();
+  for (const row of rows) {
+    const onHand = Math.max(row.stock_quantity, 0);
+    const need = row.order_up_to !== null && row.order_up_to > onHand
+      ? roundQuantity(row.order_up_to - onHand)
+      : null;
+    let packs: number | null = null;
+    let orderQuantity = need;
+    if (need !== null && row.pack_size !== null && row.pack_size > 0) {
+      packs = Math.ceil(roundQuantity(need / row.pack_size));
+      orderQuantity = roundQuantity(packs * row.pack_size);
+    }
+    const estimatedCost = orderQuantity !== null && row.unit_cost !== null
+      ? Math.round(orderQuantity * row.unit_cost * 100) / 100
+      : null;
+    const key = row.vendor_name ? (row.vendor_id as string) : '';
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        vendor_id: row.vendor_name ? row.vendor_id : null,
+        vendor_name: row.vendor_name,
+        items: [],
+        estimated_cost: 0,
+        missing_cost_count: 0,
+      };
+      groups.set(key, group);
+    }
+    group.items.push({
+      supply_id: row.id,
+      name: row.name,
+      base_unit: row.base_unit,
+      stock_quantity: row.stock_quantity,
+      order_up_to: row.order_up_to,
+      pack_size: row.pack_size,
+      pack_label: row.pack_label,
+      packs,
+      order_quantity: orderQuantity,
+      unit_cost: row.unit_cost,
+      estimated_cost: estimatedCost,
+    });
+    if (estimatedCost === null) group.missing_cost_count += 1;
+    else group.estimated_cost = Math.round((group.estimated_cost + estimatedCost) * 100) / 100;
+  }
+  return {
+    groups: [...groups.values()].sort((a, b) => {
+      if (!a.vendor_name) return 1;
+      if (!b.vendor_name) return -1;
+      return a.vendor_name.localeCompare(b.vendor_name);
+    }),
+  };
+}
+
+
 export function importSupplies(
   db: ReturnType<typeof getDatabase>,
   input: { rows: ImportSupplyRow[]; vendorName?: string | null; dryRun: boolean; actorUserId: string },

@@ -401,7 +401,19 @@
     "importSkipped": "{count} bereits in der Liste (übersprungen)",
     "importErrors": "{count} Zeilen haben Probleme",
     "importConfirm": "{count} Zutaten importieren",
-    "importDone": "{count} Zutaten importiert"
+    "importDone": "{count} Zutaten importiert",
+    "costPerServing": "Kosten",
+    "sellingPrice": "Preis",
+    "margin": "Marge",
+    "costMissing": "Fehlende Kosten: {names}",
+    "orderList": "Bestellliste",
+    "orderListHelp": "Zutaten auf oder unter dem Mindestbestand, aufgefüllt bis zum Bestellziel und auf ganze Packungen aufgerundet.",
+    "orderListEmpty": "Nichts zu bestellen. Alle Zutaten liegen über dem Mindestbestand.",
+    "orderListNeedTarget": "Bestellziel festlegen",
+    "orderListCopy": "Als Text kopieren",
+    "orderListCopied": "Bestellliste kopiert",
+    "orderListTotal": "Geschätzt: {amount}",
+    "orderListMissing": "{count} ohne Preis oder Menge"
   },
   "kds": {
     "addonsLabel": "Zusätze",

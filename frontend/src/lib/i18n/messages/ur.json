@@ -401,7 +401,19 @@
     "importSkipped": "{count} پہلے سے فہرست میں ہیں (چھوڑ دیے گئے)",
     "importErrors": "{count} قطاروں میں مسئلہ ہے",
     "importConfirm": "{count} اجزاء درآمد کریں",
-    "importDone": "{count} اجزاء درآمد ہو گئے"
+    "importDone": "{count} اجزاء درآمد ہو گئے",
+    "costPerServing": "لاگت",
+    "sellingPrice": "قیمت",
+    "margin": "مارجن",
+    "costMissing": "لاگت موجود نہیں: {names}",
+    "orderList": "آرڈر کی فہرست",
+    "orderListHelp": "کم اسٹاک کی سطح پر یا اس سے نیچے کے اجزاء، آرڈر کی سطح تک پورے کر کے مکمل پیکٹ تک اوپر گول کیے گئے۔",
+    "orderListEmpty": "آرڈر کرنے کو کچھ نہیں۔ تمام اجزاء کم اسٹاک کی سطح سے اوپر ہیں۔",
+    "orderListNeedTarget": "آرڈر کی سطح مقرر کریں",
+    "orderListCopy": "متن کے طور پر کاپی کریں",
+    "orderListCopied": "آرڈر کی فہرست کاپی ہو گئی",
+    "orderListTotal": "اندازہ: {amount}",
+    "orderListMissing": "{count} بغیر قیمت یا مقدار کے"
   },
   "kds": {
     "addonsLabel": "ایڈ آنز",

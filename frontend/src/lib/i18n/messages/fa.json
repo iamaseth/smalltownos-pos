@@ -401,7 +401,19 @@
     "importSkipped": "{count} مورد از قبل در فهرست شما هست (نادیده گرفته شد)",
     "importErrors": "{count} ردیف مشکل دارد",
     "importConfirm": "وارد کردن {count} ماده",
-    "importDone": "{count} ماده وارد شد"
+    "importDone": "{count} ماده وارد شد",
+    "costPerServing": "هزینه",
+    "sellingPrice": "قیمت",
+    "margin": "حاشیه سود",
+    "costMissing": "هزینه ثبت نشده: {names}",
+    "orderList": "فهرست سفارش",
+    "orderListHelp": "مواد اولیه‌ای که در سطح کمبود موجودی یا پایین‌تر هستند، تا سطح سفارش تکمیل و به بسته‌های کامل گرد شده‌اند.",
+    "orderListEmpty": "چیزی برای سفارش نیست. همه مواد بالاتر از سطح کمبود موجودی هستند.",
+    "orderListNeedTarget": "سطح سفارش را تعیین کنید",
+    "orderListCopy": "کپی به‌صورت متن",
+    "orderListCopied": "فهرست سفارش کپی شد",
+    "orderListTotal": "برآورد: {amount}",
+    "orderListMissing": "{count} بدون قیمت یا مقدار"
   },
   "kds": {
     "addonsLabel": "افزودنی‌ها",

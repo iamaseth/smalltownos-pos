@@ -401,7 +401,19 @@
     "importSkipped": "{count} sudah ada di daftar Anda (dilewati)",
     "importErrors": "{count} baris bermasalah",
     "importConfirm": "Impor {count} bahan",
-    "importDone": "{count} bahan diimpor"
+    "importDone": "{count} bahan diimpor",
+    "costPerServing": "Biaya",
+    "sellingPrice": "Harga",
+    "margin": "Margin laba",
+    "costMissing": "Biaya belum ada: {names}",
+    "orderList": "Daftar pesanan",
+    "orderListHelp": "Bahan yang berada di atau di bawah batas stok rendah, diisi hingga level pesan dan dibulatkan ke atas ke kemasan utuh.",
+    "orderListEmpty": "Tidak ada yang perlu dipesan. Semua bahan di atas batas stok rendah.",
+    "orderListNeedTarget": "Atur level pesan",
+    "orderListCopy": "Salin sebagai teks",
+    "orderListCopied": "Daftar pesanan disalin",
+    "orderListTotal": "Perkiraan: {amount}",
+    "orderListMissing": "{count} tanpa harga atau jumlah"
   },
   "kds": {
     "addonsLabel": "Tambahan",
