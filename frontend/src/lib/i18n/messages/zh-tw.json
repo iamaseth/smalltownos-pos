@@ -393,7 +393,15 @@
     "deliverySaved": "已記錄收貨",
     "packs": "包裝數",
     "packPrice": "每包價格",
-    "totalCost": "總成本"
+    "totalCost": "總成本",
+    "importIngredients": "匯入食材",
+    "importHelp": "選擇含有以下欄位的 CSV 檔案：name, base_unit, pack_size, pack_label。不會匯入價格和庫存。",
+    "importVendor": "所有品項的供應商（選填）",
+    "importNew": "{count} 項新食材",
+    "importSkipped": "{count} 項已在清單中（略過）",
+    "importErrors": "{count} 列有問題",
+    "importConfirm": "匯入 {count} 項食材",
+    "importDone": "已匯入 {count} 項食材"
   },
   "kds": {
     "addonsLabel": "加購",

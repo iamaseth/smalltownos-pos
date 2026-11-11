@@ -5,6 +5,7 @@ import {
   SupplyMovementType,
   createSupply,
   getSupply,
+  importSupplies,
   listSupplies,
   listSupplyMovements,
   receiveDelivery,
@@ -65,6 +66,29 @@ router.post('/', requirePermission('supplies.manage'), (req: Request, res: Respo
       actorUserId: actorId,
     });
     res.status(201).json({ supply });
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+router.post('/import', requirePermission('supplies.manage'), (req: Request, res: Response) => {
+  try {
+    const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    if (!actorId) return res.status(403).json({ error: 'Authentication required' });
+    const body = req.body || {};
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+    const result = importSupplies(getDatabase(), {
+      rows: rows.map((row: Record<string, unknown>) => ({
+        name: row?.name,
+        baseUnit: row?.base_unit,
+        packSize: row?.pack_size,
+        packLabel: row?.pack_label,
+      })),
+      vendorName: body.vendor_name,
+      dryRun: body.dry_run !== false,
+      actorUserId: actorId,
+    });
+    res.json(result);
   } catch (error: unknown) {
     sendError(res, error);
   }

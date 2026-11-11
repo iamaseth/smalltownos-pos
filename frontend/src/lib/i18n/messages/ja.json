@@ -393,7 +393,15 @@
     "deliverySaved": "納品を記録しました",
     "packs": "パック数",
     "packPrice": "パック単価",
-    "totalCost": "合計金額"
+    "totalCost": "合計金額",
+    "importIngredients": "材料をインポート",
+    "importHelp": "次の列を持つCSVファイルを選択してください：name, base_unit, pack_size, pack_label。価格と在庫はインポートされません。",
+    "importVendor": "全品目の仕入先（任意）",
+    "importNew": "新しい材料 {count} 件",
+    "importSkipped": "{count} 件は既にリストにあります（スキップ）",
+    "importErrors": "{count} 行に問題があります",
+    "importConfirm": "{count} 件の材料をインポート",
+    "importDone": "{count} 件の材料をインポートしました"
   },
   "kds": {
     "addonsLabel": "追加項目",

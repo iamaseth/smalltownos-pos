@@ -393,7 +393,15 @@
     "deliverySaved": "Dorëzimi u regjistrua",
     "packs": "Paketime",
     "packPrice": "Çmimi për paketim",
-    "totalCost": "Kostoja totale"
+    "totalCost": "Kostoja totale",
+    "importIngredients": "Importo përbërësit",
+    "importHelp": "Zgjidh një skedar CSV me kolonat: name, base_unit, pack_size, pack_label. Çmimet dhe stoku nuk importohen.",
+    "importVendor": "Furnizuesi për të gjitha artikujt (opsionale)",
+    "importNew": "{count} përbërës të rinj",
+    "importSkipped": "{count} janë tashmë në listë (u anashkaluan)",
+    "importErrors": "{count} rreshta kanë probleme",
+    "importConfirm": "Importo {count} përbërës",
+    "importDone": "{count} përbërës u importuan"
   },
   "kds": {
     "addonsLabel": "Shtesat",

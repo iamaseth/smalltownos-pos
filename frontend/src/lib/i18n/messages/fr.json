@@ -393,7 +393,15 @@
     "deliverySaved": "Livraison enregistrée",
     "packs": "Conditionnements",
     "packPrice": "Prix par conditionnement",
-    "totalCost": "Coût total"
+    "totalCost": "Coût total",
+    "importIngredients": "Importer des ingrédients",
+    "importHelp": "Choisissez un fichier CSV avec les colonnes : name, base_unit, pack_size, pack_label. Les prix et les stocks ne sont pas importés.",
+    "importVendor": "Fournisseur pour tous les articles (facultatif)",
+    "importNew": "{count} nouveaux ingrédients",
+    "importSkipped": "{count} déjà dans votre liste (ignorés)",
+    "importErrors": "{count} lignes posent problème",
+    "importConfirm": "Importer {count} ingrédients",
+    "importDone": "{count} ingrédients importés"
   },
   "kds": {
     "addonsLabel": "Options",

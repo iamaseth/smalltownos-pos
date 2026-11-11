@@ -393,7 +393,15 @@
     "deliverySaved": "Pengiriman dicatat",
     "packs": "Kemasan",
     "packPrice": "Harga per kemasan",
-    "totalCost": "Total biaya"
+    "totalCost": "Total biaya",
+    "importIngredients": "Impor bahan",
+    "importHelp": "Pilih file CSV dengan kolom: name, base_unit, pack_size, pack_label. Harga dan stok tidak diimpor.",
+    "importVendor": "Pemasok untuk semua item (opsional)",
+    "importNew": "{count} bahan baru",
+    "importSkipped": "{count} sudah ada di daftar Anda (dilewati)",
+    "importErrors": "{count} baris bermasalah",
+    "importConfirm": "Impor {count} bahan",
+    "importDone": "{count} bahan diimpor"
   },
   "kds": {
     "addonsLabel": "Tambahan",

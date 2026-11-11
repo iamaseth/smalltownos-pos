@@ -393,7 +393,15 @@
     "deliverySaved": "Delivery recorded",
     "packs": "Packs",
     "packPrice": "Price per pack",
-    "totalCost": "Total cost"
+    "totalCost": "Total cost",
+    "importIngredients": "Import ingredients",
+    "importHelp": "Choose a CSV file with columns: name, base_unit, pack_size, pack_label. Prices and stock are not imported.",
+    "importVendor": "Vendor for all items (optional)",
+    "importNew": "{count} new ingredients",
+    "importSkipped": "{count} already in your list (skipped)",
+    "importErrors": "{count} rows have problems",
+    "importConfirm": "Import {count} ingredients",
+    "importDone": "{count} ingredients imported"
   },
   "kds": {
     "addonsLabel": "Add-ons",

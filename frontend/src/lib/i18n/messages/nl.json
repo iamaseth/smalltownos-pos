@@ -393,7 +393,15 @@
     "deliverySaved": "Levering geregistreerd",
     "packs": "Verpakkingen",
     "packPrice": "Prijs per verpakking",
-    "totalCost": "Totale kosten"
+    "totalCost": "Totale kosten",
+    "importIngredients": "Ingrediënten importeren",
+    "importHelp": "Kies een CSV-bestand met de kolommen: name, base_unit, pack_size, pack_label. Prijzen en voorraad worden niet geïmporteerd.",
+    "importVendor": "Leverancier voor alle items (optioneel)",
+    "importNew": "{count} nieuwe ingrediënten",
+    "importSkipped": "{count} staan al in je lijst (overgeslagen)",
+    "importErrors": "{count} rijen hebben problemen",
+    "importConfirm": "{count} ingrediënten importeren",
+    "importDone": "{count} ingrediënten geïmporteerd"
   },
   "kds": {
     "addonsLabel": "Add-ons",

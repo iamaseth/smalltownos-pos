@@ -393,7 +393,15 @@
     "deliverySaved": "Lieferung erfasst",
     "packs": "Packungen",
     "packPrice": "Preis pro Packung",
-    "totalCost": "Gesamtkosten"
+    "totalCost": "Gesamtkosten",
+    "importIngredients": "Zutaten importieren",
+    "importHelp": "CSV-Datei mit den Spalten wählen: name, base_unit, pack_size, pack_label. Preise und Bestand werden nicht importiert.",
+    "importVendor": "Lieferant für alle Artikel (optional)",
+    "importNew": "{count} neue Zutaten",
+    "importSkipped": "{count} bereits in der Liste (übersprungen)",
+    "importErrors": "{count} Zeilen haben Probleme",
+    "importConfirm": "{count} Zutaten importieren",
+    "importDone": "{count} Zutaten importiert"
   },
   "kds": {
     "addonsLabel": "Zusätze",

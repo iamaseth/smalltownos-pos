@@ -393,7 +393,15 @@
     "deliverySaved": "Teslimat kaydedildi",
     "packs": "Paketler",
     "packPrice": "Paket fiyatı",
-    "totalCost": "Toplam maliyet"
+    "totalCost": "Toplam maliyet",
+    "importIngredients": "Malzemeleri içe aktar",
+    "importHelp": "Şu sütunlara sahip bir CSV dosyası seçin: name, base_unit, pack_size, pack_label. Fiyat ve stok içe aktarılmaz.",
+    "importVendor": "Tüm ürünler için tedarikçi (isteğe bağlı)",
+    "importNew": "{count} yeni malzeme",
+    "importSkipped": "{count} zaten listenizde (atlandı)",
+    "importErrors": "{count} satırda sorun var",
+    "importConfirm": "{count} malzemeyi içe aktar",
+    "importDone": "{count} malzeme içe aktarıldı"
   },
   "kds": {
     "addonsLabel": "Eklentiler",

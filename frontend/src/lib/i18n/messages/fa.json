@@ -393,7 +393,15 @@
     "deliverySaved": "محموله ثبت شد",
     "packs": "بسته‌ها",
     "packPrice": "قیمت هر بسته",
-    "totalCost": "هزینه کل"
+    "totalCost": "هزینه کل",
+    "importIngredients": "وارد کردن مواد اولیه",
+    "importHelp": "فایل CSV با ستون‌های name, base_unit, pack_size, pack_label را انتخاب کنید. قیمت و موجودی وارد نمی‌شود.",
+    "importVendor": "تأمین‌کننده برای همه اقلام (اختیاری)",
+    "importNew": "{count} ماده جدید",
+    "importSkipped": "{count} مورد از قبل در فهرست شما هست (نادیده گرفته شد)",
+    "importErrors": "{count} ردیف مشکل دارد",
+    "importConfirm": "وارد کردن {count} ماده",
+    "importDone": "{count} ماده وارد شد"
   },
   "kds": {
     "addonsLabel": "افزودنی‌ها",

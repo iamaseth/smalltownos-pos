@@ -393,7 +393,15 @@
     "deliverySaved": "Поставка записана",
     "packs": "Упаковки",
     "packPrice": "Цена за упаковку",
-    "totalCost": "Общая стоимость"
+    "totalCost": "Общая стоимость",
+    "importIngredients": "Импорт ингредиентов",
+    "importHelp": "Выберите CSV-файл со столбцами: name, base_unit, pack_size, pack_label. Цены и остатки не импортируются.",
+    "importVendor": "Поставщик для всех позиций (необязательно)",
+    "importNew": "Новых ингредиентов: {count}",
+    "importSkipped": "Уже в списке: {count} (пропущено)",
+    "importErrors": "Строк с ошибками: {count}",
+    "importConfirm": "Импортировать ингредиенты: {count}",
+    "importDone": "Импортировано ингредиентов: {count}"
   },
   "kds": {
     "addonsLabel": "Дополнения",

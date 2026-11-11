@@ -393,7 +393,15 @@
     "deliverySaved": "บันทึกการรับสินค้าแล้ว",
     "packs": "จำนวนแพ็ก",
     "packPrice": "ราคาต่อแพ็ก",
-    "totalCost": "ต้นทุนรวม"
+    "totalCost": "ต้นทุนรวม",
+    "importIngredients": "นำเข้าวัตถุดิบ",
+    "importHelp": "เลือกไฟล์ CSV ที่มีคอลัมน์: name, base_unit, pack_size, pack_label ราคาและสต็อกจะไม่ถูกนำเข้า",
+    "importVendor": "ซัพพลายเออร์สำหรับทุกรายการ (ไม่บังคับ)",
+    "importNew": "วัตถุดิบใหม่ {count} รายการ",
+    "importSkipped": "มีอยู่ในรายการแล้ว {count} รายการ (ข้าม)",
+    "importErrors": "มี {count} แถวที่มีปัญหา",
+    "importConfirm": "นำเข้าวัตถุดิบ {count} รายการ",
+    "importDone": "นำเข้าวัตถุดิบ {count} รายการแล้ว"
   },
   "kds": {
     "addonsLabel": "ตัวเลือกเพิ่ม",

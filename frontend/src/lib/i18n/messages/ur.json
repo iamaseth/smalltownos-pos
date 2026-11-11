@@ -393,7 +393,15 @@
     "deliverySaved": "ڈیلیوری درج ہو گئی",
     "packs": "پیکس",
     "packPrice": "فی پیک قیمت",
-    "totalCost": "کل لاگت"
+    "totalCost": "کل لاگت",
+    "importIngredients": "اجزاء درآمد کریں",
+    "importHelp": "ان کالموں والی CSV فائل منتخب کریں: name, base_unit, pack_size, pack_label۔ قیمتیں اور اسٹاک درآمد نہیں ہوتے۔",
+    "importVendor": "تمام اشیاء کے لیے سپلائر (اختیاری)",
+    "importNew": "{count} نئے اجزاء",
+    "importSkipped": "{count} پہلے سے فہرست میں ہیں (چھوڑ دیے گئے)",
+    "importErrors": "{count} قطاروں میں مسئلہ ہے",
+    "importConfirm": "{count} اجزاء درآمد کریں",
+    "importDone": "{count} اجزاء درآمد ہو گئے"
   },
   "kds": {
     "addonsLabel": "ایڈ آنز",

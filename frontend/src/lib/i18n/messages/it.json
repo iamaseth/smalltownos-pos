@@ -393,7 +393,15 @@
     "deliverySaved": "Consegna registrata",
     "packs": "Confezioni",
     "packPrice": "Prezzo per confezione",
-    "totalCost": "Costo totale"
+    "totalCost": "Costo totale",
+    "importIngredients": "Importa ingredienti",
+    "importHelp": "Scegli un file CSV con le colonne: name, base_unit, pack_size, pack_label. Prezzi e scorte non vengono importati.",
+    "importVendor": "Fornitore per tutti gli articoli (facoltativo)",
+    "importNew": "{count} nuovi ingredienti",
+    "importSkipped": "{count} già presenti nell'elenco (saltati)",
+    "importErrors": "{count} righe hanno problemi",
+    "importConfirm": "Importa {count} ingredienti",
+    "importDone": "{count} ingredienti importati"
   },
   "kds": {
     "addonsLabel": "Extra",

@@ -570,3 +570,96 @@ export function receiveDelivery(
     return { delivery_id: deliveryId, lines: results };
   });
 }
+
+export interface ImportSupplyRow {
+  name: unknown;
+  baseUnit: unknown;
+  packSize?: unknown;
+  packLabel?: unknown;
+}
+
+export interface ImportSuppliesResult {
+  dry_run: boolean;
+  vendor_id: string | null;
+  vendor_created: boolean;
+  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null }>;
+  already_exist: string[];
+  errors: Array<{ row: number; name: string; error: string }>;
+}
+
+const MAX_IMPORT_ROWS = 500;
+
+export function importSupplies(
+  db: ReturnType<typeof getDatabase>,
+  input: { rows: ImportSupplyRow[]; vendorName?: string | null; dryRun: boolean; actorUserId: string },
+): ImportSuppliesResult {
+  if (!Array.isArray(input.rows) || input.rows.length === 0) throw new SupplyServiceError(400, 'rows is required');
+  if (input.rows.length > MAX_IMPORT_ROWS) throw new SupplyServiceError(400, `at most ${MAX_IMPORT_ROWS} rows per import`);
+  const vendorName = input.vendorName === undefined || input.vendorName === null ? '' : String(input.vendorName).trim();
+  if (vendorName.length > 200) throw new SupplyServiceError(400, 'vendor name is too long');
+
+  const existingNames = new Set(
+    (db.prepare('SELECT name FROM supplies WHERE deleted_at IS NULL').all() as Array<{ name: string }>)
+      .map((row) => row.name.toLowerCase()),
+  );
+  const seen = new Set<string>();
+  const result: ImportSuppliesResult = {
+    dry_run: input.dryRun,
+    vendor_id: null,
+    vendor_created: false,
+    to_create: [],
+    already_exist: [],
+    errors: [],
+  };
+
+  input.rows.forEach((row, index) => {
+    const name = String(row.name ?? '').trim();
+    try {
+      if (!name) throw new SupplyServiceError(400, 'name is required');
+      if (name.length > 200) throw new SupplyServiceError(400, 'name is too long');
+      const baseUnit = assertSupplyUnit(String(row.baseUnit ?? '').trim().toLowerCase(), 'base_unit');
+      const sizeText = row.packSize === undefined || row.packSize === null ? '' : String(row.packSize).trim();
+      const packSize = sizeText === '' ? null : optionalNonNegative(Number(sizeText), 'pack_size', true) ?? null;
+      const packLabel = String(row.packLabel ?? '').trim().slice(0, 60) || null;
+      const key = name.toLowerCase();
+      if (existingNames.has(key) || seen.has(key)) {
+        result.already_exist.push(name);
+        return;
+      }
+      seen.add(key);
+      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel });
+    } catch (error: unknown) {
+      result.errors.push({ row: index + 1, name, error: error instanceof Error ? error.message : 'invalid row' });
+    }
+  });
+
+  if (input.dryRun) return result;
+  if (result.errors.length > 0) throw new SupplyServiceError(400, `${result.errors.length} row(s) have errors; nothing was imported`);
+
+  withTxn(() => {
+    let vendorId: string | null = null;
+    if (vendorName) {
+      const found = db.prepare('SELECT id FROM vendors WHERE deleted_at IS NULL AND name = ? COLLATE NOCASE').get(vendorName) as { id: string } | undefined;
+      if (found) {
+        vendorId = found.id;
+      } else {
+        vendorId = `ven_${randomBytes(8).toString('hex')}`;
+        const timestamp = now();
+        db.prepare('INSERT INTO vendors (id, name, is_active, created_at, updated_at) VALUES (?, ?, 1, ?, ?)').run(vendorId, vendorName, timestamp, timestamp);
+        result.vendor_created = true;
+      }
+    }
+    result.vendor_id = vendorId;
+    for (const item of result.to_create) {
+      createSupply(db, {
+        name: item.name,
+        baseUnit: item.base_unit,
+        packSize: item.pack_size ?? undefined,
+        packLabel: item.pack_label ?? undefined,
+        vendorId: vendorId ?? undefined,
+        actorUserId: input.actorUserId,
+      });
+    }
+  });
+  return result;
+}

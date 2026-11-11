@@ -393,7 +393,15 @@
     "deliverySaved": "تم تسجيل الشحنة",
     "packs": "العبوات",
     "packPrice": "سعر العبوة",
-    "totalCost": "التكلفة الإجمالية"
+    "totalCost": "التكلفة الإجمالية",
+    "importIngredients": "استيراد المكونات",
+    "importHelp": "اختر ملف CSV بالأعمدة: name, base_unit, pack_size, pack_label. لا يتم استيراد الأسعار والمخزون.",
+    "importVendor": "المورد لجميع العناصر (اختياري)",
+    "importNew": "{count} مكونات جديدة",
+    "importSkipped": "{count} موجودة بالفعل في قائمتك (تم تخطيها)",
+    "importErrors": "{count} صفوف بها مشاكل",
+    "importConfirm": "استيراد {count} مكونات",
+    "importDone": "تم استيراد {count} مكونات"
   },
   "kds": {
     "addonsLabel": "الإضافات",

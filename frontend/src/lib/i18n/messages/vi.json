@@ -393,7 +393,15 @@
     "deliverySaved": "Đã ghi nhận lô hàng",
     "packs": "Số gói",
     "packPrice": "Giá mỗi gói",
-    "totalCost": "Tổng chi phí"
+    "totalCost": "Tổng chi phí",
+    "importIngredients": "Nhập nguyên liệu",
+    "importHelp": "Chọn tệp CSV có các cột: name, base_unit, pack_size, pack_label. Giá và tồn kho không được nhập.",
+    "importVendor": "Nhà cung cấp cho mọi mặt hàng (không bắt buộc)",
+    "importNew": "{count} nguyên liệu mới",
+    "importSkipped": "{count} đã có trong danh sách (bỏ qua)",
+    "importErrors": "{count} dòng có vấn đề",
+    "importConfirm": "Nhập {count} nguyên liệu",
+    "importDone": "Đã nhập {count} nguyên liệu"
   },
   "kds": {
     "addonsLabel": "Tuỳ chọn",

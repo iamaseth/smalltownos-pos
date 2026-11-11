@@ -393,7 +393,15 @@
     "deliverySaved": "Naitala ang delivery",
     "packs": "Mga pakete",
     "packPrice": "Presyo bawat pakete",
-    "totalCost": "Kabuuang halaga"
+    "totalCost": "Kabuuang halaga",
+    "importIngredients": "I-import ang mga sangkap",
+    "importHelp": "Pumili ng CSV file na may mga column na: name, base_unit, pack_size, pack_label. Hindi ini-import ang presyo at stock.",
+    "importVendor": "Supplier para sa lahat ng item (opsyonal)",
+    "importNew": "{count} bagong sangkap",
+    "importSkipped": "{count} nasa listahan na (nilaktawan)",
+    "importErrors": "{count} hanay ang may problema",
+    "importConfirm": "I-import ang {count} sangkap",
+    "importDone": "{count} sangkap ang na-import"
   },
   "kds": {
     "addonsLabel": "Mga Addon",

@@ -393,7 +393,15 @@
     "deliverySaved": "입고가 기록되었습니다",
     "packs": "팩 수",
     "packPrice": "팩당 가격",
-    "totalCost": "총 비용"
+    "totalCost": "총 비용",
+    "importIngredients": "재료 가져오기",
+    "importHelp": "다음 열이 있는 CSV 파일을 선택하세요: name, base_unit, pack_size, pack_label. 가격과 재고는 가져오지 않습니다.",
+    "importVendor": "모든 품목의 공급업체(선택)",
+    "importNew": "새 재료 {count}개",
+    "importSkipped": "{count}개는 이미 목록에 있음(건너뜀)",
+    "importErrors": "{count}개 행에 문제가 있음",
+    "importConfirm": "재료 {count}개 가져오기",
+    "importDone": "재료 {count}개를 가져왔습니다"
   },
   "kds": {
     "addonsLabel": "추가 메뉴",

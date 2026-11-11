@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck } from 'lucide-react';
+import { Plus, Search, X, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -95,6 +95,38 @@ const movementTypeIcons: Record<string, typeof ArrowUpCircle> = {
   recipe_restore: ArrowUpCircle,
 };
 
+interface ImportPreview {
+  to_create: { name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null }[];
+  already_exist: string[];
+  errors: { row: number; name: string; error: string }[];
+}
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+  const source = text.replace(/^\uFEFF/, '');
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (quoted) {
+      if (ch === '"' && source[i + 1] === '"') { cell += '"'; i++; }
+      else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && source[i + 1] === '\n') i++;
+      row.push(cell); cell = '';
+      if (row.some((value) => value.trim() !== '')) rows.push(row);
+      row = [];
+    } else cell += ch;
+  }
+  row.push(cell);
+  if (row.some((value) => value.trim() !== '')) rows.push(row);
+  return rows;
+}
+
 export default function InventoryPage() {
   const { currentTenant } = useAuthStore();
   const t = useTranslations('inventory');
@@ -124,6 +156,12 @@ export default function InventoryPage() {
   const [newVendorName, setNewVendorName] = useState('');
   const [deliveryReference, setDeliveryReference] = useState('');
   const [deliveryLines, setDeliveryLines] = useState<DeliveryLine[]>([]);
+
+  const [showImport, setShowImport] = useState(false);
+  const [importRows, setImportRows] = useState<Record<string, string>[]>([]);
+  const [importVendor, setImportVendor] = useState('');
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const [movementSupply, setMovementSupply] = useState<Supply | null>(null);
   const [movementForm, setMovementForm] = useState({ movement_type: 'receive', quantity: '', unit: 'each' as SupplyUnit, reason: '' });
@@ -341,6 +379,61 @@ export default function InventoryPage() {
     }
   };
 
+  const openImport = () => {
+    setImportRows([]);
+    setImportVendor('');
+    setImportPreview(null);
+    setShowImport(true);
+  };
+
+  const importError = (err: unknown): string => {
+    const message = err instanceof Error && 'response' in err
+      ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+      : undefined;
+    return message || t('saveFailed');
+  };
+
+  const importPayload = (rows: Record<string, string>[], dryRun: boolean) => ({
+    rows,
+    vendor_name: importVendor.trim() || undefined,
+    dry_run: dryRun,
+  });
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const table = parseCsv(await file.text());
+      const header = (table[0] || []).map((h) => h.trim().toLowerCase());
+      const rows = table.slice(1).map((cells) => {
+        const record: Record<string, string> = {};
+        header.forEach((name, index) => { record[name] = (cells[index] ?? '').trim(); });
+        return record;
+      });
+      setImportRows(rows);
+      const { data } = await api.post('/supplies/import', importPayload(rows, true));
+      setImportPreview(data);
+    } catch (err: unknown) {
+      setImportRows([]);
+      setImportPreview(null);
+      toast.error(importError(err));
+    }
+  };
+
+  const handleImportConfirm = async () => {
+    setImporting(true);
+    try {
+      const { data } = await api.post('/supplies/import', importPayload(importRows, false));
+      toast.success(t('importDone', { count: data.to_create.length }));
+      setShowImport(false);
+      refresh();
+      api.get('/vendors').then(({ data: v }) => setVendors(v.vendors || [])).catch(() => undefined);
+    } catch (err: unknown) {
+      toast.error(importError(err));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const openAddRecipe = () => {
     setEditingRecipe(null);
     setRecipeForm({ product_id: '', yield_quantity: '1', items: [] });
@@ -421,6 +514,7 @@ export default function InventoryPage() {
         <h1 className="text-2xl font-bold text-foreground">{tNav('inventory')}</h1>
         {tab === 'supplies' && (
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={openImport}><Upload size={16} className="me-1" /> {t('importIngredients')}</Button>
             <Button variant="outline" onClick={openDelivery}><Truck size={16} className="me-1" /> {t('receiveDelivery')}</Button>
             <Button onClick={openAddSupply}><Plus size={16} className="me-1" /> {t('addSupply')}</Button>
           </div>
@@ -663,6 +757,59 @@ export default function InventoryPage() {
               </select>
               <Button type="submit" className="w-full">{tCommon('save')}</Button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showImport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">{t('importIngredients')}</h2>
+              <button onClick={() => setShowImport(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">{t('importHelp')}</p>
+              <input type="text" list="import-vendors" placeholder={t('importVendor')} value={importVendor}
+                onChange={(e) => { setImportVendor(e.target.value); setImportPreview(null); setImportRows([]); }}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              <datalist id="import-vendors">
+                {vendors.map((v) => <option key={v.id} value={v.name} />)}
+              </datalist>
+              <input type="file" accept=".csv,text/csv"
+                onChange={(e) => handleImportFile(e.target.files?.[0])}
+                className="w-full text-sm" />
+              {importPreview && (
+                <div className="space-y-2 text-sm">
+                  <p className="font-medium">{t('importNew', { count: importPreview.to_create.length })}</p>
+                  {importPreview.already_exist.length > 0 && (
+                    <p className="text-muted-foreground">{t('importSkipped', { count: importPreview.already_exist.length })}</p>
+                  )}
+                  {importPreview.errors.length > 0 && (
+                    <div className="text-red-600">
+                      <p className="font-medium">{t('importErrors', { count: importPreview.errors.length })}</p>
+                      {importPreview.errors.slice(0, 5).map((row) => (
+                        <p key={row.row}>{row.row}: {row.name || '-'} ({row.error})</p>
+                      ))}
+                    </div>
+                  )}
+                  <ul className="max-h-48 overflow-y-auto border rounded-lg divide-y">
+                    {importPreview.to_create.map((item) => (
+                      <li key={item.name} className="px-3 py-1.5 flex justify-between gap-2">
+                        <span className="truncate">{item.name}</span>
+                        <span className="text-muted-foreground whitespace-nowrap">
+                          {item.pack_size ? `${fmtNum(item.pack_size)} ${item.base_unit}` : item.base_unit}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Button className="w-full" disabled={importing || !importPreview || importPreview.errors.length > 0 || importPreview.to_create.length === 0}
+                onClick={handleImportConfirm}>
+                {t('importConfirm', { count: importPreview?.to_create.length ?? 0 })}
+              </Button>
+            </div>
           </div>
         </div>
       )}

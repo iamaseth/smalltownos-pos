@@ -393,7 +393,15 @@
     "deliverySaved": "डेलिभरी रेकर्ड गरियो",
     "packs": "प्याकहरू",
     "packPrice": "प्रति प्याक मूल्य",
-    "totalCost": "कुल लागत"
+    "totalCost": "कुल लागत",
+    "importIngredients": "सामग्री आयात गर्नुहोस्",
+    "importHelp": "यी स्तम्भ भएको CSV फाइल छान्नुहोस्: name, base_unit, pack_size, pack_label। मूल्य र स्टक आयात हुँदैन।",
+    "importVendor": "सबै वस्तुको आपूर्तिकर्ता (ऐच्छिक)",
+    "importNew": "{count} नयाँ सामग्री",
+    "importSkipped": "{count} पहिल्यै सूचीमा छन् (छोडिए)",
+    "importErrors": "{count} पङ्क्तिमा समस्या छ",
+    "importConfirm": "{count} सामग्री आयात गर्नुहोस्",
+    "importDone": "{count} सामग्री आयात भयो"
   },
   "kds": {
     "addonsLabel": "एडअनहरू",

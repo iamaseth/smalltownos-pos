@@ -393,7 +393,15 @@
     "deliverySaved": "ডেলিভারি নথিভুক্ত হয়েছে",
     "packs": "প্যাক",
     "packPrice": "প্রতি প্যাকের দাম",
-    "totalCost": "মোট খরচ"
+    "totalCost": "মোট খরচ",
+    "importIngredients": "উপাদান ইমপোর্ট করুন",
+    "importHelp": "এই কলামসহ একটি CSV ফাইল বেছে নিন: name, base_unit, pack_size, pack_label। দাম ও স্টক ইমপোর্ট হয় না।",
+    "importVendor": "সব আইটেমের সরবরাহকারী (ঐচ্ছিক)",
+    "importNew": "{count}টি নতুন উপাদান",
+    "importSkipped": "{count}টি ইতিমধ্যে তালিকায় আছে (বাদ দেওয়া হয়েছে)",
+    "importErrors": "{count}টি সারিতে সমস্যা আছে",
+    "importConfirm": "{count}টি উপাদান ইমপোর্ট করুন",
+    "importDone": "{count}টি উপাদান ইমপোর্ট হয়েছে"
   },
   "kds": {
     "addonsLabel": "অ্যাড-অন",
