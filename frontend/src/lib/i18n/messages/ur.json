@@ -395,7 +395,7 @@
     "packPrice": "فی پیک قیمت",
     "totalCost": "کل لاگت",
     "importIngredients": "اجزاء درآمد کریں",
-    "importHelp": "ان کالموں والی CSV فائل منتخب کریں: name, base_unit, pack_size, pack_label۔ قیمتیں اور اسٹاک درآمد نہیں ہوتے۔",
+    "importHelp": "ان کالموں والی CSV فائل منتخب کریں: name, base_unit, pack_size, pack_label, pack_price۔ pack_price فی پیک قیمت ہے اور ابتدائی لاگت طے کرتی ہے۔ اسٹاک درآمد نہیں ہوتا۔",
     "importVendor": "تمام اشیاء کے لیے سپلائر (اختیاری)",
     "importNew": "{count} نئے اجزاء",
     "importSkipped": "{count} پہلے سے فہرست میں ہیں (چھوڑ دیے گئے)",

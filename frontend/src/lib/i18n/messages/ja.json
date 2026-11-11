@@ -395,7 +395,7 @@
     "packPrice": "パック単価",
     "totalCost": "合計金額",
     "importIngredients": "材料をインポート",
-    "importHelp": "次の列を持つCSVファイルを選択してください：name, base_unit, pack_size, pack_label。価格と在庫はインポートされません。",
+    "importHelp": "次の列を持つCSVファイルを選択してください：name, base_unit, pack_size, pack_label, pack_price。pack_price はパック単価で、初期原価になります。在庫はインポートされません。",
     "importVendor": "全品目の仕入先（任意）",
     "importNew": "新しい材料 {count} 件",
     "importSkipped": "{count} 件は既にリストにあります（スキップ）",

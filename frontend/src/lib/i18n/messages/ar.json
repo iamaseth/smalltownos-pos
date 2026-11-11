@@ -395,7 +395,7 @@
     "packPrice": "سعر العبوة",
     "totalCost": "التكلفة الإجمالية",
     "importIngredients": "استيراد المكونات",
-    "importHelp": "اختر ملف CSV بالأعمدة: name, base_unit, pack_size, pack_label. لا يتم استيراد الأسعار والمخزون.",
+    "importHelp": "اختر ملف CSV بالأعمدة: name, base_unit, pack_size, pack_label, pack_price. pack_price هو سعر العبوة ويحدد التكلفة الأولية. لا يتم استيراد المخزون.",
     "importVendor": "المورد لجميع العناصر (اختياري)",
     "importNew": "{count} مكونات جديدة",
     "importSkipped": "{count} موجودة بالفعل في قائمتك (تم تخطيها)",

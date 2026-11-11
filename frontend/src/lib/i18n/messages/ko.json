@@ -395,7 +395,7 @@
     "packPrice": "팩당 가격",
     "totalCost": "총 비용",
     "importIngredients": "재료 가져오기",
-    "importHelp": "다음 열이 있는 CSV 파일을 선택하세요: name, base_unit, pack_size, pack_label. 가격과 재고는 가져오지 않습니다.",
+    "importHelp": "다음 열이 있는 CSV 파일을 선택하세요: name, base_unit, pack_size, pack_label, pack_price. pack_price는 팩당 가격이며 초기 원가가 됩니다. 재고는 가져오지 않습니다.",
     "importVendor": "모든 품목의 공급업체(선택)",
     "importNew": "새 재료 {count}개",
     "importSkipped": "{count}개는 이미 목록에 있음(건너뜀)",

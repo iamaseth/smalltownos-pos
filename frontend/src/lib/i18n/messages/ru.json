@@ -395,7 +395,7 @@
     "packPrice": "Цена за упаковку",
     "totalCost": "Общая стоимость",
     "importIngredients": "Импорт ингредиентов",
-    "importHelp": "Выберите CSV-файл со столбцами: name, base_unit, pack_size, pack_label. Цены и остатки не импортируются.",
+    "importHelp": "Выберите CSV-файл со столбцами: name, base_unit, pack_size, pack_label, pack_price. pack_price — цена за упаковку, она задаёт начальную себестоимость. Остатки не импортируются.",
     "importVendor": "Поставщик для всех позиций (необязательно)",
     "importNew": "Новых ингредиентов: {count}",
     "importSkipped": "Уже в списке: {count} (пропущено)",

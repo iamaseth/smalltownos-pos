@@ -395,7 +395,7 @@
     "packPrice": "Preis pro Packung",
     "totalCost": "Gesamtkosten",
     "importIngredients": "Zutaten importieren",
-    "importHelp": "CSV-Datei mit den Spalten wählen: name, base_unit, pack_size, pack_label. Preise und Bestand werden nicht importiert.",
+    "importHelp": "CSV-Datei mit den Spalten wählen: name, base_unit, pack_size, pack_label, pack_price. pack_price ist der Preis pro Packung und legt die Startkosten fest. Der Bestand wird nicht importiert.",
     "importVendor": "Lieferant für alle Artikel (optional)",
     "importNew": "{count} neue Zutaten",
     "importSkipped": "{count} bereits in der Liste (übersprungen)",

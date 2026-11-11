@@ -96,7 +96,7 @@ const movementTypeIcons: Record<string, typeof ArrowUpCircle> = {
 };
 
 interface ImportPreview {
-  to_create: { name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null }[];
+  to_create: { name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null }[];
   already_exist: string[];
   errors: { row: number; name: string; error: string }[];
 }
@@ -799,6 +799,7 @@ export default function InventoryPage() {
                         <span className="truncate">{item.name}</span>
                         <span className="text-muted-foreground whitespace-nowrap">
                           {item.pack_size ? `${fmtNum(item.pack_size)} ${item.base_unit}` : item.base_unit}
+                          {item.pack_price !== null ? ` · ${fmtNum(item.pack_price)}` : ''}
                         </span>
                       </li>
                     ))}

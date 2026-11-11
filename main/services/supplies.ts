@@ -576,13 +576,14 @@ export interface ImportSupplyRow {
   baseUnit: unknown;
   packSize?: unknown;
   packLabel?: unknown;
+  packPrice?: unknown;
 }
 
 export interface ImportSuppliesResult {
   dry_run: boolean;
   vendor_id: string | null;
   vendor_created: boolean;
-  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null }>;
+  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null }>;
   already_exist: string[];
   errors: Array<{ row: number; name: string; error: string }>;
 }
@@ -621,13 +622,19 @@ export function importSupplies(
       const sizeText = row.packSize === undefined || row.packSize === null ? '' : String(row.packSize).trim();
       const packSize = sizeText === '' ? null : optionalNonNegative(Number(sizeText), 'pack_size', true) ?? null;
       const packLabel = String(row.packLabel ?? '').trim().slice(0, 60) || null;
+      const priceText = row.packPrice === undefined || row.packPrice === null ? '' : String(row.packPrice).trim();
+      const packPrice = priceText === '' ? null : optionalNonNegative(Number(priceText), 'pack_price') ?? null;
+      if (packPrice !== null && packSize === null && baseUnit !== 'each') {
+        throw new SupplyServiceError(400, 'pack_price needs a pack_size');
+      }
+      const unitCost = packPrice === null ? null : (packSize === null ? packPrice : Number((packPrice / packSize).toFixed(8)));
       const key = name.toLowerCase();
       if (existingNames.has(key) || seen.has(key)) {
         result.already_exist.push(name);
         return;
       }
       seen.add(key);
-      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel });
+      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel, pack_price: packPrice, unit_cost: unitCost });
     } catch (error: unknown) {
       result.errors.push({ row: index + 1, name, error: error instanceof Error ? error.message : 'invalid row' });
     }
@@ -656,6 +663,7 @@ export function importSupplies(
         baseUnit: item.base_unit,
         packSize: item.pack_size ?? undefined,
         packLabel: item.pack_label ?? undefined,
+        unitCost: item.unit_cost ?? undefined,
         vendorId: vendorId ?? undefined,
         actorUserId: input.actorUserId,
       });

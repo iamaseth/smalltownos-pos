@@ -395,7 +395,7 @@
     "packPrice": "Harga per kemasan",
     "totalCost": "Total biaya",
     "importIngredients": "Impor bahan",
-    "importHelp": "Pilih file CSV dengan kolom: name, base_unit, pack_size, pack_label. Harga dan stok tidak diimpor.",
+    "importHelp": "Pilih file CSV dengan kolom: name, base_unit, pack_size, pack_label, pack_price. pack_price adalah harga per kemasan dan menentukan biaya awal. Stok tidak diimpor.",
     "importVendor": "Pemasok untuk semua item (opsional)",
     "importNew": "{count} bahan baru",
     "importSkipped": "{count} sudah ada di daftar Anda (dilewati)",

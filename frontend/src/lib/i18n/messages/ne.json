@@ -395,7 +395,7 @@
     "packPrice": "प्रति प्याक मूल्य",
     "totalCost": "कुल लागत",
     "importIngredients": "सामग्री आयात गर्नुहोस्",
-    "importHelp": "यी स्तम्भ भएको CSV फाइल छान्नुहोस्: name, base_unit, pack_size, pack_label। मूल्य र स्टक आयात हुँदैन।",
+    "importHelp": "यी स्तम्भ भएको CSV फाइल छान्नुहोस्: name, base_unit, pack_size, pack_label, pack_price। pack_price प्रति प्याक मूल्य हो र सुरुको लागत तय गर्छ। स्टक आयात हुँदैन।",
     "importVendor": "सबै वस्तुको आपूर्तिकर्ता (ऐच्छिक)",
     "importNew": "{count} नयाँ सामग्री",
     "importSkipped": "{count} पहिल्यै सूचीमा छन् (छोडिए)",

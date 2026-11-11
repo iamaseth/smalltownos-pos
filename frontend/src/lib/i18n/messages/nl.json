@@ -395,7 +395,7 @@
     "packPrice": "Prijs per verpakking",
     "totalCost": "Totale kosten",
     "importIngredients": "Ingrediënten importeren",
-    "importHelp": "Kies een CSV-bestand met de kolommen: name, base_unit, pack_size, pack_label. Prijzen en voorraad worden niet geïmporteerd.",
+    "importHelp": "Kies een CSV-bestand met de kolommen: name, base_unit, pack_size, pack_label, pack_price. pack_price is de prijs per verpakking en bepaalt de startkosten. Voorraad wordt niet geïmporteerd.",
     "importVendor": "Leverancier voor alle items (optioneel)",
     "importNew": "{count} nieuwe ingrediënten",
     "importSkipped": "{count} staan al in je lijst (overgeslagen)",

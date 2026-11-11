@@ -395,7 +395,7 @@
     "packPrice": "Price per pack",
     "totalCost": "Total cost",
     "importIngredients": "Import ingredients",
-    "importHelp": "Choose a CSV file with columns: name, base_unit, pack_size, pack_label. Prices and stock are not imported.",
+    "importHelp": "Choose a CSV file with columns: name, base_unit, pack_size, pack_label, pack_price. pack_price is the price per pack and sets the starting cost. Stock is not imported.",
     "importVendor": "Vendor for all items (optional)",
     "importNew": "{count} new ingredients",
     "importSkipped": "{count} already in your list (skipped)",

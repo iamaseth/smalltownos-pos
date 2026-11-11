@@ -395,7 +395,7 @@
     "packPrice": "每包價格",
     "totalCost": "總成本",
     "importIngredients": "匯入食材",
-    "importHelp": "選擇含有以下欄位的 CSV 檔案：name, base_unit, pack_size, pack_label。不會匯入價格和庫存。",
+    "importHelp": "選擇含有以下欄位的 CSV 檔案：name, base_unit, pack_size, pack_label, pack_price。pack_price 是每包價格，用作起始成本。不會匯入庫存。",
     "importVendor": "所有品項的供應商（選填）",
     "importNew": "{count} 項新食材",
     "importSkipped": "{count} 項已在清單中（略過）",

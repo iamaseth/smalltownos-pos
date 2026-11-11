@@ -395,7 +395,7 @@
     "packPrice": "Prezzo per confezione",
     "totalCost": "Costo totale",
     "importIngredients": "Importa ingredienti",
-    "importHelp": "Scegli un file CSV con le colonne: name, base_unit, pack_size, pack_label. Prezzi e scorte non vengono importati.",
+    "importHelp": "Scegli un file CSV con le colonne: name, base_unit, pack_size, pack_label, pack_price. pack_price è il prezzo per confezione e stabilisce il costo iniziale. Le scorte non vengono importate.",
     "importVendor": "Fornitore per tutti gli articoli (facoltativo)",
     "importNew": "{count} nuovi ingredienti",
     "importSkipped": "{count} già presenti nell'elenco (saltati)",

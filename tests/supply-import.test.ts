@@ -37,8 +37,8 @@ async function main() {
 
   const rows = [
     { name: 'Cune Crianza 2021, 13.5%', baseUnit: 'ml', packSize: '750', packLabel: 'bottle' },
-    { name: 'Extra Virgin Olive Oil 5L PET', baseUnit: 'ml', packSize: '5000', packLabel: 'jug' },
-    { name: 'Baked Beans 3kg', baseUnit: 'each', packSize: '', packLabel: '' },
+    { name: 'Extra Virgin Olive Oil 5L PET', baseUnit: 'ml', packSize: '5000', packLabel: 'jug', packPrice: '46' },
+    { name: 'Baked Beans 3kg', baseUnit: 'each', packSize: '', packLabel: '', packPrice: '8' },
     { name: 'extra virgin olive oil 5l pet', baseUnit: 'ml', packSize: '5000', packLabel: 'jug' },
   ];
 
@@ -56,9 +56,11 @@ async function main() {
   assertEqualOrThrow(oil.pack_size, 5000, 'pack size is stored');
   assertEqualOrThrow(oil.pack_label, 'jug', 'pack label is stored');
   assertEqualOrThrow(oil.stock_quantity, 0, 'imported stock starts at zero');
-  assertEqualOrThrow(oil.unit_cost, null, 'no price is imported');
+  assertEqualOrThrow(oil.unit_cost, 0.0092, 'cost per ml is pack price divided by pack size');
   const beans = listSupplies(db, {}).find((s: any) => s.name === 'Baked Beans 3kg');
   assertEqualOrThrow(beans.pack_size, null, 'blank pack size stays empty');
+  assertEqualOrThrow(beans.unit_cost, 8, 'an each item uses the price as cost per item');
+  assertEqualOrThrow(preview.to_create[0].pack_price, 46, 'preview shows the pack price');
 
   const again = importSupplies(db, { rows, vendorName: 'chhay', dryRun: false, actorUserId: actor });
   assertEqualOrThrow(again.to_create.length, 0, 'second import adds nothing');
@@ -73,6 +75,10 @@ async function main() {
   expectError(() => importSupplies(db, { rows: bad, dryRun: false, actorUserId: actor }), 400, 'import refuses when any row has errors');
   assertEqualOrThrow(listSupplies(db, {}).length, 3, 'nothing is imported when a row is invalid');
   expectError(() => importSupplies(db, { rows: [], dryRun: true, actorUserId: actor }), 400, 'empty import refused');
+  const noSize = importSupplies(db, { rows: [{ name: 'Y', baseUnit: 'ml', packPrice: '9' }], dryRun: true, actorUserId: actor });
+  assertEqualOrThrow(noSize.errors.length, 1, 'a liquid price without a pack size is a row error');
+  const negativePrice = importSupplies(db, { rows: [{ name: 'Z', baseUnit: 'each', packPrice: '-1' }], dryRun: true, actorUserId: actor });
+  assertEqualOrThrow(negativePrice.errors.length, 1, 'negative price is a row error');
   const negative = importSupplies(db, { rows: [{ name: 'X', baseUnit: 'ml', packSize: '-5' }], dryRun: true, actorUserId: actor });
   assertEqualOrThrow(negative.errors.length, 1, 'negative pack size is listed as a row error');
 

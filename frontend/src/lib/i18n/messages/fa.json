@@ -395,7 +395,7 @@
     "packPrice": "قیمت هر بسته",
     "totalCost": "هزینه کل",
     "importIngredients": "وارد کردن مواد اولیه",
-    "importHelp": "فایل CSV با ستون‌های name, base_unit, pack_size, pack_label را انتخاب کنید. قیمت و موجودی وارد نمی‌شود.",
+    "importHelp": "فایل CSV با ستون‌های name, base_unit, pack_size, pack_label, pack_price را انتخاب کنید. pack_price قیمت هر بسته است و هزینه اولیه را تعیین می‌کند. موجودی وارد نمی‌شود.",
     "importVendor": "تأمین‌کننده برای همه اقلام (اختیاری)",
     "importNew": "{count} ماده جدید",
     "importSkipped": "{count} مورد از قبل در فهرست شما هست (نادیده گرفته شد)",

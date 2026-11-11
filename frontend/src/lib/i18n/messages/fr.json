@@ -395,7 +395,7 @@
     "packPrice": "Prix par conditionnement",
     "totalCost": "Coût total",
     "importIngredients": "Importer des ingrédients",
-    "importHelp": "Choisissez un fichier CSV avec les colonnes : name, base_unit, pack_size, pack_label. Les prix et les stocks ne sont pas importés.",
+    "importHelp": "Choisissez un fichier CSV avec les colonnes : name, base_unit, pack_size, pack_label, pack_price. pack_price est le prix par conditionnement et fixe le coût de départ. Les stocks ne sont pas importés.",
     "importVendor": "Fournisseur pour tous les articles (facultatif)",
     "importNew": "{count} nouveaux ingrédients",
     "importSkipped": "{count} déjà dans votre liste (ignorés)",

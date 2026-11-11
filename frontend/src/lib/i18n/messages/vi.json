@@ -395,7 +395,7 @@
     "packPrice": "Giá mỗi gói",
     "totalCost": "Tổng chi phí",
     "importIngredients": "Nhập nguyên liệu",
-    "importHelp": "Chọn tệp CSV có các cột: name, base_unit, pack_size, pack_label. Giá và tồn kho không được nhập.",
+    "importHelp": "Chọn tệp CSV có các cột: name, base_unit, pack_size, pack_label, pack_price. pack_price là giá mỗi gói và đặt giá vốn ban đầu. Tồn kho không được nhập.",
     "importVendor": "Nhà cung cấp cho mọi mặt hàng (không bắt buộc)",
     "importNew": "{count} nguyên liệu mới",
     "importSkipped": "{count} đã có trong danh sách (bỏ qua)",

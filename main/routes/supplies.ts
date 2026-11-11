@@ -83,6 +83,7 @@ router.post('/import', requirePermission('supplies.manage'), (req: Request, res:
         baseUnit: row?.base_unit,
         packSize: row?.pack_size,
         packLabel: row?.pack_label,
+        packPrice: row?.pack_price,
       })),
       vendorName: body.vendor_name,
       dryRun: body.dry_run !== false,
