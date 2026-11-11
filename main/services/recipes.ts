@@ -404,6 +404,10 @@ export interface ImportRecipesResult {
 
 const MAX_IMPORT_RECIPE_ROWS = 2000;
 
+function nameKey(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
 export function importRecipes(
   db: ReturnType<typeof getDatabase>,
   input: { rows: ImportRecipeRow[]; dryRun: boolean },
@@ -413,16 +417,16 @@ export function importRecipes(
 
   const products = new Map<string, string>();
   for (const row of db.prepare('SELECT id, name FROM products').all() as Array<{ id: string; name: string }>) {
-    const key = row.name.trim().toLowerCase();
+    const key = nameKey(row.name);
     products.set(products.has(key) ? `${key}\u0000dup` : key, row.id);
   }
   const supplies = new Map<string, { id: string; baseUnit: SupplyUnit }>();
   for (const row of db.prepare('SELECT id, name, base_unit FROM supplies WHERE deleted_at IS NULL').all() as Array<{ id: string; name: string; base_unit: SupplyUnit }>) {
-    supplies.set(row.name.trim().toLowerCase(), { id: row.id, baseUnit: row.base_unit });
+    supplies.set(nameKey(row.name), { id: row.id, baseUnit: row.base_unit });
   }
   const groups = new Map<string, { groupName: string; baseUnit: SupplyUnit }>();
   for (const row of db.prepare('SELECT group_name, base_unit FROM supplies WHERE deleted_at IS NULL AND is_active = 1 AND group_name IS NOT NULL').all() as Array<{ group_name: string; base_unit: SupplyUnit }>) {
-    groups.set(row.group_name.trim().toLowerCase(), { groupName: row.group_name, baseUnit: row.base_unit });
+    groups.set(nameKey(row.group_name), { groupName: row.group_name, baseUnit: row.base_unit });
   }
   const haveRecipe = new Set(
     (db.prepare('SELECT product_id FROM recipes').all() as Array<{ product_id: string }>).map((r) => r.product_id),
@@ -432,7 +436,7 @@ export function importRecipes(
   for (const row of input.rows) {
     const productName = String(row.productName ?? '').trim();
     if (!productName) continue;
-    const key = productName.toLowerCase();
+    const key = nameKey(productName);
     let entry = grouped.get(key);
     if (!entry) {
       entry = { name: productName, lines: [], problems: [] };
@@ -454,15 +458,15 @@ export function importRecipes(
     if (!productId) { result.skipped.push({ product_name: entry.name, reason: 'no product with this name' }); continue; }
     if (haveRecipe.has(productId)) { result.already_have_recipe.push(entry.name); continue; }
     if (entry.problems.length > 0) { result.skipped.push({ product_name: entry.name, reason: entry.problems[0] }); continue; }
-    const missing = entry.lines.filter((l) => !supplies.has(l.ingredient.toLowerCase()) && !groups.has(l.ingredient.toLowerCase())).map((l) => l.ingredient);
+    const missing = entry.lines.filter((l) => !supplies.has(nameKey(l.ingredient)) && !groups.has(nameKey(l.ingredient))).map((l) => l.ingredient);
     if (missing.length > 0) { result.skipped.push({ product_name: entry.name, reason: `no ingredient named ${missing.join(', ')}` }); continue; }
     const seen = new Set<string>();
     const items: { supplyId?: string; groupName?: string; quantity: number; unit: string }[] = [];
     let problem = '';
     for (const l of entry.lines) {
-      const supply = supplies.get(l.ingredient.toLowerCase());
-      const group = supply ? undefined : groups.get(l.ingredient.toLowerCase());
-      const lineKey = supply ? supply.id : `group:${l.ingredient.toLowerCase()}`;
+      const supply = supplies.get(nameKey(l.ingredient));
+      const group = supply ? undefined : groups.get(nameKey(l.ingredient));
+      const lineKey = supply ? supply.id : `group:${nameKey(l.ingredient)}`;
       if (seen.has(lineKey)) { problem = 'an ingredient is listed twice'; break; }
       seen.add(lineKey);
       try {

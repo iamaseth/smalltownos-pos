@@ -79,6 +79,11 @@ async function main() {
   saveRecipe(db, { productId: 'p-spritz', isActive: true, items: spritz.items.map((i: any) => ({ supplyId: i.supply_id, quantity: i.quantity, unit: i.unit })) });
   assertEqualOrThrow(getRecipeByProduct(db, 'p-spritz').is_active, 1, 'confirming a draft makes it active');
 
+  seedProduct(db, 'p-lao', 'cat-c', 'Beerlao\u00a0 (Bottle)', 3, { track_inventory: false, stock_quantity: 0 });
+  createSupply(db, { name: 'Beerlao (Bottle)', baseUnit: 'each', actorUserId: actor });
+  const spaced = importRecipes(db, { rows: [{ productName: 'Beerlao (Bottle)', ingredientName: 'Beerlao  (Bottle)', quantity: '1', unit: 'each' }], dryRun: true });
+  assertEqualOrThrow(spaced.to_create.length, 1, 'odd spacing and non-breaking spaces in names still match');
+
   const { passed, failed, total } = getResults();
   console.log(`\nPassed: ${passed}/${total}`);
   process.exit(failed === 0 ? 0 : 1);
