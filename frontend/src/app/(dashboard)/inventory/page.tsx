@@ -623,6 +623,7 @@ export default function InventoryPage() {
                   <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('stock')}</th>
                   <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('threshold')}</th>
                   <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('unitCost')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('packPrice')}</th>
                   <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('pourSize')}</th>
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{tCommon('active')}</th>
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('actions')}</th>
@@ -644,6 +645,11 @@ export default function InventoryPage() {
                     </td>
                     <td className="p-4 text-end text-sm text-muted-foreground">
                       {s.unit_cost === null ? '—' : fmtNum(Number(s.unit_cost))}
+                    </td>
+                    <td className="p-4 text-end text-sm text-muted-foreground">
+                      {s.unit_cost === null || !s.pack_size
+                        ? '—'
+                        : `${fmtNum(Math.round(Number(s.unit_cost) * Number(s.pack_size) * 100) / 100)}${s.pack_label ? ` / ${s.pack_label}` : ''}`}
                     </td>
                     <td className="p-4 text-end text-sm text-muted-foreground">
                       {s.pour_size === null ? '—' : `${fmtNum(Number(s.pour_size))} ${s.base_unit}`}
