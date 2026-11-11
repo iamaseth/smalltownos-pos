@@ -5350,6 +5350,19 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 96,
+    name: 'add_ingredient_groups',
+    up: () => {
+      if (!getColumns(db, 'supplies').includes('group_name')) {
+        db.exec(`ALTER TABLE supplies ADD COLUMN group_name TEXT DEFAULT NULL`);
+      }
+      if (!getColumns(db, 'recipe_items').includes('group_name')) {
+        db.exec(`ALTER TABLE recipe_items ADD COLUMN group_name TEXT DEFAULT NULL`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_supplies_group ON supplies(group_name COLLATE NOCASE)`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

@@ -19,6 +19,8 @@ export class RecipeServiceError extends Error {
 }
 
 export interface RecipeComponent {
+  /** Set when the line means any ingredient in this group; supply_id is then the one being used now. */
+  group_name: string | null;
   supply_id: string;
   supply_name: string;
   base_unit: SupplyUnit;
@@ -67,7 +69,7 @@ export interface SaveRecipeInput {
   productId: string;
   yieldQuantity?: number;
   isActive?: boolean;
-  items: { supplyId?: string; supply_id?: string; quantity: number; unit: string }[];
+  items: { supplyId?: string; supply_id?: string; groupName?: string; group_name?: string; quantity: number; unit: string }[];
 }
 
 function newId(prefix: string): string {
@@ -85,9 +87,34 @@ function assertPositiveFinite(value: unknown, field: string): number {
   return quantity;
 }
 
+export interface GroupMember {
+  id: string;
+  name: string;
+  base_unit: SupplyUnit;
+  unit_cost: number | null;
+  stock_quantity: number;
+  group_name: string;
+}
+
+/** Items in a group in the order they are used: stock on hand first, oldest delivery first. */
+export function groupMembersInUseOrder(db: ReturnType<typeof getDatabase>, groupName: string): GroupMember[] {
+  const rows = db.prepare(`
+    SELECT s.id, s.name, s.base_unit, s.unit_cost, s.stock_quantity, s.group_name,
+      COALESCE((SELECT MAX(m.created_at) FROM supply_movements m WHERE m.supply_id = s.id AND m.movement_type = 'receive'), s.created_at) AS last_in
+    FROM supplies s
+    WHERE s.deleted_at IS NULL AND s.is_active = 1 AND s.group_name = ? COLLATE NOCASE
+  `).all(groupName) as Array<GroupMember & { last_in: string }>;
+  const byAge = (a: { last_in: string; name: string }, b: { last_in: string; name: string }) =>
+    a.last_in.localeCompare(b.last_in) || a.name.localeCompare(b.name);
+  const inStock = rows.filter((r) => Number(r.stock_quantity) > 0).sort(byAge);
+  const empty = rows.filter((r) => Number(r.stock_quantity) <= 0).sort((a, b) => byAge(b, a));
+  return [...inStock, ...empty].map(({ last_in: _lastIn, ...member }) => member);
+}
+
 function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): RecipeComponent[] {
   const rows = db.prepare(`
     SELECT
+      ri.group_name,
       ri.supply_id,
       s.name AS supply_name,
       s.base_unit,
@@ -99,6 +126,7 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
     WHERE ri.recipe_id = ?
     ORDER BY ri.created_at, ri.id
   `).all(recipeId) as {
+    group_name: string | null;
     supply_id: string;
     supply_name: string;
     base_unit: SupplyUnit;
@@ -106,10 +134,16 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
     quantity: number;
     unit: SupplyUnit;
   }[];
-  return rows.map((row) => ({
-    ...row,
-    quantity_in_base: convertQuantity(row.quantity, row.unit, row.base_unit),
-  }));
+  return rows.map((row) => {
+    const current = row.group_name ? groupMembersInUseOrder(db, row.group_name)[0] : undefined;
+    const resolved = current
+      ? { ...row, supply_id: current.id, supply_name: current.name, base_unit: current.base_unit, unit_cost: current.unit_cost }
+      : row;
+    return {
+      ...resolved,
+      quantity_in_base: convertQuantity(resolved.quantity, resolved.unit, resolved.base_unit),
+    };
+  });
 }
 
 function withCosting(db: ReturnType<typeof getDatabase>, row: RecipeRow): RecipeRecord {
@@ -176,23 +210,37 @@ export function saveRecipe(db: ReturnType<typeof getDatabase>, input: SaveRecipe
   }
 
   const seenSupplies = new Set<string>();
-  const normalizedItems: { supplyId: string; quantity: number; unit: SupplyUnit }[] = [];
+  const normalizedItems: { supplyId: string; groupName: string | null; quantity: number; unit: SupplyUnit }[] = [];
   for (const item of input.items) {
-    const supplyId = String(item?.supply_id || item?.supplyId || '').trim();
-    if (!supplyId) throw new RecipeServiceError(400, 'each item requires a supply_id');
-    if (seenSupplies.has(supplyId)) {
-      throw new RecipeServiceError(400, 'duplicate supply_id in recipe');
+    const requestedGroup = String(item?.group_name || item?.groupName || '').trim();
+    let supplyId: string;
+    let groupName: string | null = null;
+    let baseUnit: SupplyUnit;
+    if (requestedGroup) {
+      const members = groupMembersInUseOrder(db, requestedGroup);
+      if (members.length === 0) throw new RecipeServiceError(404, `Group ${requestedGroup} has no ingredients`);
+      groupName = members[0].group_name;
+      supplyId = members[0].id;
+      baseUnit = members[0].base_unit;
+    } else {
+      supplyId = String(item?.supply_id || item?.supplyId || '').trim();
+      if (!supplyId) throw new RecipeServiceError(400, 'each item requires a supply_id');
+      const supply = db.prepare('SELECT id, base_unit FROM supplies WHERE id = ? AND deleted_at IS NULL').get(supplyId) as
+        | { id: string; base_unit: SupplyUnit }
+        | undefined;
+      if (!supply) throw new RecipeServiceError(404, `Supply ${supplyId} not found`);
+      baseUnit = supply.base_unit;
     }
-    seenSupplies.add(supplyId);
-    const supply = db.prepare('SELECT id, base_unit FROM supplies WHERE id = ? AND deleted_at IS NULL').get(supplyId) as
-      | { id: string; base_unit: SupplyUnit }
-      | undefined;
-    if (!supply) throw new RecipeServiceError(404, `Supply ${supplyId} not found`);
+    const dedupeKey = groupName ? `group:${groupName.toLowerCase()}` : supplyId;
+    if (seenSupplies.has(dedupeKey)) {
+      throw new RecipeServiceError(400, groupName ? 'duplicate group in recipe' : 'duplicate supply_id in recipe');
+    }
+    seenSupplies.add(dedupeKey);
     const quantity = assertPositiveFinite(item.quantity, 'item.quantity');
     const unit = assertSupplyUnit(item.unit, 'item.unit');
     // Validate convertibility at save time so depletion cannot fail later.
-    convertQuantity(quantity, unit, supply.base_unit);
-    normalizedItems.push({ supplyId, quantity, unit });
+    convertQuantity(quantity, unit, baseUnit);
+    normalizedItems.push({ supplyId, groupName, quantity, unit });
   }
 
   const yieldQuantity = input.yieldQuantity === undefined ? 1 : assertPositiveFinite(input.yieldQuantity, 'yield_quantity');
@@ -216,11 +264,11 @@ export function saveRecipe(db: ReturnType<typeof getDatabase>, input: SaveRecipe
     }
 
     const insertItem = db.prepare(`
-      INSERT INTO recipe_items (id, recipe_id, supply_id, quantity, unit, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO recipe_items (id, recipe_id, supply_id, group_name, quantity, unit, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     for (const item of normalizedItems) {
-      insertItem.run(newId('rci'), id, item.supplyId, item.quantity, item.unit, timestamp);
+      insertItem.run(newId('rci'), id, item.supplyId, item.groupName, item.quantity, item.unit, timestamp);
     }
     return id;
   });
@@ -253,12 +301,40 @@ export function buildRecipeSnapshot(
   if (!Number.isFinite(orderQuantity) || orderQuantity <= 0) return null;
 
   const scale = orderQuantity / recipe.yield_quantity;
-  const components = recipe.items.map((item) => ({
-    supply_id: item.supply_id,
-    supply_name: item.supply_name,
-    base_unit: item.base_unit,
-    quantity: roundQuantity(item.quantity_in_base * scale),
-  }));
+  const components: RecipeSnapshot['components'] = [];
+  for (const item of recipe.items) {
+    const needed = item.quantity_in_base * scale;
+    const members = item.group_name ? groupMembersInUseOrder(db, item.group_name) : [];
+    if (members.length === 0) {
+      components.push({
+        supply_id: item.supply_id,
+        supply_name: item.supply_name,
+        base_unit: item.base_unit,
+        quantity: roundQuantity(needed),
+      });
+      continue;
+    }
+    let remaining = needed;
+    const taken: Array<{ member: GroupMember; quantity: number }> = [];
+    for (const member of members) {
+      if (remaining <= 0 || Number(member.stock_quantity) <= 0) continue;
+      const take = Math.min(remaining, Number(member.stock_quantity));
+      taken.push({ member, quantity: take });
+      remaining -= take;
+    }
+    if (remaining > 0) {
+      if (taken.length === 0) taken.push({ member: members[0], quantity: 0 });
+      taken[taken.length - 1].quantity += remaining;
+    }
+    for (const { member, quantity } of taken) {
+      components.push({
+        supply_id: member.id,
+        supply_name: member.name,
+        base_unit: member.base_unit,
+        quantity: roundQuantity(quantity),
+      });
+    }
+  }
 
   return {
     recipe_id: recipe.id,
@@ -344,6 +420,10 @@ export function importRecipes(
   for (const row of db.prepare('SELECT id, name, base_unit FROM supplies WHERE deleted_at IS NULL').all() as Array<{ id: string; name: string; base_unit: SupplyUnit }>) {
     supplies.set(row.name.trim().toLowerCase(), { id: row.id, baseUnit: row.base_unit });
   }
+  const groups = new Map<string, { groupName: string; baseUnit: SupplyUnit }>();
+  for (const row of db.prepare('SELECT group_name, base_unit FROM supplies WHERE deleted_at IS NULL AND is_active = 1 AND group_name IS NOT NULL').all() as Array<{ group_name: string; base_unit: SupplyUnit }>) {
+    groups.set(row.group_name.trim().toLowerCase(), { groupName: row.group_name, baseUnit: row.base_unit });
+  }
   const haveRecipe = new Set(
     (db.prepare('SELECT product_id FROM recipes').all() as Array<{ product_id: string }>).map((r) => r.product_id),
   );
@@ -367,29 +447,33 @@ export function importRecipes(
   }
 
   const result: ImportRecipesResult = { dry_run: input.dryRun, to_create: [], already_have_recipe: [], skipped: [] };
-  const ready: Array<{ productId: string; name: string; items: { supplyId: string; quantity: number; unit: string }[] }> = [];
+  const ready: Array<{ productId: string; name: string; items: { supplyId?: string; groupName?: string; quantity: number; unit: string }[] }> = [];
   for (const [key, entry] of grouped) {
     if (products.has(`${key}\u0000dup`)) { result.skipped.push({ product_name: entry.name, reason: 'more than one product has this name' }); continue; }
     const productId = products.get(key);
     if (!productId) { result.skipped.push({ product_name: entry.name, reason: 'no product with this name' }); continue; }
     if (haveRecipe.has(productId)) { result.already_have_recipe.push(entry.name); continue; }
     if (entry.problems.length > 0) { result.skipped.push({ product_name: entry.name, reason: entry.problems[0] }); continue; }
-    const missing = entry.lines.filter((l) => !supplies.has(l.ingredient.toLowerCase())).map((l) => l.ingredient);
+    const missing = entry.lines.filter((l) => !supplies.has(l.ingredient.toLowerCase()) && !groups.has(l.ingredient.toLowerCase())).map((l) => l.ingredient);
     if (missing.length > 0) { result.skipped.push({ product_name: entry.name, reason: `no ingredient named ${missing.join(', ')}` }); continue; }
     const seen = new Set<string>();
-    const items: { supplyId: string; quantity: number; unit: string }[] = [];
+    const items: { supplyId?: string; groupName?: string; quantity: number; unit: string }[] = [];
     let problem = '';
     for (const l of entry.lines) {
-      const supply = supplies.get(l.ingredient.toLowerCase()) as { id: string; baseUnit: SupplyUnit };
-      if (seen.has(supply.id)) { problem = 'an ingredient is listed twice'; break; }
-      seen.add(supply.id);
+      const supply = supplies.get(l.ingredient.toLowerCase());
+      const group = supply ? undefined : groups.get(l.ingredient.toLowerCase());
+      const lineKey = supply ? supply.id : `group:${l.ingredient.toLowerCase()}`;
+      if (seen.has(lineKey)) { problem = 'an ingredient is listed twice'; break; }
+      seen.add(lineKey);
       try {
-        convertQuantity(l.quantity, assertSupplyUnit(l.unit, 'unit'), supply.baseUnit);
+        convertQuantity(l.quantity, assertSupplyUnit(l.unit, 'unit'), (supply?.baseUnit ?? group?.baseUnit) as SupplyUnit);
       } catch (error: unknown) {
         problem = `${l.ingredient}: ${error instanceof Error ? error.message : 'invalid unit'}`;
         break;
       }
-      items.push({ supplyId: supply.id, quantity: l.quantity, unit: l.unit });
+      items.push(supply
+        ? { supplyId: supply.id, quantity: l.quantity, unit: l.unit }
+        : { groupName: group?.groupName, quantity: l.quantity, unit: l.unit });
     }
     if (problem) { result.skipped.push({ product_name: entry.name, reason: problem }); continue; }
     ready.push({ productId, name: entry.name, items });

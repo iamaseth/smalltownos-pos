@@ -31,6 +31,7 @@ export interface SupplyRecord {
   pour_size: number | null;
   order_up_to: number | null;
   vendor_id: string | null;
+  group_name: string | null;
   is_active: number;
   deleted_at: string | null;
   created_at: string;
@@ -45,6 +46,7 @@ export interface SupplyCostingInput {
   pourSize?: number | null;
   orderUpTo?: number | null;
   vendorId?: string | null;
+  groupName?: string | null;
 }
 
 export interface SupplyMovement {
@@ -129,6 +131,7 @@ function resolveCosting(
   pour_size: number | null;
   order_up_to: number | null;
   vendor_id: string | null;
+  group_name: string | null;
 } {
   const pick = <T>(next: T | undefined, existing: T | null | undefined): T | null =>
     next === undefined ? (existing ?? null) : next;
@@ -138,7 +141,11 @@ function resolveCosting(
   const vendorId = input.vendorId === undefined
     ? (current?.vendor_id ?? null)
     : (input.vendorId === null || String(input.vendorId).trim() === '' ? null : String(input.vendorId).trim());
+  const groupName = input.groupName === undefined
+    ? (current?.group_name ?? null)
+    : (input.groupName === null || String(input.groupName).trim() === '' ? null : String(input.groupName).trim().slice(0, 60));
   return {
+    group_name: groupName,
     unit_cost: pick(optionalNonNegative(input.unitCost, 'unit_cost'), current?.unit_cost),
     pack_size: pick(optionalNonNegative(input.packSize, 'pack_size', true), current?.pack_size),
     pack_label: packLabel,
@@ -146,6 +153,33 @@ function resolveCosting(
     order_up_to: pick(optionalNonNegative(input.orderUpTo, 'order_up_to'), current?.order_up_to),
     vendor_id: vendorId,
   };
+}
+
+function canonicalGroupName(db: ReturnType<typeof getDatabase>, groupName: string | null, excludeId: string | null): string | null {
+  if (groupName === null) return null;
+  const existing = db.prepare(`
+    SELECT group_name FROM supplies
+    WHERE deleted_at IS NULL AND group_name = ? COLLATE NOCASE AND id != ?
+    ORDER BY created_at, id LIMIT 1
+  `).get(groupName, excludeId ?? '') as { group_name: string } | undefined;
+  return existing?.group_name ?? groupName;
+}
+
+function assertGroupUnit(
+  db: ReturnType<typeof getDatabase>,
+  groupName: string | null,
+  baseUnit: SupplyUnit,
+  excludeId: string | null,
+): void {
+  if (groupName === null) return;
+  const other = db.prepare(`
+    SELECT name, base_unit FROM supplies
+    WHERE deleted_at IS NULL AND group_name = ? COLLATE NOCASE AND id != ? AND base_unit != ?
+    LIMIT 1
+  `).get(groupName, excludeId ?? '', baseUnit) as { name: string; base_unit: SupplyUnit } | undefined;
+  if (other) {
+    throw new SupplyServiceError(400, `group ${groupName} already uses ${other.base_unit} (${other.name}); every item in a group must use the same unit`);
+  }
 }
 
 function assertVendorExists(db: ReturnType<typeof getDatabase>, vendorId: string | null): void {
@@ -216,18 +250,20 @@ export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSu
   const isActive = input.isActive === false ? 0 : 1;
   const costing = resolveCosting(input, null);
   assertVendorExists(db, costing.vendor_id);
+  costing.group_name = canonicalGroupName(db, costing.group_name, null);
+  assertGroupUnit(db, costing.group_name, baseUnit, null);
 
   withTxn(() => {
     db.prepare(`
       INSERT INTO supplies (
         id, name, base_unit, stock_quantity, low_stock_threshold,
-        unit_cost, pack_size, pack_label, pour_size, order_up_to, vendor_id,
+        unit_cost, pack_size, pack_label, pour_size, order_up_to, vendor_id, group_name,
         is_active, created_at, updated_at
       )
-      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, name, baseUnit, lowStockThreshold,
-      costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id,
+      costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id, costing.group_name,
       isActive, timestamp, timestamp,
     );
 
@@ -272,15 +308,17 @@ export function updateSupply(
   const isActive = input.isActive === undefined ? supply.is_active : (input.isActive ? 1 : 0);
   const costing = resolveCosting(input, supply);
   assertVendorExists(db, costing.vendor_id);
+  costing.group_name = canonicalGroupName(db, costing.group_name, id);
+  assertGroupUnit(db, costing.group_name, supply.base_unit, id);
   db.prepare(`
     UPDATE supplies SET
       name = ?, low_stock_threshold = ?, is_active = ?,
-      unit_cost = ?, pack_size = ?, pack_label = ?, pour_size = ?, order_up_to = ?, vendor_id = ?,
+      unit_cost = ?, pack_size = ?, pack_label = ?, pour_size = ?, order_up_to = ?, vendor_id = ?, group_name = ?,
       updated_at = ?
     WHERE id = ? AND deleted_at IS NULL
   `).run(
     name, lowStockThreshold, isActive,
-    costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id,
+    costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id, costing.group_name,
     now(), id,
   );
   return getSupply(db, id);
@@ -580,13 +618,14 @@ export interface ImportSupplyRow {
   pourSize?: unknown;
   parLevel?: unknown;
   orderUpTo?: unknown;
+  groupName?: unknown;
 }
 
 export interface ImportSuppliesResult {
   dry_run: boolean;
   vendor_id: string | null;
   vendor_created: boolean;
-  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null; pour_size: number | null; par_level: number | null; order_up_to: number | null }>;
+  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null; pour_size: number | null; par_level: number | null; order_up_to: number | null; group_name: string | null }>;
   already_exist: string[];
   errors: Array<{ row: number; name: string; error: string }>;
 }
@@ -692,6 +731,10 @@ export function importSupplies(
     (db.prepare('SELECT name FROM supplies WHERE deleted_at IS NULL').all() as Array<{ name: string }>)
       .map((row) => row.name.toLowerCase()),
   );
+  const groupUnits = new Map<string, SupplyUnit>();
+  for (const row of db.prepare('SELECT group_name, base_unit FROM supplies WHERE deleted_at IS NULL AND group_name IS NOT NULL').all() as Array<{ group_name: string; base_unit: SupplyUnit }>) {
+    groupUnits.set(row.group_name.toLowerCase(), row.base_unit);
+  }
   const seen = new Set<string>();
   const result: ImportSuppliesResult = {
     dry_run: input.dryRun,
@@ -724,13 +767,22 @@ export function importSupplies(
       const parLevel = optionalLevel(row.parLevel, 'par_level');
       const orderUpTo = optionalLevel(row.orderUpTo, 'order_up_to');
       const unitCost = packPrice === null ? null : (packSize === null ? packPrice : Number((packPrice / packSize).toFixed(8)));
+      const groupName = String(row.groupName ?? '').trim().slice(0, 60) || null;
+      if (groupName) {
+        const groupKey = groupName.toLowerCase();
+        const groupUnit = groupUnits.get(groupKey);
+        if (groupUnit && groupUnit !== baseUnit) {
+          throw new SupplyServiceError(400, `group ${groupName} already uses ${groupUnit}; every item in a group must use the same unit`);
+        }
+      }
       const key = name.toLowerCase();
       if (existingNames.has(key) || seen.has(key)) {
         result.already_exist.push(name);
         return;
       }
       seen.add(key);
-      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel, pack_price: packPrice, unit_cost: unitCost, pour_size: pourSize, par_level: parLevel, order_up_to: orderUpTo });
+      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel, pack_price: packPrice, unit_cost: unitCost, pour_size: pourSize, par_level: parLevel, order_up_to: orderUpTo, group_name: groupName });
+      if (groupName) groupUnits.set(groupName.toLowerCase(), baseUnit);
     } catch (error: unknown) {
       result.errors.push({ row: index + 1, name, error: error instanceof Error ? error.message : 'invalid row' });
     }
@@ -763,6 +815,7 @@ export function importSupplies(
         pourSize: item.pour_size ?? undefined,
         lowStockThreshold: item.par_level ?? undefined,
         orderUpTo: item.order_up_to ?? undefined,
+        groupName: item.group_name ?? undefined,
         vendorId: vendorId ?? undefined,
         actorUserId: input.actorUserId,
       });

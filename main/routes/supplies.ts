@@ -63,6 +63,7 @@ router.post('/', requirePermission('supplies.manage'), (req: Request, res: Respo
       pourSize: body.pour_size,
       orderUpTo: body.order_up_to,
       vendorId: body.vendor_id,
+      groupName: body.group_name,
       isActive: body.is_active,
       actorUserId: actorId,
     });
@@ -88,6 +89,7 @@ router.post('/import', requirePermission('supplies.manage'), (req: Request, res:
         pourSize: row?.pour_size,
         parLevel: row?.par_level,
         orderUpTo: row?.order_up_to,
+        groupName: row?.group_name,
       })),
       vendorName: body.vendor_name,
       dryRun: body.dry_run !== false,
@@ -184,6 +186,7 @@ router.put('/:id', requirePermission('supplies.manage'), (req: Request, res: Res
       pourSize: body.pour_size,
       orderUpTo: body.order_up_to,
       vendorId: body.vendor_id,
+      groupName: body.group_name,
     });
     res.json({ supply });
   } catch (error: unknown) {
