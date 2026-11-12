@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles } from 'lucide-react';
+import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -193,6 +193,7 @@ export default function InventoryPage() {
   const canManage = tenantCan(currentTenant, 'inventory.manage');
 
   const [tab, setTab] = useState('supplies');
+  const [recipeSearch, setRecipeSearch] = useState('');
   const [supplies, setSupplies] = useState<Supply[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [movements, setMovements] = useState<SupplyMovement[]>([]);
@@ -258,10 +259,84 @@ export default function InventoryPage() {
     }
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [supplies]);
+  const recipeQuery = recipeSearch.trim().toLowerCase();
+  const visibleRecipes = useMemo(() => {
+    if (!recipeQuery) return recipes;
+    return recipes.filter((r) =>
+      (r.product_name || '').toLowerCase().includes(recipeQuery)
+      || r.items.some((item) => `${item.group_name ?? ''} ${item.supply_name}`.toLowerCase().includes(recipeQuery)));
+  }, [recipes, recipeQuery]);
   const productsWithoutRecipe = useMemo(() => {
     const have = new Set(recipes.map((r) => r.product_id));
-    return products.filter((p) => !have.has(p.id));
-  }, [products, recipes]);
+    return products.filter((p) => !have.has(p.id) && (!recipeQuery || p.name.toLowerCase().includes(recipeQuery)));
+  }, [products, recipes, recipeQuery]);
+
+  const downloadCsv = (filename: string, rows: (string | number | null)[][]) => {
+    const cell = (v: string | number | null) => {
+      const text = v === null ? '' : String(v);
+      return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const blob = new Blob([`\uFEFF${rows.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportRecipes = () => {
+    const rows: (string | number | null)[][] = [['product_name', 'ingredient_name', 'quantity', 'unit', 'status', 'cost_per_serving', 'selling_price', 'margin_percent']];
+    for (const r of visibleRecipes) {
+      for (const item of r.items) {
+        rows.push([
+          r.product_name || r.product_id, item.group_name || item.supply_name, item.quantity, item.unit,
+          r.is_active === 1 ? 'confirmed' : 'draft', r.cost_per_serving, r.selling_price, r.margin_percent,
+        ]);
+      }
+    }
+    downloadCsv('recipes.csv', rows);
+  };
+
+  const exportSupplies = () => {
+    const rows: (string | number | null)[][] = [['name', 'group', 'base_unit', 'stock', 'par_level', 'order_up_to', 'unit_cost', 'pack_size', 'pack_label', 'pack_price', 'pour_size']];
+    for (const s of supplies) {
+      rows.push([
+        s.name, s.group_name, s.base_unit, s.stock_quantity, s.low_stock_threshold, s.order_up_to, s.unit_cost, s.pack_size, s.pack_label,
+        s.unit_cost !== null && s.pack_size ? Math.round(Number(s.unit_cost) * Number(s.pack_size) * 100) / 100 : null, s.pour_size,
+      ]);
+    }
+    downloadCsv('ingredients.csv', rows);
+  };
+
+  const printRecipes = () => {
+    const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const money = (n: number | null) => (n === null ? '—' : fmtNum(Math.round(n * 100) / 100));
+    const blocks = visibleRecipes.map((r) => {
+      const rows = r.items.map((item) => `<tr><td>${esc(item.group_name ? t('anyGroupLine', { group: item.group_name, name: item.supply_name }) : item.supply_name)}</td><td class="n">${esc(fmtNum(Number(item.quantity)))} ${esc(item.unit)}</td></tr>`).join('');
+      const margin = r.margin === null ? '—' : `${money(r.margin)} (${fmtNum(r.margin_percent ?? 0)}%)`;
+      return `<section><h2>${esc(r.product_name || r.product_id)}${r.is_active === 1 ? '' : ` <small>(${esc(t('draft'))})</small>`}</h2>
+        <p>${esc(t('yield'))}: ${esc(fmtNum(Number(r.yield_quantity)))}</p>
+        <table>${rows}</table>
+        <p class="f">${esc(t('recipeCostPerServing'))}: <b>${money(r.cost_per_serving)}</b> &nbsp; ${esc(t('actualPrice'))}: <b>${money(r.selling_price)}</b> &nbsp; ${esc(t('marginAtActual'))}: <b>${esc(margin)}</b></p></section>`;
+    }).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(t('tabRecipes'))}</title><style>
+      body{font-family:system-ui,sans-serif;font-size:14pt;margin:16mm;color:#111}
+      h1{font-size:20pt;margin:0 0 8mm} section{break-inside:avoid;border-top:1px solid #999;padding:4mm 0}
+      h2{font-size:16pt;margin:0 0 2mm} h2 small{font-weight:normal;color:#666} p{margin:1mm 0}
+      table{border-collapse:collapse;width:100%;margin:2mm 0} td{padding:1.5mm 2mm;border-bottom:1px solid #ddd} td.n{text-align:right;white-space:nowrap}
+      .f{font-size:12pt;color:#333}
+    </style></head><body><h1>${esc(t('tabRecipes'))}</h1>${blocks}</body></html>`;
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+    document.body.appendChild(frame);
+    const doc = frame.contentDocument;
+    if (!doc || !frame.contentWindow) { frame.remove(); return; }
+    doc.open(); doc.write(html); doc.close();
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+    setTimeout(() => frame.remove(), 60000);
+  };
   const groupNames = useMemo(() => groupTotals.map((g) => g.name), [groupTotals]);
 
   useEffect(() => {
@@ -768,6 +843,7 @@ export default function InventoryPage() {
               <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} />
               {t('includeInactive')}
             </label>
+            <Button variant="outline" onClick={exportSupplies} disabled={supplies.length === 0}><Download size={16} className="me-1" /> {t('exportCsv')}</Button>
           </div>
 
           {groupTotals.length > 0 && (
@@ -850,6 +926,18 @@ export default function InventoryPage() {
         </TabsContent>
 
         <TabsContent value="recipes">
+          <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="relative flex-1 min-w-48">
+              <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text" value={recipeSearch} onChange={(e) => setRecipeSearch(e.target.value)}
+                placeholder={t('searchRecipes')}
+                className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+              />
+            </div>
+            <Button variant="outline" onClick={printRecipes} disabled={visibleRecipes.length === 0}><Printer size={16} className="me-1" /> {t('print')}</Button>
+            <Button variant="outline" onClick={exportRecipes} disabled={visibleRecipes.length === 0}><Download size={16} className="me-1" /> {t('exportCsv')}</Button>
+          </div>
           <div className="bg-card rounded-xl border border-border overflow-hidden">
             <table className="w-full">
               <thead className="bg-muted">
@@ -864,7 +952,7 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {recipes.map((r) => (
+                {visibleRecipes.map((r) => (
                   <tr key={r.id} className="hover:bg-muted">
                     <td className="p-4 font-medium text-foreground">
                       {r.product_name || r.product_id}
@@ -911,7 +999,7 @@ export default function InventoryPage() {
                 ))}
               </tbody>
             </table>
-            {recipes.length === 0 && <p className="text-center text-muted-foreground py-12">{t('emptyRecipes')}</p>}
+            {visibleRecipes.length === 0 && <p className="text-center text-muted-foreground py-12">{t('emptyRecipes')}</p>}
           </div>
 
           {productsWithoutRecipe.length > 0 && (
