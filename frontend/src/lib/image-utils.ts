@@ -37,11 +37,8 @@ export function compressCroppedImage(image: HTMLImageElement, crop: CropArea): s
 export function compressImage(file: File, quality = 0.8): Promise<string | null> {
   return new Promise((resolve) => {
     const img = new Image();
-    const url = URL.createObjectURL(file);
 
     img.onload = () => {
-      URL.revokeObjectURL(url);
-
       // Determine crop dimensions (center-crop to 1:1)
       const size = Math.min(img.width, img.height);
       const offsetX = (img.width - size) / 2;
@@ -80,12 +77,13 @@ export function compressImage(file: File, quality = 0.8): Promise<string | null>
       resolve(null); // Image too complex for the size limit
     };
 
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(null);
-    };
+    img.onerror = () => resolve(null);
 
-    img.src = url;
+    // Data URL, not a blob URL: the web CSP only allows img-src 'self' data:
+    const reader = new FileReader();
+    reader.onload = () => { img.src = String(reader.result); };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
   });
 }
 
