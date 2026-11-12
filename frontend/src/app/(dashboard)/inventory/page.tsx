@@ -8,16 +8,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download, Camera, SlidersHorizontal } from 'lucide-react';
+import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { tenantCan } from '@/lib/permissions';
-import ImageUploader from '@/components/products/ImageUploader';
-import { compressImage } from '@/lib/image-utils';
-
-const SUPPLY_UNITS = ['each', 'g', 'kg', 'ml', 'l'] as const;
-type SupplyUnit = (typeof SUPPLY_UNITS)[number];
+import MenuItemEditor, { SUPPLY_UNITS, type SupplyUnit, type Recipe, type RecipeItem, type MenuProduct as Product, type MenuCategory as Category } from '@/components/products/MenuItemEditor';
 
 interface Supply {
   id: string;
@@ -85,86 +81,7 @@ interface SupplyMovement {
   created_at: string;
 }
 
-interface RecipeItem {
-  group_name: string | null;
-  supply_id: string;
-  supply_name: string;
-  base_unit: SupplyUnit;
-  quantity: number;
-  unit: SupplyUnit;
-  quantity_in_base: number;
-}
-
-interface Recipe {
-  id: string;
-  product_id: string;
-  product_name: string | null;
-  yield_quantity: number;
-  is_active: number;
-  items: RecipeItem[];
-  selling_price: number | null;
-  cost_per_serving: number | null;
-  cost_complete: boolean;
-  missing_cost_supplies: string[];
-  margin: number | null;
-  margin_percent: number | null;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  price?: number;
-  category_id?: string | null;
-  has_image?: boolean;
-  updated_at?: string;
-  is_active?: number | boolean;
-  sku?: string | null;
-  barcode?: string | null;
-  description?: string | null;
-  tax_category_id?: string | null;
-}
-
-interface Category {
-  id: string;
-  name: string;
-}
-
-interface DishForm {
-  name: string;
-  category_id: string;
-  price: string;
-  image: string | null;
-  imageTouched: boolean;
-  is_active: boolean;
-  sku: string;
-  barcode: string;
-  description: string;
-  tax_category_id: string;
-}
-
-const emptyDish: DishForm = { name: '', category_id: '', price: '', image: null, imageTouched: false, is_active: false, sku: '', barcode: '', description: '', tax_category_id: '' };
-
 const photoKey = (name: string) => name.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
-
-const nextSku = (products: Product[]): string | null => {
-  const groups = new Map<string, { count: number; max: number; width: number }>();
-  for (const p of products) {
-    const m = typeof p.sku === 'string' ? p.sku.match(/^(.*?)(\d+)$/) : null;
-    if (!m) continue;
-    const g = groups.get(m[1]) ?? { count: 0, max: 0, width: m[2].length };
-    g.count += 1;
-    g.max = Math.max(g.max, Number(m[2]));
-    g.width = Math.max(g.width, m[2].length);
-    groups.set(m[1], g);
-  }
-  let best: [string, { count: number; max: number; width: number }] | null = null;
-  for (const entry of groups) if (!best || entry[1].count > best[1].count) best = entry;
-  return best ? `${best[0]}${String(best[1].max + 1).padStart(best[1].width, '0')}` : null;
-};
-
-const dishFromProduct = (p: Product | undefined): DishForm => (p
-  ? { name: p.name, category_id: p.category_id ?? '', price: p.price === undefined ? '' : String(p.price), image: p.has_image ? 'EXISTING' : null, imageTouched: false, is_active: p.is_active === true || p.is_active === 1, sku: p.sku ?? '', barcode: p.barcode ?? '', description: p.description ?? '', tax_category_id: p.tax_category_id ?? '' }
-  : emptyDish);
 
 const movementTypeIcons: Record<string, typeof ArrowUpCircle> = {
   receive: ArrowUpCircle,
@@ -260,28 +177,23 @@ export default function InventoryPage() {
   const [movementSupply, setMovementSupply] = useState<Supply | null>(null);
   const [movementForm, setMovementForm] = useState({ movement_type: 'receive', quantity: '', unit: 'each' as SupplyUnit, reason: '' });
 
-  const [showRecipeForm, setShowRecipeForm] = useState(false);
-  const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
-  const [recipeForm, setRecipeForm] = useState({ product_id: '', yield_quantity: '1', dish: emptyDish, items: [] as { supply_id: string; group_name: string; quantity: string; unit: SupplyUnit }[] });
+  const [editor, setEditor] = useState<{ productId: string; recipe: Recipe | null } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [aiBusy, setAiBusy] = useState(false);
-  const [showPhotoPicker, setShowPhotoPicker] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
   const productByName = new Map<string, Product>();
   for (const p of products) {
     const key = photoKey(p.name);
     if (!productByName.get(key)?.has_image) productByName.set(key, p);
   }
+  const supplyProduct = new Map<string, Product>();
+  for (const single of [true, false]) {
+    for (const r of recipes) {
+      if ((r.items.length === 1) !== single) continue;
+      const product = products.find((p) => p.id === r.product_id);
+      if (!product?.has_image) continue;
+      for (const item of r.items) if (item.supply_id && !supplyProduct.has(item.supply_id)) supplyProduct.set(item.supply_id, product);
+    }
+  }
   const [taxCategories, setTaxCategories] = useState<{ id: string; label: string }[]>([]);
-  const [aiPhotos, setAiPhotos] = useState<{ image_url: string; thumb: string; title: string }[]>([]);
-  const [aiMissing, setAiMissing] = useState<string[]>([]);
-  const [targetFoodCost, setTargetFoodCost] = useState(() => {
-    try { return window.localStorage.getItem('recipeTargetFoodCostPct') || '30'; } catch { return '30'; }
-  });
-  const updateTargetFoodCost = (value: string) => {
-    setTargetFoodCost(value);
-    try { window.localStorage.setItem('recipeTargetFoodCostPct', value); } catch { /* optional convenience */ }
-  };
 
   const [deletingSupply, setDeletingSupply] = useState<Supply | null>(null);
   const [deletingRecipe, setDeletingRecipe] = useState<Recipe | null>(null);
@@ -741,159 +653,9 @@ export default function InventoryPage() {
     }
   };
 
-  const handleAiHelp = async () => {
-    const name = recipeForm.dish.name.trim();
-    if (!name) { toast.error(t('aiNeedName')); return; }
-    const category = categories.find((c) => c.id === recipeForm.dish.category_id)?.name ?? '';
-    setAiBusy(true);
-    setAiPhotos([]);
-    setAiMissing([]);
-    try {
-      const [recipeRes, photoRes] = await Promise.allSettled([
-        api.post('/recipes/ai/suggest', { name, category }),
-        api.post('/recipes/ai/photos', { query: `${name} ${category}`.trim() }),
-      ]);
-      if (recipeRes.status === 'fulfilled') {
-        const suggestion = recipeRes.value.data as {
-          yield_quantity: number;
-          items: { supply_id: string | null; group_name: string | null; quantity: number; unit: SupplyUnit }[];
-          not_in_inventory: { name: string }[];
-        };
-        const existing = new Set(recipeForm.items.map((i) => (i.group_name ? `group:${i.group_name}` : i.supply_id)));
-        const added = suggestion.items
-          .filter((i) => !existing.has(i.group_name ? `group:${i.group_name}` : String(i.supply_id)))
-          .map((i) => ({ supply_id: i.supply_id ?? '', group_name: i.group_name ?? '', quantity: String(i.quantity), unit: i.unit }));
-        if (added.length > 0) {
-          setRecipeForm((prev) => ({
-            ...prev,
-            yield_quantity: prev.items.length === 0 ? String(suggestion.yield_quantity) : prev.yield_quantity,
-            items: [...prev.items, ...added],
-          }));
-          toast.success(t('aiAdded', { count: added.length }));
-        }
-        setAiMissing(suggestion.not_in_inventory.map((i) => i.name));
-      } else {
-        toast.error(importError(recipeRes.reason));
-      }
-      if (photoRes.status === 'fulfilled') {
-        const found = (photoRes.value.data.photos || []) as { image_url: string; thumbnail_url: string; title: string }[];
-        const loaded = await Promise.allSettled(found.map((p) => api.post('/products/fetch-url', { url: p.thumbnail_url })));
-        const usable = found.flatMap((p, index) => {
-          const result = loaded[index];
-          return result.status === 'fulfilled' && result.value.data.data
-            ? [{ image_url: p.image_url, thumb: String(result.value.data.data), title: p.title }]
-            : [];
-        });
-        setAiPhotos(usable);
-        if (usable.length > 0) setShowPhotoPicker(true);
-      } else if (recipeRes.status === 'fulfilled') {
-        toast.error(importError(photoRes.reason));
-      }
-    } finally {
-      setAiBusy(false);
-    }
-  };
+  const openAddRecipe = (productId = '') => setEditor({ productId: productId || 'new', recipe: null });
 
-  const handlePickAiPhoto = async (photo: { image_url: string; thumb: string }) => {
-    setAiBusy(true);
-    try {
-      let dataUri = photo.thumb;
-      try {
-        const full = await api.post('/products/fetch-url', { url: photo.image_url });
-        if (full.data.data) dataUri = String(full.data.data);
-      } catch { /* the thumbnail is the fallback */ }
-      const blob = await (await fetch(dataUri)).blob();
-      const compressed = await compressImage(new File([blob], 'photo', { type: blob.type || 'image/jpeg' }));
-      if (compressed) {
-        setRecipeForm((prev) => ({ ...prev, dish: { ...prev.dish, image: compressed, imageTouched: true } }));
-        setAiPhotos([]);
-        setShowPhotoPicker(false);
-      } else {
-        toast.error(t('saveFailed'));
-      }
-    } finally {
-      setAiBusy(false);
-    }
-  };
-
-  const openAddRecipe = (productId = '') => {
-    setShowDetails(false);
-    setShowPhotoPicker(false);
-    setAiPhotos([]);
-    setAiMissing([]);
-    setEditingRecipe(null);
-    setRecipeForm({ product_id: productId, yield_quantity: '1', dish: dishFromProduct(products.find((p) => p.id === productId)), items: [] });
-    setShowRecipeForm(true);
-  };
-
-  const openEditRecipe = (r: Recipe) => {
-    setShowDetails(false);
-    setShowPhotoPicker(false);
-    setAiPhotos([]);
-    setAiMissing([]);
-    setEditingRecipe(r);
-    setRecipeForm({
-      product_id: r.product_id,
-      yield_quantity: String(r.yield_quantity),
-      dish: dishFromProduct(products.find((p) => p.id === r.product_id)),
-      items: r.items.map((item) => ({ supply_id: item.supply_id, group_name: item.group_name ?? '', quantity: String(item.quantity), unit: item.unit })),
-    });
-    setShowRecipeForm(true);
-  };
-
-  const handleSaveRecipe = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const dish = recipeForm.dish;
-      const price = Math.round(Number(dish.price) * 100) / 100;
-      let productId = recipeForm.product_id;
-      const isNewDish = productId === 'new';
-      if (isNewDish) {
-        const created = await api.post('/products', {
-          name: dish.name.trim(),
-          category_id: dish.category_id || null,
-          price,
-          is_active: dish.is_active,
-          sku: dish.sku.trim() || nextSku(products),
-          barcode: dish.barcode.trim() || null,
-          description: dish.description.trim() || null,
-          tax_category_id: dish.tax_category_id || null,
-          ...(dish.imageTouched ? { image_url: dish.image } : {}),
-        });
-        productId = String(created.data.product.id);
-      } else {
-        const current = products.find((p) => p.id === productId);
-        const patch: Record<string, unknown> = {};
-        if (current) {
-          if (dish.name.trim() && dish.name.trim() !== current.name) patch.name = dish.name.trim();
-          if ((dish.category_id || null) !== (current.category_id ?? null)) patch.category_id = dish.category_id || null;
-          if (dish.price !== '' && price !== Number(current.price)) patch.price = price;
-          if (dish.sku.trim() !== (current.sku ?? '')) patch.sku = dish.sku.trim() || null;
-          if (dish.barcode.trim() !== (current.barcode ?? '')) patch.barcode = dish.barcode.trim() || null;
-          if (dish.description.trim() !== (current.description ?? '')) patch.description = dish.description.trim() || null;
-          if (dish.tax_category_id !== (current.tax_category_id ?? '')) patch.tax_category_id = dish.tax_category_id || null;
-        }
-        if (current && dish.is_active !== (current.is_active === true || current.is_active === 1)) patch.is_active = dish.is_active;
-        if (dish.imageTouched) patch.image_url = dish.image;
-        if (Object.keys(patch).length > 0) await api.put(`/products/${productId}`, patch);
-      }
-      await api.put(`/recipes/product/${productId}`, {
-        yield_quantity: Number(recipeForm.yield_quantity),
-        is_active: isNewDish ? false : (editingRecipe ? editingRecipe.is_active === 1 : true),
-        items: recipeForm.items.map((item) => (item.group_name
-          ? { group_name: item.group_name, quantity: Number(item.quantity), unit: item.unit }
-          : { supply_id: item.supply_id, quantity: Number(item.quantity), unit: item.unit })),
-      });
-      toast.success(tCommon('save'));
-      setShowRecipeForm(false);
-      refresh();
-    } catch (err: unknown) {
-      const message = err instanceof Error && 'response' in err
-        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-        : undefined;
-      toast.error(message || t('saveFailed'));
-    }
-  };
+  const openEditRecipe = (r: Recipe) => setEditor({ productId: r.product_id, recipe: r });
 
   const handleDeleteSupply = async () => {
     if (!deletingSupply) return;
@@ -1014,7 +776,7 @@ export default function InventoryPage() {
                     <td className="p-4 font-medium text-foreground">
                       <div className="flex items-center gap-3">
                         {(() => {
-                          const match = productByName.get(photoKey(s.name));
+                          const match = supplyProduct.get(s.id) ?? productByName.get(photoKey(s.name));
                           return match?.has_image
                             ? <img src={`${api.defaults.baseURL}/products/${match.id}/image?t=${match.updated_at ?? ''}`} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border border-border" loading="lazy" />
                             : <div className="w-10 h-10 rounded-lg bg-muted shrink-0 border border-border" />;
@@ -1527,332 +1289,21 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {showRecipeForm && (() => {
-        const toBase = (qty: number, unit: SupplyUnit, base: SupplyUnit): number | null => {
-          const f: Record<SupplyUnit, [string, number]> = { each: ['c', 1], g: ['w', 1], kg: ['w', 1000], ml: ['v', 1], l: ['v', 1000] };
-          return f[unit][0] === f[base][0] ? (qty * f[unit][1]) / f[base][1] : null;
-        };
-        const lineSupply = (item: { supply_id: string; group_name: string }): Supply | undefined => {
-          if (!item.group_name) return supplies.find((s) => s.id === item.supply_id);
-          const members = supplies.filter((s) => s.group_name === item.group_name);
-          const resolved = editingRecipe?.items.find((r) => r.group_name === item.group_name);
-          return members.find((s) => s.id === resolved?.supply_id) ?? members.find((s) => Number(s.stock_quantity) > 0) ?? members[0];
-        };
-        const lines = recipeForm.items.map((item) => {
-          const supply = lineSupply(item);
-          const qty = Number(item.quantity);
-          const base = supply && Number.isFinite(qty) ? toBase(qty, item.unit, supply.base_unit) : null;
-          const cost = supply && base !== null && supply.unit_cost !== null ? base * Number(supply.unit_cost) : null;
-          return { supply, cost };
-        });
-        const yieldQty = Number(recipeForm.yield_quantity) > 0 ? Number(recipeForm.yield_quantity) : 1;
-        const complete = lines.length > 0 && lines.every((l) => l.cost !== null);
-        const costPerServing = lines.reduce((sum, l) => sum + (l.cost ?? 0), 0) / yieldQty;
-        const dishPrice = recipeForm.dish.price === '' ? undefined : Number(recipeForm.dish.price);
-        const price = dishPrice !== undefined && Number.isFinite(dishPrice) ? dishPrice : undefined;
-        const targetPct = Number(targetFoodCost);
-        const suggested = complete && targetPct > 0 && targetPct < 100
-          ? Math.ceil((costPerServing / (targetPct / 100)) * 4) / 4
-          : null;
-        const foodCostPct = complete && typeof price === 'number' && price > 0 ? (costPerServing / price) * 100 : null;
-        const isNew = recipeForm.product_id === 'new';
-        const setDish = (patch: Partial<DishForm>) => setRecipeForm({ ...recipeForm, dish: { ...recipeForm.dish, ...patch } });
-        const margin = complete && typeof price === 'number' ? price - costPerServing : null;
-        const fieldClass = 'w-full px-4 py-3 text-base border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card';
-        const labelClass = 'block text-sm font-medium text-muted-foreground mb-1';
-        const sectionClass = 'rounded-xl border border-border p-4 sm:p-5 space-y-4';
-        const sectionTitle = 'text-base font-semibold text-foreground';
-        const photoSrc = recipeForm.dish.image === 'EXISTING'
-          ? (isNew ? null : `${api.defaults.baseURL}/products/${recipeForm.product_id}/image`)
-          : recipeForm.dish.image;
-        const tilePhoto = photoSrc ?? genericMenuPhoto(recipeForm.dish.name);
-        const compactField = 'w-full px-3 py-1.5 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card';
-        const statLabel = 'text-xs font-medium text-muted-foreground';
-        const addLine = () => setRecipeForm({
-          ...recipeForm,
-          items: [...recipeForm.items, { supply_id: supplies[0]?.id || '', group_name: '', quantity: '1', unit: (supplies[0]?.base_unit || 'each') as SupplyUnit }],
-        });
-        return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
-            <div className="bg-card rounded-2xl w-full max-w-6xl h-[96vh] flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border">
-                <div className="flex items-center gap-3 min-w-0">
-                  <h2 className="text-xl font-bold truncate">
-                    {recipeForm.dish.name.trim() || (editingRecipe ? t('editRecipe') : t('addRecipe'))}
-                  </h2>
-                  {editingRecipe && editingRecipe.is_active !== 1 && <Badge variant="secondary">{t('draft')}</Badge>}
-                </div>
-                <div className="flex items-center gap-4 shrink-0">
-                  {recipeForm.product_id !== '' && (
-                    <Button type="button" variant="outline" size="sm" disabled={aiBusy} onClick={handleAiHelp}>
-                      <Sparkles size={16} className="me-1" /> {aiBusy ? '…' : t('aiHelp')}
-                    </Button>
-                  )}
-                  {recipeForm.product_id !== '' && (
-                    <button type="button" role="switch" aria-checked={recipeForm.dish.is_active}
-                      onClick={() => setDish({ is_active: !recipeForm.dish.is_active })}
-                      className="flex items-center gap-2">
-                      <span className={`relative inline-block h-7 w-12 rounded-full transition-colors ${recipeForm.dish.is_active ? 'bg-green-600' : 'bg-gray-500'}`}>
-                        <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white transition-all ${recipeForm.dish.is_active ? 'start-[1.5rem]' : 'start-0.5'}`} />
-                      </span>
-                      <span className={`text-sm font-semibold ${recipeForm.dish.is_active ? 'text-green-600' : 'text-muted-foreground'}`}>
-                        {recipeForm.dish.is_active ? t('onPos') : t('offPos')}
-                      </span>
-                    </button>
-                  )}
-                  <button type="button" onClick={() => setShowRecipeForm(false)}><X size={24} className="text-gray-400" /></button>
-                </div>
-              </div>
-
-              {(aiMissing.length > 0 || aiPhotos.length > 0) && (
-                <div className="px-5 py-2 text-xs border-b border-border bg-muted">
-                  {aiMissing.length > 0 && <span className="text-amber-600">{t('aiNotInInventory', { names: aiMissing.join(', ') })} </span>}
-                  <span className="text-muted-foreground">{t('aiDraftNote')}</span>
-                </div>
-              )}
-
-              <form id="recipe-form" onSubmit={handleSaveRecipe}
-                className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid gap-4 p-4 lg:grid-cols-[1fr_20rem]">
-                <div className="flex flex-col gap-3 min-h-0">
-                  {!editingRecipe && (
-                    <div>
-                      <select value={recipeForm.product_id}
-                        onChange={(e) => {
-                          const picked = e.target.value;
-                          setRecipeForm({ ...recipeForm, product_id: picked, dish: picked === 'new' ? emptyDish : dishFromProduct(products.find((p) => p.id === picked)) });
-                        }}
-                        className={compactField} required>
-                        <option value="">{t('product')}</option>
-                        <option value="new">{t('newMenuItem')}</option>
-                        {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  {recipeForm.product_id !== '' && (
-                    <div className="flex items-end gap-3">
-                      <button type="button" onClick={() => setShowPhotoPicker(true)} title={t('dishPhoto')}
-                        className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-dashed border-border bg-muted hover:ring-2 hover:ring-brand">
-                        {tilePhoto
-                          ? <img src={tilePhoto} alt="" className="h-full w-full object-cover" />
-                          : <Camera size={24} className="mx-auto text-muted-foreground" />}
-                        {aiPhotos.length > 0 && <span className="absolute bottom-0 end-0 rounded-tl-md bg-brand px-1 text-[10px] text-white">{aiPhotos.length}</span>}
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <label className={statLabel}>{t('dishName')}</label>
-                        <input type="text" value={recipeForm.dish.name} onChange={(e) => setDish({ name: e.target.value })}
-                          className={compactField} required />
-                      </div>
-                      <div className="w-44">
-                        <label className={statLabel}>{t('dishCategory')}</label>
-                        <select value={recipeForm.dish.category_id} onChange={(e) => setDish({ category_id: e.target.value })}
-                          className={compactField} required={isNew}>
-                          <option value="">{t('chooseCategory')}</option>
-                          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                      </div>
-                      <div className="w-20">
-                        <label className={statLabel}>{t('yield')}</label>
-                        <input type="number" step="any" min="0.00000001" value={recipeForm.yield_quantity}
-                          onChange={(e) => setRecipeForm({ ...recipeForm, yield_quantity: e.target.value })}
-                          className={compactField} required />
-                      </div>
-                      <Button type="button" variant="outline" size="sm" onClick={() => setShowDetails(true)}>
-                        <SlidersHorizontal size={14} className="me-1" /> {t('moreDetails')}
-                      </Button>
-                    </div>
-                  )}
-
-                  {recipeForm.product_id !== '' && (
-                    <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-border">
-                      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-                        <h3 className="text-sm font-semibold">{t('sectionIngredients')}</h3>
-                        <Button type="button" variant="outline" size="sm" onClick={addLine}>
-                          <Plus size={14} /> {t('addComponent')}
-                        </Button>
-                      </div>
-                      {recipeForm.items.length > 0 && (
-                        <div className="hidden sm:grid grid-cols-[1fr_5.5rem_4.5rem_4.5rem_6rem_2rem] gap-2 px-3 pt-2 text-[11px] uppercase text-muted-foreground">
-                          <span>{t('recipeIngredient')}</span><span>{t('recipeAmount')}</span><span>{t('baseUnit')}</span>
-                          <span className="text-end">{t('recipeLineCost')}</span><span className="text-end">{t('recipeInStock')}</span><span />
-                        </div>
-                      )}
-                      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1.5">
-                        {recipeForm.items.map((item, index) => {
-                          const line = lines[index];
-                          return (
-                            <div key={index} className="grid grid-cols-2 sm:grid-cols-[1fr_5.5rem_4.5rem_4.5rem_6rem_2rem] gap-2 items-center">
-                              <select value={item.group_name ? `group:${item.group_name}` : item.supply_id}
-                                onChange={(e) => {
-                                  const items = [...recipeForm.items];
-                                  const picked = e.target.value;
-                                  const groupName = picked.startsWith('group:') ? picked.slice(6) : '';
-                                  const targetSupply = groupName
-                                    ? supplies.find((s) => s.group_name === groupName)
-                                    : supplies.find((s) => s.id === picked);
-                                  items[index] = {
-                                    ...items[index],
-                                    supply_id: groupName ? (targetSupply?.id || '') : picked,
-                                    group_name: groupName,
-                                    unit: (targetSupply?.base_unit || 'each') as SupplyUnit,
-                                  };
-                                  setRecipeForm({ ...recipeForm, items });
-                                }}
-                                className={`${compactField} col-span-2 sm:col-span-1 min-w-0`}>
-                                <option value="">{t('supply')}</option>
-                                {groupNames.length > 0 && (
-                                  <optgroup label={t('anyInGroup')}>
-                                    {groupNames.map((g) => <option key={g} value={`group:${g}`}>{g}</option>)}
-                                  </optgroup>
-                                )}
-                                <optgroup label={t('singleItems')}>
-                                  {supplies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                </optgroup>
-                              </select>
-                              <input type="number" step="any" min="0.00000001" placeholder={t('quantity')} value={item.quantity}
-                                onChange={(e) => {
-                                  const items = [...recipeForm.items];
-                                  items[index] = { ...items[index], quantity: e.target.value };
-                                  setRecipeForm({ ...recipeForm, items });
-                                }}
-                                className={compactField} required />
-                              <select value={item.unit}
-                                onChange={(e) => {
-                                  const items = [...recipeForm.items];
-                                  items[index] = { ...items[index], unit: e.target.value as SupplyUnit };
-                                  setRecipeForm({ ...recipeForm, items });
-                                }}
-                                className={compactField}>
-                                {SUPPLY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                              </select>
-                              <span className={`text-end text-sm ${line.cost === null ? 'text-amber-600' : ''}`}>
-                                {line.cost === null ? '—' : fmtNum(Math.round(line.cost * 100) / 100)}
-                              </span>
-                              <span className={`text-end text-xs ${line.supply && Number(line.supply.stock_quantity) <= 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                                {line.supply ? `${fmtNum(Number(line.supply.stock_quantity))} ${line.supply.base_unit}` : '—'}
-                              </span>
-                              <Button type="button" variant="ghost" size="icon-sm"
-                                onClick={() => setRecipeForm({ ...recipeForm, items: recipeForm.items.filter((_, i) => i !== index) })}>
-                                <X size={14} />
-                              </Button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {recipeForm.product_id !== '' && (
-                  <div className="flex flex-col gap-3 rounded-xl border border-border p-4 min-h-0 overflow-y-auto">
-                    <h3 className="text-sm font-semibold">{t('sectionPricing')}</h3>
-                    <div className="flex items-baseline justify-between">
-                      <span className={statLabel}>{t('recipeCostPerServing')}</span>
-                      <span className="text-xl font-bold">{lines.length === 0 ? '—' : fmtNum(Math.round(costPerServing * 100) / 100)}</span>
-                    </div>
-                    <div className="grid grid-cols-[5rem_1fr] gap-3 items-end">
-                      <div>
-                        <label className={statLabel}>{t('targetFoodCost')}</label>
-                        <input type="number" step="any" min="1" max="99" value={targetFoodCost}
-                          onChange={(e) => updateTargetFoodCost(e.target.value)} className={compactField} />
-                      </div>
-                      <Button type="button" variant="outline" size="sm" disabled={suggested === null}
-                        onClick={() => suggested !== null && setDish({ price: String(suggested) })}>
-                        {t('suggestedPrice')}: {suggested === null ? '—' : fmtNum(suggested)}
-                      </Button>
-                    </div>
-                    <div className="rounded-xl bg-muted p-3">
-                      <label className="block text-sm font-semibold mb-1">{t('actualPrice')}</label>
-                      <input type="number" step="any" min="0" value={recipeForm.dish.price}
-                        onChange={(e) => setDish({ price: e.target.value })}
-                        className="w-full px-3 py-2 text-2xl font-bold border-2 border-brand rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card" required />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className={statLabel}>{t('profitPerServing')}</p>
-                        <p className="text-xl font-bold">{margin === null ? '—' : fmtNum(Math.round(margin * 100) / 100)}</p>
-                        {margin !== null && typeof price === 'number' && price > 0 && (
-                          <p className="text-xs text-muted-foreground">{fmtNum(Math.round((margin / price) * 1000) / 10)}%</p>
-                        )}
-                      </div>
-                      <div>
-                        <p className={statLabel}>{t('foodCostLabel')}</p>
-                        <p className="text-xl font-bold">{foodCostPct === null ? '—' : `${fmtNum(Math.round(foodCostPct * 10) / 10)}%`}</p>
-                      </div>
-                    </div>
-                    <Button type="submit" size="lg" className="mt-auto w-full text-base"
-                      disabled={recipeForm.items.length === 0}>{tCommon('save')}</Button>
-                  </div>
-                )}
-              </form>
-            </div>
-
-            {showDetails && (
-              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={() => setShowDetails(false)}>
-                <div className="bg-card rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold">{t('moreDetails')}</h3>
-                    <button type="button" onClick={() => setShowDetails(false)}><X size={20} className="text-gray-400" /></button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className={statLabel}>{t('dishSku')}</label>
-                      <input type="text" value={recipeForm.dish.sku} onChange={(e) => setDish({ sku: e.target.value })}
-                        placeholder={isNew && nextSku(products) ? t('skuAuto', { sku: nextSku(products) ?? '' }) : ''} className={compactField} />
-                    </div>
-                    <div>
-                      <label className={statLabel}>{t('dishBarcode')}</label>
-                      <input type="text" value={recipeForm.dish.barcode} onChange={(e) => setDish({ barcode: e.target.value })} className={compactField} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className={statLabel}>{t('dishDescription')}</label>
-                    <textarea rows={3} value={recipeForm.dish.description} onChange={(e) => setDish({ description: e.target.value })} className={compactField} />
-                  </div>
-                  {taxCategories.length > 0 && (
-                    <div>
-                      <label className={statLabel}>{t('dishTaxCategory')}</label>
-                      <select value={recipeForm.dish.tax_category_id} onChange={(e) => setDish({ tax_category_id: e.target.value })} className={compactField}>
-                        <option value="">{t('taxStoreDefault')}</option>
-                        {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  <Button type="button" className="w-full" onClick={() => setShowDetails(false)}>{t('detailsDone')}</Button>
-                </div>
-              </div>
-            )}
-
-            {showPhotoPicker && (
-              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={() => setShowPhotoPicker(false)}>
-                <div className="bg-card rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-base font-semibold">{t('dishPhoto')}</h3>
-                    <button type="button" onClick={() => setShowPhotoPicker(false)}><X size={20} className="text-gray-400" /></button>
-                  </div>
-                  {aiPhotos.length > 0 && (
-                    <div>
-                      <p className={statLabel}>{t('aiPickPhoto')}</p>
-                      <div className="mt-1 grid grid-cols-3 gap-2">
-                        {aiPhotos.map((photo) => (
-                          <button key={photo.image_url} type="button" disabled={aiBusy} onClick={() => handlePickAiPhoto(photo)}
-                            className="aspect-square overflow-hidden rounded-lg border border-border hover:ring-2 hover:ring-brand" title={photo.title}>
-                            <img src={photo.thumb} alt={photo.title} className="h-full w-full object-cover" />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <ImageUploader
-                    value={recipeForm.dish.image}
-                    onChange={(val) => { setDish({ image: val, imageTouched: true }); if (val) setShowPhotoPicker(false); }}
-                    productId={isNew ? undefined : recipeForm.product_id}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {editor && (
+        <MenuItemEditor
+          key={editor.productId}
+          productId={editor.productId}
+          recipe={editor.recipe}
+          products={products}
+          categories={categories}
+          supplies={supplies}
+          taxCategories={taxCategories}
+          canEditProduct={tenantCan(currentTenant, 'catalog.manage')}
+          canEditRecipe={tenantCan(currentTenant, 'supplies.manage')}
+          onClose={() => setEditor(null)}
+          onSaved={() => { setEditor(null); refresh(); }}
+        />
+      )}
 
       {deletingSupply && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

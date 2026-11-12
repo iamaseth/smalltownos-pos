@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff, Image as ImageIcon } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff, Image as ImageIcon, Check } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -20,6 +20,7 @@ import { nameToColor, compressImage } from '@/lib/image-utils';
 import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { tenantCan } from '@/lib/permissions';
+import MenuItemEditor, { type Recipe, type MenuSupply, type MenuProduct, type MenuCategory } from '@/components/products/MenuItemEditor';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type ProductsKey = keyof AppConfig['Messages']['products'];
@@ -71,6 +72,7 @@ export default function ProductsPage() {
   const t = useTranslations('products');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
+  const tInv = useTranslations('inventory');
 
   // Translate a raw tag string: known tags go through the `pos` namespace;
   // custom tags render a formatted name (reuses DietaryBadge's tagLabel).
@@ -83,6 +85,9 @@ export default function ProductsPage() {
   const [productSearch, setProductSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [stockBusy, setStockBusy] = useState(false);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [supplies, setSupplies] = useState<MenuSupply[]>([]);
+  const [editor, setEditor] = useState<{ productId: string } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -131,6 +136,30 @@ export default function ProductsPage() {
   const amountFormat = useAmountFormat();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = tenantCan(currentTenant, 'catalog.manage');
+  const canRecipe = tenantCan(currentTenant, 'supplies.manage');
+  const recipeByProduct = new Map(recipes.map((r) => [r.product_id, r]));
+
+  const loadRecipes = () => {
+    if (!canRecipe) return;
+    api.get('/recipes').then((res) => setRecipes((res.data.recipes as Recipe[]) || [])).catch(() => undefined);
+    api.get('/supplies').then((res) => setSupplies((res.data.supplies as MenuSupply[]) || [])).catch(() => undefined);
+  };
+
+  const handleConfirmRecipe = async (r: Recipe) => {
+    try {
+      await api.put(`/recipes/product/${r.product_id}`, {
+        yield_quantity: Number(r.yield_quantity),
+        is_active: true,
+        items: r.items.map((item) => (item.group_name
+          ? { group_name: item.group_name, quantity: Number(item.quantity), unit: item.unit }
+          : { supply_id: item.supply_id, quantity: Number(item.quantity), unit: item.unit })),
+      });
+      toast.success(tInv('recipeConfirmed'));
+      loadRecipes();
+    } catch {
+      toast.error(tInv('saveFailed'));
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -143,6 +172,7 @@ export default function ProductsPage() {
       setProducts((prodRes.data.products as Product[]) || []);
       setCategories((catRes.data.categories as Category[]) || []);
       if (agRes) setAddonGroups((agRes.data.addon_groups as AddonGroup[]) || []);
+      loadRecipes();
     } catch {
       toast.error(t('failedToLoad'));
     } finally {
@@ -176,6 +206,7 @@ export default function ProductsPage() {
       .catch((err: unknown) => {
         if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) setTaxCategories([]);
       });
+    loadRecipes();
     api.get('/settings/loyalty', { signal: controller.signal })
       .then((res) => {
         setLoyaltyEnabled(!!res.data.loyalty_enabled);
@@ -595,7 +626,7 @@ export default function ProductsPage() {
             <Button variant="outline" onClick={() => openCsvModal('products')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
-            <Button onClick={openCreate}>
+            <Button onClick={() => setEditor({ productId: 'new' })}>
               <Plus size={16} className="me-1" /> {t('addProduct')}
             </Button>
           </div>
@@ -609,6 +640,7 @@ export default function ProductsPage() {
               <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCategory')}</th>
               <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnAddons')}</th>
               <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnPrice')}</th>
+              {canRecipe && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{tInv('recipeColumn')}</th>}
               <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnTax')}</th>
               {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCashback')}</th>}
               <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStock')}</th>
@@ -681,6 +713,21 @@ export default function ProductsPage() {
                   <p className="font-medium">{fmt(Number(product.price))}</p>
                   {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">{t('costLabel', { value: fmt(Number(product.cost_price)) })}</p>}
                 </td>
+                {canRecipe && (() => {
+                  const recipe = recipeByProduct.get(product.id);
+                  return (
+                    <td className="p-4 text-sm">
+                      {recipe ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className={recipe.is_active === 1 ? 'text-green-600 font-medium' : 'text-amber-600 font-medium'}>
+                            {recipe.is_active === 1 ? tInv('confirmedTag') : tInv('draft')}
+                          </span>
+                          {recipe.margin_percent !== null && <span className="text-xs text-muted-foreground">{Math.round(recipe.margin_percent * 10) / 10}%</span>}
+                        </div>
+                      ) : <span className="text-muted-foreground">{tInv('noRecipeTag')}</span>}
+                    </td>
+                  );
+                })()}
                 <td className="p-4 text-sm text-muted-foreground">
                   <div className="flex flex-col gap-0.5">
                     <span>{taxLabel}</span>
@@ -733,7 +780,20 @@ export default function ProductsPage() {
                         >
                           {product.is_active ? <Eye size={16} /> : <EyeOff size={16} />}
                         </button>
-                        <button onClick={() => openEdit(product)} className="p-1.5 text-gray-400 hover:text-brand">
+                        {canRecipe && (() => {
+                          const recipe = recipeByProduct.get(product.id);
+                          return recipe && recipe.is_active !== 1 ? (
+                            <button
+                              onClick={() => handleConfirmRecipe(recipe)}
+                              title={tInv('confirmRecipe')}
+                              aria-label={tInv('confirmRecipe')}
+                              className="p-1.5 text-gray-400 hover:text-green-600"
+                            >
+                              <Check size={16} />
+                            </button>
+                          ) : null;
+                        })()}
+                        <button onClick={() => setEditor({ productId: product.id })} className="p-1.5 text-gray-400 hover:text-brand">
                           <Pencil size={16} />
                         </button>
                         <button onClick={() => handleDelete(product.id)} className="p-1.5 text-gray-400 hover:text-red-600">
@@ -1467,6 +1527,26 @@ export default function ProductsPage() {
             </div>
           </div>
         </div>
+      )}
+      {editor && (
+        <MenuItemEditor
+          key={editor.productId}
+          productId={editor.productId}
+          recipe={recipeByProduct.get(editor.productId) ?? null}
+          products={products as unknown as MenuProduct[]}
+          categories={categories as unknown as MenuCategory[]}
+          supplies={supplies}
+          taxCategories={taxCategories}
+          canEditProduct={isOwnerOrManager}
+          canEditRecipe={canRecipe}
+          onClose={() => setEditor(null)}
+          onSaved={() => { setEditor(null); fetchData(); }}
+          onOpenAdvanced={(id) => {
+            const target = products.find((p) => p.id === id);
+            setEditor(null);
+            if (target) openEdit(target);
+          }}
+        />
       )}
       {ConfirmDialog}
     </div>
