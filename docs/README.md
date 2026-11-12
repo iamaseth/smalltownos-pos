@@ -99,6 +99,7 @@ metadata. Do not move them without a coordinated change to those references.
 | [printers.md](printers.md) | Merchants and support: connecting a printer and diagnosing the queue. |
 | [linux.md](linux.md) | Merchants and support: Linux packages, printing permissions, and the tray. |
 | [google-drive-setup.md](google-drive-setup.md) | Maintainers: provisioning the optional Drive backup OAuth client. |
+| [ai-recipe-helper-setup.md](ai-recipe-helper-setup.md) | Maintainers: enabling the optional AI recipe and photo helper. |
 
 ## Other repository assets
 
