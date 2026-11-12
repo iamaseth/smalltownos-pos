@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff, Image as ImageIcon } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -16,7 +16,8 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useAmountFormat } from '@/hooks/useAmountFormat';
 import CurrencyAmountInput from '@/components/ui/CurrencyAmountInput';
 import { useConfirm } from '@/hooks/use-confirm';
-import { nameToColor } from '@/lib/image-utils';
+import { nameToColor, compressImage } from '@/lib/image-utils';
+import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { tenantCan } from '@/lib/permissions';
 
@@ -81,6 +82,7 @@ export default function ProductsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('products');
   const [productSearch, setProductSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
+  const [stockBusy, setStockBusy] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -364,6 +366,34 @@ export default function ProductsPage() {
     }
   };
 
+  const stockPhotoCandidates = products.filter((p) => !p.has_image && genericMenuPhoto(p.name));
+
+  const handleSaveStockPhotos = async () => {
+    const targets = stockPhotoCandidates;
+    if (targets.length === 0 || stockBusy) return;
+    if (!await confirm(t('stockPhotosConfirm', { count: targets.length }), { confirmLabel: t('stockPhotosButton') })) return;
+    setStockBusy(true);
+    let saved = 0;
+    let failed = 0;
+    for (const product of targets) {
+      try {
+        const res = await fetch(genericMenuPhoto(product.name)!);
+        if (!res.ok) throw new Error('photo');
+        const blob = await res.blob();
+        const image = await compressImage(new File([blob], 'photo', { type: blob.type || 'image/jpeg' }));
+        if (!image) throw new Error('compress');
+        await api.put(`/products/${product.id}`, { image_url: image });
+        saved += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setStockBusy(false);
+    if (saved > 0) toast.success(t('stockPhotosDone', { count: saved }));
+    if (failed > 0) toast.error(t('stockPhotosFailed', { count: failed }));
+    fetchData();
+  };
+
   const handleDelete = async (id: string) => {
     if (!await confirm(t('deleteConfirm'), { destructive: true, confirmLabel: tCommon('delete') })) return;
     try {
@@ -555,6 +585,11 @@ export default function ProductsPage() {
             {isOwnerOrManager && taxCategories.length > 0 && (
               <Button variant="outline" onClick={() => { setBulkTaxCategoryId(''); setShowBulkTaxModal(true); }}>
                 {t('assignTaxCategory')}
+              </Button>
+            )}
+            {isOwnerOrManager && stockPhotoCandidates.length > 0 && (
+              <Button variant="outline" onClick={handleSaveStockPhotos} disabled={stockBusy}>
+                <ImageIcon size={16} className="me-1" /> {t('stockPhotosButton')} ({stockPhotoCandidates.length})
               </Button>
             )}
             <Button variant="outline" onClick={() => openCsvModal('products')}>
