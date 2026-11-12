@@ -84,6 +84,17 @@ async function main() {
   const spaced = importRecipes(db, { rows: [{ productName: 'Beerlao (Bottle)', ingredientName: 'Beerlao  (Bottle)', quantity: '1', unit: 'each' }], dryRun: true });
   assertEqualOrThrow(spaced.to_create.length, 1, 'odd spacing and non-breaking spaces in names still match');
 
+  seedCategory(db, 'cat-b', 'Breakfast');
+  seedProduct(db, 'p-crab-1', 'cat-c', 'Crab Fried Rice', 3.75, { track_inventory: false, stock_quantity: 0 });
+  seedProduct(db, 'p-crab-2', 'cat-b', 'Crab Fried Rice', 3.5, { track_inventory: false, stock_quantity: 0 });
+  createSupply(db, { name: 'Crab meat', baseUnit: 'g', actorUserId: actor });
+  const crabRows = [{ productName: 'Crab Fried Rice', ingredientName: 'Crab meat', quantity: '80', unit: 'g' }];
+  const crabPreview = importRecipes(db, { rows: crabRows, dryRun: true });
+  assertEqualOrThrow(crabPreview.to_create.length, 2, 'a dish listed under two categories gets a recipe for each menu item');
+  importRecipes(db, { rows: crabRows, dryRun: false });
+  assertEqualOrThrow(getRecipeByProduct(db, 'p-crab-1').items.length, 1, 'first menu item has the recipe');
+  assertEqualOrThrow(getRecipeByProduct(db, 'p-crab-2').items.length, 1, 'second menu item has the recipe');
+
   const { passed, failed, total } = getResults();
   console.log(`\nPassed: ${passed}/${total}`);
   process.exit(failed === 0 ? 0 : 1);
