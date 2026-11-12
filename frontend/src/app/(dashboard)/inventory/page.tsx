@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
-import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +12,8 @@ import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { tenantCan } from '@/lib/permissions';
-import MenuItemEditor, { SUPPLY_UNITS, type SupplyUnit, type Recipe, type RecipeItem, type MenuProduct as Product, type MenuCategory as Category } from '@/components/products/MenuItemEditor';
+import { parseCsv, downloadCsv } from '@/lib/csv-table';
+import { SUPPLY_UNITS, type SupplyUnit, type Recipe, type RecipeItem, type MenuProduct as Product, type MenuCategory as Category } from '@/components/products/MenuItemEditor';
 
 interface Supply {
   id: string;
@@ -92,42 +92,10 @@ const movementTypeIcons: Record<string, typeof ArrowUpCircle> = {
   recipe_restore: ArrowUpCircle,
 };
 
-interface RecipeImportPreview {
-  to_create: { product_name: string; items: number }[];
-  already_have_recipe: string[];
-  skipped: { product_name: string; reason: string }[];
-}
-
 interface ImportPreview {
   to_create: { name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null }[];
   already_exist: string[];
   errors: { row: number; name: string; error: string }[];
-}
-
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let quoted = false;
-  const source = text.replace(/^\uFEFF/, '');
-  for (let i = 0; i < source.length; i++) {
-    const ch = source[i];
-    if (quoted) {
-      if (ch === '"' && source[i + 1] === '"') { cell += '"'; i++; }
-      else if (ch === '"') quoted = false;
-      else cell += ch;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ',') { row.push(cell); cell = ''; }
-    else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && source[i + 1] === '\n') i++;
-      row.push(cell); cell = '';
-      if (row.some((value) => value.trim() !== '')) rows.push(row);
-      row = [];
-    } else cell += ch;
-  }
-  row.push(cell);
-  if (row.some((value) => value.trim() !== '')) rows.push(row);
-  return rows;
 }
 
 export default function InventoryPage() {
@@ -140,7 +108,6 @@ export default function InventoryPage() {
   const canManage = tenantCan(currentTenant, 'inventory.manage');
 
   const [tab, setTab] = useState('supplies');
-  const [recipeSearch, setRecipeSearch] = useState('');
   const [supplies, setSupplies] = useState<Supply[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [movements, setMovements] = useState<SupplyMovement[]>([]);
@@ -165,9 +132,6 @@ export default function InventoryPage() {
   const [orderGroups, setOrderGroups] = useState<OrderListGroup[]>([]);
   const [orderListLoading, setOrderListLoading] = useState(false);
 
-  const [showRecipeImport, setShowRecipeImport] = useState(false);
-  const [recipeImportRows, setRecipeImportRows] = useState<Record<string, string>[]>([]);
-  const [recipeImportPreview, setRecipeImportPreview] = useState<RecipeImportPreview | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [importRows, setImportRows] = useState<Record<string, string>[]>([]);
   const [importVendor, setImportVendor] = useState('');
@@ -177,8 +141,6 @@ export default function InventoryPage() {
   const [movementSupply, setMovementSupply] = useState<Supply | null>(null);
   const [movementForm, setMovementForm] = useState({ movement_type: 'receive', quantity: '', unit: 'each' as SupplyUnit, reason: '' });
 
-  const [editor, setEditor] = useState<{ productId: string; recipe: Recipe | null } | null>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
   const productByName = new Map<string, Product>();
   for (const p of products) {
     const key = photoKey(p.name);
@@ -193,10 +155,8 @@ export default function InventoryPage() {
       for (const item of r.items) if (item.supply_id && !supplyProduct.has(item.supply_id)) supplyProduct.set(item.supply_id, product);
     }
   }
-  const [taxCategories, setTaxCategories] = useState<{ id: string; label: string }[]>([]);
 
   const [deletingSupply, setDeletingSupply] = useState<Supply | null>(null);
-  const [deletingRecipe, setDeletingRecipe] = useState<Recipe | null>(null);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
@@ -212,45 +172,6 @@ export default function InventoryPage() {
     }
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [supplies]);
-  const recipeQuery = recipeSearch.trim().toLowerCase();
-  const visibleRecipes = useMemo(() => {
-    if (!recipeQuery) return recipes;
-    return recipes.filter((r) =>
-      (r.product_name || '').toLowerCase().includes(recipeQuery)
-      || r.items.some((item) => `${item.group_name ?? ''} ${item.supply_name}`.toLowerCase().includes(recipeQuery)));
-  }, [recipes, recipeQuery]);
-  const productsWithoutRecipe = useMemo(() => {
-    const have = new Set(recipes.map((r) => r.product_id));
-    return products.filter((p) => !have.has(p.id) && (!recipeQuery || p.name.toLowerCase().includes(recipeQuery)));
-  }, [products, recipes, recipeQuery]);
-
-  const downloadCsv = (filename: string, rows: (string | number | null)[][]) => {
-    const cell = (v: string | number | null) => {
-      const text = v === null ? '' : String(v);
-      return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-    };
-    const blob = new Blob([`\uFEFF${rows.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const exportRecipes = () => {
-    const rows: (string | number | null)[][] = [['product_name', 'ingredient_name', 'quantity', 'unit', 'status', 'cost_per_serving', 'selling_price', 'margin_percent']];
-    for (const r of visibleRecipes) {
-      for (const item of r.items) {
-        rows.push([
-          r.product_name || r.product_id, item.group_name || item.supply_name, item.quantity, item.unit,
-          r.is_active === 1 ? 'confirmed' : 'draft', r.cost_per_serving, r.selling_price, r.margin_percent,
-        ]);
-      }
-    }
-    downloadCsv('recipes.csv', rows);
-  };
-
   const exportSupplies = () => {
     const rows: (string | number | null)[][] = [['name', 'group', 'base_unit', 'stock', 'par_level', 'order_up_to', 'unit_cost', 'pack_size', 'pack_label', 'pack_price', 'pour_size']];
     for (const s of supplies) {
@@ -262,34 +183,6 @@ export default function InventoryPage() {
     downloadCsv('ingredients.csv', rows);
   };
 
-  const printRecipes = () => {
-    const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const money = (n: number | null) => (n === null ? '—' : fmtNum(Math.round(n * 100) / 100));
-    const blocks = visibleRecipes.map((r) => {
-      const rows = r.items.map((item) => `<tr><td>${esc(item.group_name ? t('anyGroupLine', { group: item.group_name, name: item.supply_name }) : item.supply_name)}</td><td class="n">${esc(fmtNum(Number(item.quantity)))} ${esc(item.unit)}</td></tr>`).join('');
-      const margin = r.margin === null ? '—' : `${money(r.margin)} (${fmtNum(r.margin_percent ?? 0)}%)`;
-      return `<section><h2>${esc(r.product_name || r.product_id)}${r.is_active === 1 ? '' : ` <small>(${esc(t('draft'))})</small>`}</h2>
-        <p>${esc(t('yield'))}: ${esc(fmtNum(Number(r.yield_quantity)))}</p>
-        <table>${rows}</table>
-        <p class="f">${esc(t('recipeCostPerServing'))}: <b>${money(r.cost_per_serving)}</b> &nbsp; ${esc(t('actualPrice'))}: <b>${money(r.selling_price)}</b> &nbsp; ${esc(t('marginAtActual'))}: <b>${esc(margin)}</b></p></section>`;
-    }).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(t('tabRecipes'))}</title><style>
-      body{font-family:system-ui,sans-serif;font-size:14pt;margin:16mm;color:#111}
-      h1{font-size:20pt;margin:0 0 8mm} section{break-inside:avoid;border-top:1px solid #999;padding:4mm 0}
-      h2{font-size:16pt;margin:0 0 2mm} h2 small{font-weight:normal;color:#666} p{margin:1mm 0}
-      table{border-collapse:collapse;width:100%;margin:2mm 0} td{padding:1.5mm 2mm;border-bottom:1px solid #ddd} td.n{text-align:right;white-space:nowrap}
-      .f{font-size:12pt;color:#333}
-    </style></head><body><h1>${esc(t('tabRecipes'))}</h1>${blocks}</body></html>`;
-    const frame = document.createElement('iframe');
-    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
-    document.body.appendChild(frame);
-    const doc = frame.contentDocument;
-    if (!doc || !frame.contentWindow) { frame.remove(); return; }
-    doc.open(); doc.write(html); doc.close();
-    frame.contentWindow.focus();
-    frame.contentWindow.print();
-    setTimeout(() => frame.remove(), 60000);
-  };
   const groupNames = useMemo(() => groupTotals.map((g) => g.name), [groupTotals]);
 
   useEffect(() => {
@@ -314,12 +207,10 @@ export default function InventoryPage() {
     Promise.all([
       api.get('/recipes', { signal: controller.signal }),
       api.get('/products', { signal: controller.signal }),
-      api.get('/categories', { signal: controller.signal }),
     ])
-      .then(([recipesRes, productsRes, categoriesRes]) => {
+      .then(([recipesRes, productsRes]) => {
         setRecipes(recipesRes.data.recipes || []);
         setProducts(productsRes.data.products || []);
-        setCategories(categoriesRes.data.categories || []);
       })
       .catch((err: unknown) => {
         if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('loadFailed'));
@@ -327,13 +218,6 @@ export default function InventoryPage() {
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, refreshKey, canManage]);
-
-  useEffect(() => {
-    if (!canManage || tab !== 'recipes') return;
-    api.get('/tax/categories')
-      .then(({ data }) => setTaxCategories((data.categories || []) as { id: string; label: string }[]))
-      .catch(() => undefined);
-  }, [canManage, tab]);
 
   useEffect(() => {
     if (!canManage) return;
@@ -597,66 +481,6 @@ export default function InventoryPage() {
     }
   };
 
-  const openRecipeImport = () => {
-    setRecipeImportRows([]);
-    setRecipeImportPreview(null);
-    setShowRecipeImport(true);
-  };
-
-  const handleRecipeImportFile = async (file: File | undefined) => {
-    if (!file) return;
-    try {
-      const table = parseCsv(await file.text());
-      const header = (table[0] || []).map((h) => h.trim().toLowerCase());
-      const rows = table.slice(1).map((cells) => {
-        const record: Record<string, string> = {};
-        header.forEach((name, index) => { record[name] = (cells[index] ?? '').trim(); });
-        return record;
-      });
-      setRecipeImportRows(rows);
-      const { data } = await api.post('/recipes/import', { rows, dry_run: true });
-      setRecipeImportPreview(data);
-    } catch (err: unknown) {
-      setRecipeImportRows([]);
-      setRecipeImportPreview(null);
-      toast.error(importError(err));
-    }
-  };
-
-  const handleRecipeImportConfirm = async () => {
-    setImporting(true);
-    try {
-      const { data } = await api.post('/recipes/import', { rows: recipeImportRows, dry_run: false });
-      toast.success(t('recipeDone', { count: data.to_create.length }));
-      setShowRecipeImport(false);
-      refresh();
-    } catch (err: unknown) {
-      toast.error(importError(err));
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const handleConfirmRecipe = async (r: Recipe) => {
-    try {
-      await api.put(`/recipes/product/${r.product_id}`, {
-        yield_quantity: Number(r.yield_quantity),
-        is_active: true,
-        items: r.items.map((item) => (item.group_name
-          ? { group_name: item.group_name, quantity: Number(item.quantity), unit: item.unit }
-          : { supply_id: item.supply_id, quantity: Number(item.quantity), unit: item.unit })),
-      });
-      toast.success(t('recipeConfirmed'));
-      refresh();
-    } catch (err: unknown) {
-      toast.error(importError(err));
-    }
-  };
-
-  const openAddRecipe = (productId = '') => setEditor({ productId: productId || 'new', recipe: null });
-
-  const openEditRecipe = (r: Recipe) => setEditor({ productId: r.product_id, recipe: r });
-
   const handleDeleteSupply = async () => {
     if (!deletingSupply) return;
     try {
@@ -669,18 +493,6 @@ export default function InventoryPage() {
         ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
         : undefined;
       toast.error(message || t('deleteFailed'));
-    }
-  };
-
-  const handleDeleteRecipe = async () => {
-    if (!deletingRecipe) return;
-    try {
-      await api.delete(`/recipes/product/${deletingRecipe.product_id}`);
-      toast.success(tCommon('delete'));
-      setDeletingRecipe(null);
-      refresh();
-    } catch {
-      toast.error(t('deleteFailed'));
     }
   };
 
@@ -705,21 +517,11 @@ export default function InventoryPage() {
             <Button onClick={openAddSupply}><Plus size={16} className="me-1" /> {t('addSupply')}</Button>
           </div>
         )}
-        {tab === 'recipes' && (
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => openAddRecipe('new')}>
-              <Sparkles size={16} className="me-1" /> {t('aiRecipeHelper')}
-            </Button>
-            <Button variant="outline" onClick={openRecipeImport}><Upload size={16} className="me-1" /> {t('importRecipes')}</Button>
-            <Button onClick={() => openAddRecipe()}><Plus size={16} className="me-1" /> {t('addRecipe')}</Button>
-          </div>
-        )}
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="supplies">{t('tabSupplies')}</TabsTrigger>
-          <TabsTrigger value="recipes">{t('tabRecipes')}</TabsTrigger>
           <TabsTrigger value="movements">{t('tabMovements')}</TabsTrigger>
         </TabsList>
 
@@ -831,120 +633,6 @@ export default function InventoryPage() {
             </table>
             {supplies.length === 0 && <p className="text-center text-muted-foreground py-12">{t('emptySupplies')}</p>}
           </div>
-        </TabsContent>
-
-        <TabsContent value="recipes">
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            <div className="relative flex-1 min-w-48">
-              <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text" value={recipeSearch} onChange={(e) => setRecipeSearch(e.target.value)}
-                placeholder={t('searchRecipes')}
-                className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
-              />
-            </div>
-            <Button variant="outline" onClick={printRecipes} disabled={visibleRecipes.length === 0}><Printer size={16} className="me-1" /> {t('print')}</Button>
-            <Button variant="outline" onClick={exportRecipes} disabled={visibleRecipes.length === 0}><Download size={16} className="me-1" /> {t('exportCsv')}</Button>
-          </div>
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-muted">
-                <tr>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('product')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('yield')}</th>
-                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('components')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('costPerServing')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('sellingPrice')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('margin')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('actions')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {visibleRecipes.map((r) => (
-                  <tr key={r.id} className="hover:bg-muted">
-                    <td className="p-4 font-medium text-foreground">
-                      <div className="flex items-center gap-3">
-                        {(() => {
-                          const product = products.find((p) => p.id === r.product_id);
-                          const name = r.product_name || '';
-                          const src = product?.has_image
-                            ? `${api.defaults.baseURL}/products/${r.product_id}/image?t=${product.updated_at ?? ''}`
-                            : genericMenuPhoto(name);
-                          return src
-                            ? <img src={src} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border border-border" loading="lazy" />
-                            : <div className="w-12 h-12 rounded-lg bg-muted shrink-0 border border-border" />;
-                        })()}
-                        <span>
-                          {r.product_name || r.product_id}
-                          {r.is_active !== 1 && <Badge variant="secondary" className="ms-2">{t('draft')}</Badge>}
-                          {(() => {
-                            const product = products.find((p) => p.id === r.product_id);
-                            const on = product?.is_active === true || product?.is_active === 1;
-                            return <Badge variant={on ? 'default' : 'outline'} className="ms-2">{on ? t('onPos') : t('offPos')}</Badge>;
-                          })()}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-center text-sm">{fmtNum(Number(r.yield_quantity))}</td>
-                    <td className="p-4 text-sm text-muted-foreground">
-                      <ul className="space-y-0.5">
-                        {r.items.map((item) => (
-                          <li key={item.group_name ? `group:${item.group_name}` : item.supply_id}>
-                            {item.group_name
-                              ? t('anyGroupLine', { group: item.group_name, name: item.supply_name })
-                              : item.supply_name}: {fmtNum(Number(item.quantity))} {item.unit}
-                          </li>
-                        ))}
-                      </ul>
-                    </td>
-                    <td className="p-4 text-end text-sm">
-                      {r.cost_per_serving === null ? '-' : fmtNum(r.cost_per_serving)}
-                      {!r.cost_complete && r.missing_cost_supplies.length > 0 && (
-                        <p className="text-xs text-amber-600">{t('costMissing', { names: r.missing_cost_supplies.join(', ') })}</p>
-                      )}
-                    </td>
-                    <td className="p-4 text-end text-sm">{r.selling_price === null ? '-' : fmtNum(r.selling_price)}</td>
-                    <td className="p-4 text-end text-sm">
-                      {r.margin === null ? '-' : `${fmtNum(r.margin)} (${fmtNum(r.margin_percent ?? 0)}%)`}
-                    </td>
-                    <td className="p-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        {r.is_active !== 1 && (
-                          <Button variant="ghost" size="sm" onClick={() => handleConfirmRecipe(r)} title={t('confirmRecipe')}>
-                            <Check size={14} />
-                          </Button>
-                        )}
-                        <Button variant="ghost" size="sm" onClick={() => openEditRecipe(r)} title={tCommon('edit')}>
-                          <Edit size={14} />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => setDeletingRecipe(r)} title={tCommon('delete')}>
-                          <Trash2 size={14} />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {visibleRecipes.length === 0 && <p className="text-center text-muted-foreground py-12">{t('emptyRecipes')}</p>}
-          </div>
-
-          {productsWithoutRecipe.length > 0 && (
-            <div className="bg-card rounded-xl border border-border mt-6 p-4">
-              <h3 className="text-lg font-semibold">{t('menuNoRecipe', { count: productsWithoutRecipe.length })}</h3>
-              <p className="text-sm text-muted-foreground mb-3">{t('menuNoRecipeHelp')}</p>
-              <ul className="divide-y divide-border">
-                {productsWithoutRecipe.map((p) => (
-                  <li key={p.id} className="flex items-center justify-between gap-3 py-2">
-                    <span className="text-base">{p.name}</span>
-                    <Button variant="outline" size="sm" onClick={() => openAddRecipe(p.id)}>
-                      <Plus size={14} className="me-1" /> {t('createRecipe')}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </TabsContent>
 
         <TabsContent value="movements">
@@ -1093,45 +781,6 @@ export default function InventoryPage() {
                 <Button onClick={copyOrderList}>{t('orderListCopy')}</Button>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {showRecipeImport && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{t('importRecipes')}</h2>
-              <button onClick={() => setShowRecipeImport(false)}><X size={20} className="text-gray-400" /></button>
-            </div>
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">{t('importRecipesHelp')}</p>
-              <input type="file" accept=".csv,text/csv"
-                onChange={(e) => handleRecipeImportFile(e.target.files?.[0])}
-                className="w-full text-sm" />
-              {recipeImportPreview && (
-                <div className="space-y-2 text-sm">
-                  <p className="font-medium">{t('recipeNew', { count: recipeImportPreview.to_create.length })}</p>
-                  {recipeImportPreview.already_have_recipe.length > 0 && (
-                    <p className="text-muted-foreground">{t('recipeHave', { count: recipeImportPreview.already_have_recipe.length })}</p>
-                  )}
-                  {recipeImportPreview.skipped.length > 0 && (
-                    <div>
-                      <p className="text-amber-600">{t('recipeSkipped', { count: recipeImportPreview.skipped.length })}</p>
-                      <ul className="max-h-40 overflow-y-auto text-xs text-muted-foreground list-disc ps-5">
-                        {recipeImportPreview.skipped.map((s, i) => <li key={i}>{s.product_name}: {s.reason}</li>)}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="flex justify-end">
-                <Button onClick={handleRecipeImportConfirm}
-                  disabled={importing || !recipeImportPreview || recipeImportPreview.to_create.length === 0}>
-                  {t('recipeImportConfirm', { count: recipeImportPreview?.to_create.length ?? 0 })}
-                </Button>
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -1289,22 +938,6 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {editor && (
-        <MenuItemEditor
-          key={editor.productId}
-          productId={editor.productId}
-          recipe={editor.recipe}
-          products={products}
-          categories={categories}
-          supplies={supplies}
-          taxCategories={taxCategories}
-          canEditProduct={tenantCan(currentTenant, 'catalog.manage')}
-          canEditRecipe={tenantCan(currentTenant, 'supplies.manage')}
-          onClose={() => setEditor(null)}
-          onSaved={() => { setEditor(null); refresh(); }}
-        />
-      )}
-
       {deletingSupply && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
@@ -1318,18 +951,6 @@ export default function InventoryPage() {
         </div>
       )}
 
-      {deletingRecipe && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
-            <h2 className="text-lg font-bold mb-2">{tCommon('delete')}</h2>
-            <p className="text-sm text-muted-foreground mb-4">{t('confirmDeleteRecipe', { name: deletingRecipe.product_name || deletingRecipe.product_id })}</p>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => setDeletingRecipe(null)}>{tCommon('cancel')}</Button>
-              <Button variant="destructive" onClick={handleDeleteRecipe}>{tCommon('delete')}</Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

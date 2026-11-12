@@ -8,7 +8,6 @@ import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { nameToColor } from '@/lib/image-utils';
-import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import TagBadge from './DietaryBadge';
 import OnScreenKeyboard from './OnScreenKeyboard';
 import api from '@/lib/api';
@@ -391,9 +390,9 @@ export default function ProductGrid({
                     </div>
 
                     {/* Image overlays the tile when available */}
-                    {(product.has_image || genericMenuPhoto(product.name)) && (
+                    {product.has_image && (
                       <img
-                        src={product.has_image ? `${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}` : genericMenuPhoto(product.name)!}
+                        src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}`}
                         alt={product.name}
                         className="absolute inset-0 w-full h-full object-cover rounded-lg"
                         loading="lazy"

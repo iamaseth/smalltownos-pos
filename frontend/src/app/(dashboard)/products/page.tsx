@@ -20,6 +20,7 @@ import { nameToColor, compressImage } from '@/lib/image-utils';
 import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { tenantCan } from '@/lib/permissions';
+import RecipeTools from '@/components/products/RecipeTools';
 import MenuItemEditor, { type Recipe, type MenuSupply, type MenuProduct, type MenuCategory } from '@/components/products/MenuItemEditor';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
@@ -397,6 +398,7 @@ export default function ProductsPage() {
     }
   };
 
+  const anyTracked = products.some((p) => p.track_inventory);
   const stockPhotoCandidates = products.filter((p) => !p.has_image && genericMenuPhoto(p.name));
 
   const handleSaveStockPhotos = async () => {
@@ -623,6 +625,13 @@ export default function ProductsPage() {
                 <ImageIcon size={16} className="me-1" /> {t('stockPhotosButton')} ({stockPhotoCandidates.length})
               </Button>
             )}
+            {canRecipe && (
+              <RecipeTools
+                recipes={recipes.filter((r) => !productSearch.trim() || (r.product_name || '').toLowerCase().includes(productSearch.trim().toLowerCase()))}
+                canImport={isOwnerOrManager}
+                onImported={loadRecipes}
+              />
+            )}
             <Button variant="outline" onClick={() => openCsvModal('products')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
@@ -643,7 +652,7 @@ export default function ProductsPage() {
               {canRecipe && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{tInv('recipeColumn')}</th>}
               <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnTax')}</th>
               {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCashback')}</th>}
-              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStock')}</th>
+              {anyTracked && <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStock')}</th>}
               <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStatus')}</th>
               <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
             </tr>
@@ -749,7 +758,7 @@ export default function ProductsPage() {
                     )}
                   </td>
                 )}
-                <td className="p-4 text-center">
+                {anyTracked && <td className="p-4 text-center">
                   {product.track_inventory ? (
                     <span className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-foreground'}`}>
                       {product.stock_quantity <= 0 ? tPos('outOfStock') : product.stock_quantity}
@@ -757,7 +766,7 @@ export default function ProductsPage() {
                   ) : (
                     <span className="text-gray-400 text-sm">—</span>
                   )}
-                </td>
+                </td>}
                 <td className="p-4 text-center">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     product.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'
@@ -1101,11 +1110,11 @@ export default function ProductsPage() {
                 </div>
               )}
               <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2">
+                {(anyTracked || form.track_inventory) && <label className="flex items-center gap-2">
                   <input type="checkbox" checked={form.track_inventory} onChange={(e) => setForm({ ...form, track_inventory: e.target.checked })}
                     className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
                   <span className="text-sm text-foreground">{t('fieldTrackInventory')}</span>
-                </label>
+                </label>}
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
                     className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />

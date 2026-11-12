@@ -1,6 +1,6 @@
 # AI recipe helper: server setup
 
-The Recipes tab in Inventory has an optional **AI help** button on the recipe editor. It suggests a
+The menu item editor (Products page) has an optional **AI help** button. It suggests a
 single-serving recipe for a dish and offers photos to choose from. It uses two Google services and
 stays unavailable until the server has the matching environment variables.
 

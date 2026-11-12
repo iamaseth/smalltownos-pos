@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import api from '@/lib/api';
-import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import toast from 'react-hot-toast';
@@ -326,7 +325,7 @@ export default function MenuItemEditor({
   const photoSrc = form.dish.image === 'EXISTING'
     ? (isNew ? null : `${api.defaults.baseURL}/products/${productId}/image`)
     : form.dish.image;
-  const tilePhoto = photoSrc ?? genericMenuPhoto(form.dish.name);
+  const tilePhoto = photoSrc;
   const compactField = 'w-full px-3 py-1.5 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card disabled:opacity-60';
   const statLabel = 'text-xs font-medium text-muted-foreground';
   const addLine = () => setForm({
