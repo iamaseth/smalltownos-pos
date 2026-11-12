@@ -15,7 +15,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const {
-  initTestDb, assertOrThrow, assertEqualOrThrow, getResults, resetCounters, seedOwnerUser,
+  initTestDb, assertOrThrow, assertEqualOrThrow, getResults, resetCounters, seedOwnerUser, seedCategory, seedProduct,
 } = require('./helpers/test-setup');
 const { createSupply, getSupply, receiveDelivery, updateSupply } = require('../main/services/supplies');
 
@@ -72,6 +72,23 @@ async function main() {
   ).get();
   assertEqualOrThrow(movement.reference_type, 'delivery', 'receive movement is tied to a delivery');
   assertOrThrow(movement.unit_cost > 0, 'receive movement keeps the unit cost');
+
+  // first-in, first-out price in use: 2100 ml on hand = 700 ml @ 52/700 on top of 1400 ml @ 40/700
+  const { supplyCostInUse } = require('../main/services/supply-cost');
+  const inUse = (stock: number) => supplyCostInUse(db, whisky.id, stock, getSupply(db, whisky.id).unit_cost);
+  assertEqualOrThrow(Number(inUse(2100).current.toFixed(6)), Number((40 / 700).toFixed(6)), 'the older delivery sets the price while it still has stock');
+  assertEqualOrThrow(Number(inUse(2100).next.toFixed(6)), Number((52 / 700).toFixed(6)), 'the newer delivery is the next price');
+  assertEqualOrThrow(Number(inUse(701).current.toFixed(6)), Number((40 / 700).toFixed(6)), 'one unit of the older delivery left still uses the old price');
+  assertEqualOrThrow(Number(inUse(700).current.toFixed(6)), Number((52 / 700).toFixed(6)), 'the price switches once the older delivery is used up');
+  assertEqualOrThrow(inUse(700).next, null, 'no next price when only the newest delivery remains');
+  assertEqualOrThrow(Number(inUse(0).current.toFixed(6)), Number((52 / 700).toFixed(6)), 'with no stock the latest price is shown');
+  assertEqualOrThrow(Number(inUse(2500).current.toFixed(6)), Number(getSupply(db, whisky.id).unit_cost.toFixed(6)), 'stock older than the history uses the stored cost');
+
+  seedCategory(db, 'cat-fifo', 'FIFO');
+  seedProduct(db, 'prod-fifo', 'cat-fifo', 'Whisky pour', 8);
+  const { saveRecipe, getRecipeByProduct } = require('../main/services/recipes');
+  saveRecipe(db, { productId: 'prod-fifo', yieldQuantity: 1, isActive: true, items: [{ supplyId: whisky.id, quantity: 30, unit: 'ml' }] });
+  assertEqualOrThrow(Number(getRecipeByProduct(db, 'prod-fifo').cost_per_serving.toFixed(6)), Number((30 * 0.057143).toFixed(6)), 'recipe cost uses the price in use (delivery cost is stored to 6 places)');
 
   // quantity + total cost path, in another unit (1 l at 30 total = 0.03 per ml)
   const syrup = createSupply(db, { name: 'Syrup', baseUnit: 'ml', actorUserId: actor });

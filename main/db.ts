@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
+import { nextSupplyProductNumber } from './lib/supply-product-number';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 import { ROLE_KEYS } from '../shared/role-permissions';
 import { getCurrencyFractionDigits, resolveRegionalSnapshot } from './countries';
@@ -5361,6 +5362,56 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         db.exec(`ALTER TABLE recipe_items ADD COLUMN group_name TEXT DEFAULT NULL`);
       }
       db.exec(`CREATE INDEX IF NOT EXISTS idx_supplies_group ON supplies(group_name COLLATE NOCASE)`);
+    },
+  },
+  {
+    version: 97,
+    name: 'add_supply_ingredient_only',
+    up: () => {
+      if (!getColumns(db, 'supplies').includes('ingredient_only')) {
+        db.exec(`ALTER TABLE supplies ADD COLUMN ingredient_only INTEGER NOT NULL DEFAULT 0`);
+      }
+    },
+  },
+  {
+    version: 98,
+    name: 'add_supply_product_number',
+    up: () => {
+      if (!getColumns(db, 'supplies').includes('product_number')) {
+        db.exec(`ALTER TABLE supplies ADD COLUMN product_number TEXT DEFAULT NULL`);
+      }
+      const missing = db.prepare(`SELECT id FROM supplies WHERE product_number IS NULL ORDER BY created_at, id`).all() as Array<{ id: string }>;
+      const assign = db.prepare(`UPDATE supplies SET product_number = ? WHERE id = ?`);
+      for (const { id } of missing) assign.run(nextSupplyProductNumber(db), id);
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_supplies_product_number ON supplies(product_number) WHERE product_number IS NOT NULL`);
+    },
+  },
+  {
+    version: 99,
+    name: 'add_supply_vendors',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS supply_vendors (
+          id TEXT PRIMARY KEY,
+          supply_id TEXT NOT NULL REFERENCES supplies(id),
+          vendor_id TEXT NOT NULL REFERENCES vendors(id),
+          vendor_item_name TEXT,
+          pack_size REAL,
+          pack_label TEXT,
+          unit_cost REAL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE (supply_id, vendor_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_supply_vendors_supply ON supply_vendors(supply_id);
+      `);
+      db.exec(`
+        INSERT OR IGNORE INTO supply_vendors (id, supply_id, vendor_id, pack_size, pack_label, unit_cost, created_at, updated_at)
+        SELECT 'sv_' || lower(hex(randomblob(8))), s.id, s.vendor_id, s.pack_size, s.pack_label, s.unit_cost, s.created_at, s.updated_at
+        FROM supplies s
+        WHERE s.vendor_id IS NOT NULL AND s.deleted_at IS NULL
+          AND EXISTS (SELECT 1 FROM vendors v WHERE v.id = s.vendor_id)
+      `);
     },
   },
 ];

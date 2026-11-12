@@ -13,6 +13,7 @@ import {
   recordSupplyMovement,
   softDeleteSupply,
   updateSupply,
+  setSupplyVendors,
 } from '../services/supplies';
 
 const router = Router();
@@ -65,6 +66,7 @@ router.post('/', requirePermission('supplies.manage'), (req: Request, res: Respo
       vendorId: body.vendor_id,
       groupName: body.group_name,
       isActive: body.is_active,
+      ingredientOnly: body.ingredient_only,
       actorUserId: actorId,
     });
     res.status(201).json({ supply });
@@ -173,12 +175,31 @@ router.get('/:id', requirePermission('supplies.manage'), (req: Request, res: Res
   }
 });
 
+router.put('/:id/vendors', requirePermission('supplies.manage'), (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const entries = Array.isArray(body.vendors) ? body.vendors : [];
+    const vendors = setSupplyVendors(getDatabase(), String(req.params.id), entries.map((entry: Record<string, unknown>) => ({
+      vendorId: String(entry?.vendor_id ?? ''),
+      vendorItemName: entry?.vendor_item_name as string | null | undefined,
+      packSize: entry?.pack_size as number | null | undefined,
+      packLabel: entry?.pack_label as string | null | undefined,
+      packPrice: entry?.pack_price as number | null | undefined,
+      isPreferred: entry?.is_preferred === true,
+    })));
+    res.json({ vendors });
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
 router.put('/:id', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const supply = updateSupply(getDatabase(), String(req.params.id), {
       name: body.name,
       isActive: body.is_active,
+      ingredientOnly: body.ingredient_only,
       lowStockThreshold: body.low_stock_threshold,
       unitCost: body.unit_cost,
       packSize: body.pack_size,

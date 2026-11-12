@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download } from 'lucide-react';
+import { Plus, Search, UtensilsCrossed, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { tenantCan } from '@/lib/permissions';
 import { parseCsv, downloadCsv } from '@/lib/csv-table';
-import { SUPPLY_UNITS, type SupplyUnit, type Recipe, type RecipeItem, type MenuProduct as Product, type MenuCategory as Category } from '@/components/products/MenuItemEditor';
+import MenuItemEditor, { SUPPLY_UNITS, type SupplyUnit, type Recipe, type RecipeItem, type MenuProduct as Product, type MenuCategory as Category } from '@/components/products/MenuItemEditor';
 
 interface Supply {
   id: string;
@@ -28,8 +28,32 @@ interface Supply {
   order_up_to: number | null;
   vendor_id: string | null;
   group_name: string | null;
+  ingredient_only: number;
+  product_number: string | null;
+  vendors?: SupplyVendor[];
+  current_unit_cost?: number | null;
+  next_unit_cost?: number | null;
   is_active: number;
   is_low_stock?: number;
+}
+
+interface SupplyVendor {
+  vendor_id: string;
+  vendor_name: string | null;
+  vendor_item_name: string | null;
+  pack_size: number | null;
+  pack_label: string | null;
+  unit_cost: number | null;
+  is_preferred: number;
+}
+
+interface VendorLine {
+  vendor_id: string;
+  vendor_item_name: string;
+  pack_size: string;
+  pack_label: string;
+  pack_price: string;
+  is_preferred: boolean;
 }
 
 interface Vendor {
@@ -39,7 +63,9 @@ interface Vendor {
 
 interface OrderListItem {
   supply_id: string;
+  product_number: string | null;
   name: string;
+  vendor_item_name: string | null;
   base_unit: SupplyUnit;
   pack_label: string | null;
   packs: number | null;
@@ -63,7 +89,7 @@ interface DeliveryLine {
 
 const emptySupplyForm = {
   name: '', base_unit: 'each' as SupplyUnit, stock_quantity: '0', low_stock_threshold: '',
-  unit_cost: '', pack_size: '', pack_label: '', pour_size: '', order_up_to: '', vendor_id: '', group_name: '',
+  unit_cost: '', pack_size: '', pack_label: '', pour_size: '', order_up_to: '', group_name: '', ingredient_only: false,
 };
 
 const optionalNumber = (value: string) => (value === '' ? null : Number(value));
@@ -122,6 +148,14 @@ export default function InventoryPage() {
   const [editingSupply, setEditingSupply] = useState<Supply | null>(null);
   const [supplyForm, setSupplyForm] = useState(emptySupplyForm);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [taxCategories, setTaxCategories] = useState<{ id: string; label: string }[]>([]);
+  const [menuSupply, setMenuSupply] = useState<Supply | null>(null);
+  const [linkPlan, setLinkPlan] = useState<{ matches: { product: Product; supply: Supply }[]; unmatched: Product[] } | null>(null);
+  const [linking, setLinking] = useState(false);
+  const canAddToMenu = tenantCan(currentTenant, 'catalog.manage');
+  const onMenuSupplyIds = new Set(recipes.filter((r) => r.items.length === 1 && r.items[0].supply_id).map((r) => r.items[0].supply_id as string));
+  const onMenuGroups = new Set(recipes.filter((r) => r.items.length === 1 && r.items[0].group_name).map((r) => (r.items[0].group_name as string).toLowerCase()));
   const [showDelivery, setShowDelivery] = useState(false);
   const [deliveryVendorId, setDeliveryVendorId] = useState('');
   const [newVendorName, setNewVendorName] = useState('');
@@ -173,10 +207,10 @@ export default function InventoryPage() {
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [supplies]);
   const exportSupplies = () => {
-    const rows: (string | number | null)[][] = [['name', 'group', 'base_unit', 'stock', 'par_level', 'order_up_to', 'unit_cost', 'pack_size', 'pack_label', 'pack_price', 'pour_size']];
+    const rows: (string | number | null)[][] = [['product_number', 'name', 'group', 'base_unit', 'stock', 'par_level', 'order_up_to', 'unit_cost', 'pack_size', 'pack_label', 'pack_price', 'pour_size']];
     for (const s of supplies) {
       rows.push([
-        s.name, s.group_name, s.base_unit, s.stock_quantity, s.low_stock_threshold, s.order_up_to, s.unit_cost, s.pack_size, s.pack_label,
+        s.product_number, s.name, s.group_name, s.base_unit, s.stock_quantity, s.low_stock_threshold, s.order_up_to, s.unit_cost, s.pack_size, s.pack_label,
         s.unit_cost !== null && s.pack_size ? Math.round(Number(s.unit_cost) * Number(s.pack_size) * 100) / 100 : null, s.pour_size,
       ]);
     }
@@ -207,8 +241,10 @@ export default function InventoryPage() {
     Promise.all([
       api.get('/recipes', { signal: controller.signal }),
       api.get('/products', { signal: controller.signal }),
+      api.get('/categories', { signal: controller.signal }),
     ])
-      .then(([recipesRes, productsRes]) => {
+      .then(([recipesRes, productsRes, categoriesRes]) => {
+        setCategories(categoriesRes.data.categories || []);
         setRecipes(recipesRes.data.recipes || []);
         setProducts(productsRes.data.products || []);
       })
@@ -218,6 +254,13 @@ export default function InventoryPage() {
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, refreshKey, canManage]);
+
+  useEffect(() => {
+    if (!canManage || !canAddToMenu) return;
+    api.get('/tax/categories')
+      .then(({ data }) => setTaxCategories((data.categories || []) as { id: string; label: string }[]))
+      .catch(() => undefined);
+  }, [canManage, canAddToMenu]);
 
   useEffect(() => {
     if (!canManage) return;
@@ -256,13 +299,24 @@ export default function InventoryPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, refreshKey, canManage]);
 
+  const [vendorLines, setVendorLines] = useState<VendorLine[]>([]);
+
   const openAddSupply = () => {
+    setVendorLines([]);
     setEditingSupply(null);
     setSupplyForm(emptySupplyForm);
     setShowSupplyForm(true);
   };
 
   const openEditSupply = (s: Supply) => {
+    setVendorLines((s.vendors ?? []).map((v) => ({
+      vendor_id: v.vendor_id,
+      vendor_item_name: v.vendor_item_name ?? '',
+      pack_size: v.pack_size === null ? '' : String(v.pack_size),
+      pack_label: v.pack_label ?? '',
+      pack_price: v.unit_cost !== null && v.pack_size ? String(Math.round(v.unit_cost * v.pack_size * 100) / 100) : '',
+      is_preferred: v.is_preferred === 1,
+    })));
     setEditingSupply(s);
     setSupplyForm({
       name: s.name,
@@ -274,10 +328,25 @@ export default function InventoryPage() {
       pack_label: s.pack_label ?? '',
       pour_size: s.pour_size === null ? '' : String(s.pour_size),
       order_up_to: s.order_up_to === null ? '' : String(s.order_up_to),
-      vendor_id: s.vendor_id ?? '',
       group_name: s.group_name ?? '',
+      ingredient_only: s.ingredient_only === 1,
     });
     setShowSupplyForm(true);
+  };
+
+  const saveVendorLines = async (supplyId: string) => {
+    const lines = vendorLines.filter((line) => line.vendor_id);
+    if (lines.length === 0 && !editingSupply) return;
+    await api.put(`/supplies/${supplyId}/vendors`, {
+      vendors: lines.map((line) => ({
+        vendor_id: line.vendor_id,
+        vendor_item_name: line.vendor_item_name.trim() || null,
+        pack_size: optionalNumber(line.pack_size),
+        pack_label: line.pack_label.trim() || null,
+        pack_price: optionalNumber(line.pack_price),
+        is_preferred: line.is_preferred,
+      })),
+    });
   };
 
   const handleSaveSupply = async (e: React.FormEvent) => {
@@ -293,11 +362,11 @@ export default function InventoryPage() {
         pack_label: supplyForm.pack_label.trim() || null,
         pour_size: optionalNumber(supplyForm.pour_size),
         order_up_to: optionalNumber(supplyForm.order_up_to),
-        vendor_id: supplyForm.vendor_id || null,
         group_name: supplyForm.group_name.trim() || null,
+        ingredient_only: supplyForm.ingredient_only,
       };
       if (editingSupply) {
-        await api.put(`/supplies/${editingSupply.id}`, {
+        const saved = await api.put(`/supplies/${editingSupply.id}`, {
           name: payload.name,
           low_stock_threshold: payload.low_stock_threshold,
           unit_cost: payload.unit_cost,
@@ -305,12 +374,15 @@ export default function InventoryPage() {
           pack_label: payload.pack_label,
           pour_size: payload.pour_size,
           order_up_to: payload.order_up_to,
-          vendor_id: payload.vendor_id,
           group_name: payload.group_name,
+          ingredient_only: payload.ingredient_only,
         });
+        void saved;
+        await saveVendorLines(editingSupply.id);
         toast.success(tCommon('save'));
       } else {
-        await api.post('/supplies', payload);
+        const created = await api.post('/supplies', payload);
+        await saveVendorLines(created.data.supply.id);
         toast.success(tCommon('save'));
       }
       setShowSupplyForm(false);
@@ -321,6 +393,40 @@ export default function InventoryPage() {
         : undefined;
       toast.error(message || t('saveFailed'));
     }
+  };
+
+  const openLinkMenuItems = () => {
+    const withRecipe = new Set(recipes.map((r) => r.product_id));
+    const bySupplyName = new Map<string, Supply>();
+    for (const s of supplies) if (s.ingredient_only !== 1 && s.is_active === 1) bySupplyName.set(photoKey(s.name), s);
+    const matches: { product: Product; supply: Supply }[] = [];
+    const unmatched: Product[] = [];
+    for (const product of products) {
+      if (withRecipe.has(product.id)) continue;
+      const supply = bySupplyName.get(photoKey(product.name));
+      if (supply) matches.push({ product, supply }); else unmatched.push(product);
+    }
+    setLinkPlan({ matches, unmatched });
+  };
+
+  const handleLinkMenuItems = async () => {
+    if (!linkPlan || linking) return;
+    setLinking(true);
+    let linked = 0;
+    for (const { product, supply } of linkPlan.matches) {
+      try {
+        await api.put(`/recipes/product/${product.id}`, {
+          yield_quantity: 1,
+          is_active: false,
+          items: [{ supply_id: supply.id, quantity: supply.pour_size ?? 1, unit: supply.base_unit }],
+        });
+        linked += 1;
+      } catch { /* the rest are still linked; the count below shows how many worked */ }
+    }
+    setLinking(false);
+    setLinkPlan(null);
+    toast.success(t('linkMenuDone', { count: linked }));
+    refresh();
   };
 
   const handleRecordMovement = async (e: React.FormEvent) => {
@@ -407,11 +513,13 @@ export default function InventoryPage() {
   };
 
   const orderLine = (item: OrderListItem) => {
-    if (item.order_quantity === null) return `${item.name}: ${t('orderListNeedTarget')}`;
+    const shown = item.vendor_item_name || item.name;
+    const label = item.product_number ? `${item.product_number} ${shown}` : shown;
+    if (item.order_quantity === null) return `${label}: ${t('orderListNeedTarget')}`;
     const amount = item.packs !== null
       ? `${fmtNum(item.packs)} ${item.pack_label || t('packs')} (${fmtNum(item.order_quantity)} ${item.base_unit})`
       : `${fmtNum(item.order_quantity)} ${item.base_unit}`;
-    return `${item.name}: ${amount}`;
+    return `${label}: ${amount}`;
   };
 
   const copyOrderList = async () => {
@@ -511,6 +619,7 @@ export default function InventoryPage() {
         <h1 className="text-2xl font-bold text-foreground">{tNav('inventory')}</h1>
         {tab === 'supplies' && (
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={openLinkMenuItems}><UtensilsCrossed size={16} className="me-1" /> {t('linkMenuItems')}</Button>
             <Button variant="outline" onClick={openOrderList}><ClipboardList size={16} className="me-1" /> {t('orderList')}</Button>
             <Button variant="outline" onClick={openImport}><Upload size={16} className="me-1" /> {t('importIngredients')}</Button>
             <Button variant="outline" onClick={openDelivery}><Truck size={16} className="me-1" /> {t('receiveDelivery')}</Button>
@@ -560,8 +669,10 @@ export default function InventoryPage() {
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('productNumber')}</th>
                   <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('supplyName')}</th>
                   <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('group')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('vendor')}</th>
                   <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('baseUnit')}</th>
                   <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('stock')}</th>
                   <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('threshold')}</th>
@@ -575,6 +686,7 @@ export default function InventoryPage() {
               <tbody className="divide-y divide-border">
                 {supplies.map((s) => (
                   <tr key={s.id} className="hover:bg-muted">
+                    <td className="p-4 text-xs font-mono text-muted-foreground whitespace-nowrap">{s.product_number || '—'}</td>
                     <td className="p-4 font-medium text-foreground">
                       <div className="flex items-center gap-3">
                         {(() => {
@@ -592,18 +704,27 @@ export default function InventoryPage() {
                       </div>
                     </td>
                     <td className="p-4 text-sm text-muted-foreground">{s.group_name || '—'}</td>
+                    <td className="p-4 text-sm text-muted-foreground">{(() => {
+                      const list = s.vendors ?? [];
+                      if (list.length === 0) return '—';
+                      const detail = list.map((v) => `${v.vendor_name ?? ''}${v.vendor_item_name ? ` — ${v.vendor_item_name}` : ''}${v.unit_cost !== null && v.pack_size ? ` — ${fmtNum(Math.round(v.unit_cost * v.pack_size * 100) / 100)}${v.pack_label ? ` / ${v.pack_label}` : ''}` : ''}`).join('\n');
+                      return <span title={detail}>{list[0].vendor_name}{list.length > 1 ? ` ${t('alsoVendors', { count: list.length - 1 })}` : ''}</span>;
+                    })()}</td>
                     <td className="p-4 text-center text-sm text-muted-foreground">{s.base_unit}</td>
                     <td className={`p-4 text-end text-sm font-medium ${Number(s.stock_quantity) < 0 ? 'text-red-600' : ''}`}>{fmtNum(Number(s.stock_quantity))} {s.base_unit}</td>
                     <td className="p-4 text-end text-sm text-muted-foreground">
                       {s.low_stock_threshold === null ? '—' : fmtNum(Number(s.low_stock_threshold))}
                     </td>
                     <td className="p-4 text-end text-sm text-muted-foreground">
-                      {s.unit_cost === null ? '—' : fmtNum(Number(s.unit_cost))}
+                      {(s.current_unit_cost ?? s.unit_cost) === null ? '—' : fmtNum(Number(s.current_unit_cost ?? s.unit_cost))}
+                      {s.next_unit_cost != null && (
+                        <span className="block text-xs" title={t('nextPrice')}>→ {fmtNum(Number(s.next_unit_cost))}</span>
+                      )}
                     </td>
                     <td className="p-4 text-end text-sm text-muted-foreground">
-                      {s.unit_cost === null || !s.pack_size
+                      {(s.current_unit_cost ?? s.unit_cost) === null || !s.pack_size
                         ? '—'
-                        : `${fmtNum(Math.round(Number(s.unit_cost) * Number(s.pack_size) * 100) / 100)}${s.pack_label ? ` / ${s.pack_label}` : ''}`}
+                        : `${fmtNum(Math.round(Number(s.current_unit_cost ?? s.unit_cost) * Number(s.pack_size) * 100) / 100)}${s.pack_label ? ` / ${s.pack_label}` : ''}`}
                     </td>
                     <td className="p-4 text-end text-sm text-muted-foreground">
                       {s.pour_size === null ? '—' : `${fmtNum(Number(s.pour_size))} ${s.base_unit}`}
@@ -619,6 +740,11 @@ export default function InventoryPage() {
                         }} title={t('recordMovement')}>
                           <ArrowDownCircle size={14} />
                         </Button>
+                        {canAddToMenu && s.ingredient_only !== 1 && !onMenuSupplyIds.has(s.id) && !(s.group_name && onMenuGroups.has(s.group_name.toLowerCase())) && (
+                          <Button variant="ghost" size="sm" onClick={() => setMenuSupply(s)} title={t('addToMenu')} aria-label={t('addToMenu')}>
+                            <UtensilsCrossed size={14} />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="sm" onClick={() => openEditSupply(s)} title={tCommon('edit')}>
                           <Edit size={14} />
                         </Button>
@@ -735,12 +861,52 @@ export default function InventoryPage() {
               <datalist id="supply-groups">
                 {groupNames.map((g) => <option key={g} value={g} />)}
               </datalist>
-              <select value={supplyForm.vendor_id}
-                onChange={(e) => setSupplyForm({ ...supplyForm, vendor_id: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
-                <option value="">{t('noVendor')}</option>
-                {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={supplyForm.ingredient_only}
+                  onChange={(e) => setSupplyForm({ ...supplyForm, ingredient_only: e.target.checked })} />
+                {t('ingredientOnly')}
+              </label>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">{t('vendorsTitle')}</p>
+                {vendorLines.map((line, index) => (
+                  <div key={index} className="border rounded-lg p-2 space-y-2">
+                    <div className="flex gap-2">
+                      <select value={line.vendor_id}
+                        onChange={(e) => setVendorLines(vendorLines.map((l, i) => (i === index ? { ...l, vendor_id: e.target.value } : l)))}
+                        className="flex-1 min-w-0 px-2 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
+                        <option value="">{t('noVendor')}</option>
+                        {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                      </select>
+                      <label className="flex items-center gap-1 text-xs whitespace-nowrap">
+                        <input type="radio" name="preferred-vendor" checked={line.is_preferred}
+                          onChange={() => setVendorLines(vendorLines.map((l, i) => ({ ...l, is_preferred: i === index })))} />
+                        {t('preferredVendor')}
+                      </label>
+                      <button type="button" onClick={() => setVendorLines(vendorLines.filter((_, i) => i !== index))} aria-label={tCommon('delete')}>
+                        <X size={16} className="text-gray-400" />
+                      </button>
+                    </div>
+                    <input type="text" placeholder={t('vendorItemName')} value={line.vendor_item_name}
+                      onChange={(e) => setVendorLines(vendorLines.map((l, i) => (i === index ? { ...l, vendor_item_name: e.target.value } : l)))}
+                      className="w-full px-2 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                    <div className="flex gap-2">
+                      <input type="number" step="any" min="0" placeholder={t('packSize')} value={line.pack_size}
+                        onChange={(e) => setVendorLines(vendorLines.map((l, i) => (i === index ? { ...l, pack_size: e.target.value } : l)))}
+                        className="flex-1 min-w-0 px-2 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                      <input type="text" placeholder={t('packLabel')} value={line.pack_label}
+                        onChange={(e) => setVendorLines(vendorLines.map((l, i) => (i === index ? { ...l, pack_label: e.target.value } : l)))}
+                        className="flex-1 min-w-0 px-2 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                      <input type="number" step="any" min="0" placeholder={t('packPrice')} value={line.pack_price}
+                        onChange={(e) => setVendorLines(vendorLines.map((l, i) => (i === index ? { ...l, pack_price: e.target.value } : l)))}
+                        className="flex-1 min-w-0 px-2 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                    </div>
+                  </div>
+                ))}
+                <Button type="button" variant="outline" size="sm"
+                  onClick={() => setVendorLines([...vendorLines, { vendor_id: '', vendor_item_name: '', pack_size: '', pack_label: '', pack_price: '', is_preferred: vendorLines.length === 0 }])}>
+                  <Plus size={14} className="me-1" /> {t('addVendorLine')}
+                </Button>
+              </div>
               <Button type="submit" className="w-full">{tCommon('save')}</Button>
             </form>
           </div>
@@ -934,6 +1100,51 @@ export default function InventoryPage() {
                 required={movementForm.movement_type === 'adjustment' || movementForm.movement_type === 'waste'} />
               <Button type="submit" className="w-full">{tCommon('save')}</Button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {menuSupply && (
+        <MenuItemEditor
+          key={menuSupply.id}
+          productId="new"
+          recipe={null}
+          prefill={{ name: menuSupply.group_name || menuSupply.name, supply_id: menuSupply.id, group_name: menuSupply.group_name, quantity: menuSupply.pour_size ?? 1, unit: menuSupply.base_unit }}
+          products={products}
+          categories={categories}
+          supplies={supplies}
+          taxCategories={taxCategories}
+          canEditProduct={canAddToMenu}
+          canEditRecipe={tenantCan(currentTenant, 'supplies.manage')}
+          onClose={() => setMenuSupply(null)}
+          onSaved={() => { setMenuSupply(null); refresh(); }}
+        />
+      )}
+
+      {linkPlan && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">{t('linkMenuItems')}</h2>
+              <button onClick={() => setLinkPlan(null)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-3">{t('linkMenuHelp')}</p>
+            <ul className="max-h-48 overflow-y-auto text-sm divide-y divide-border mb-3">
+              {linkPlan.matches.map(({ product, supply }) => (
+                <li key={product.id} className="py-1">{product.name} → {fmtNum(supply.pour_size ?? 1)} {supply.base_unit}</li>
+              ))}
+            </ul>
+            {linkPlan.unmatched.length > 0 && (
+              <div className="mb-4">
+                <p className="text-sm text-amber-600">{t('linkMenuUnmatched', { count: linkPlan.unmatched.length })}</p>
+                <p className="max-h-24 overflow-y-auto text-xs text-muted-foreground">{linkPlan.unmatched.map((p) => p.name).join(', ')}</p>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <Button onClick={handleLinkMenuItems} disabled={linking || linkPlan.matches.length === 0}>
+                {t('linkMenuConfirm', { count: linkPlan.matches.length })}
+              </Button>
+            </div>
           </div>
         </div>
       )}

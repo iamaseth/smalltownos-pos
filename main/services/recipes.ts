@@ -1,3 +1,4 @@
+import { supplyCostInUse } from './supply-cost';
 import { randomBytes } from 'crypto';
 import { getDatabase, now, withTxn } from '../db';
 import {
@@ -119,6 +120,7 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
       s.name AS supply_name,
       s.base_unit,
       s.unit_cost,
+      s.stock_quantity,
       ri.quantity,
       ri.unit
     FROM recipe_items ri
@@ -131,16 +133,19 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
     supply_name: string;
     base_unit: SupplyUnit;
     unit_cost: number | null;
+    stock_quantity: number;
     quantity: number;
     unit: SupplyUnit;
   }[];
   return rows.map((row) => {
     const current = row.group_name ? groupMembersInUseOrder(db, row.group_name)[0] : undefined;
     const resolved = current
-      ? { ...row, supply_id: current.id, supply_name: current.name, base_unit: current.base_unit, unit_cost: current.unit_cost }
+      ? { ...row, supply_id: current.id, supply_name: current.name, base_unit: current.base_unit, unit_cost: current.unit_cost, stock_quantity: current.stock_quantity }
       : row;
+    const { stock_quantity: stockOnHand, ...component } = resolved;
     return {
-      ...resolved,
+      ...component,
+      unit_cost: supplyCostInUse(db, resolved.supply_id, stockOnHand, resolved.unit_cost).current,
       quantity_in_base: convertQuantity(resolved.quantity, resolved.unit, resolved.base_unit),
     };
   });

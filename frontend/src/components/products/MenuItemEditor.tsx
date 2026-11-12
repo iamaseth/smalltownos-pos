@@ -131,11 +131,12 @@ export interface MenuItemEditorProps {
   onClose: () => void;
   onSaved: () => void;
   onOpenAdvanced?: (productId: string) => void;
+  prefill?: { name: string; supply_id: string; group_name?: string | null; quantity: number; unit: SupplyUnit };
 }
 
 export default function MenuItemEditor({
   productId, recipe, products, categories, supplies, taxCategories,
-  canEditProduct, canEditRecipe, onClose, onSaved, onOpenAdvanced,
+  canEditProduct, canEditRecipe, onClose, onSaved, onOpenAdvanced, prefill,
 }: MenuItemEditorProps) {
   const t = useTranslations('inventory');
   const tCommon = useTranslations('common');
@@ -145,10 +146,12 @@ export default function MenuItemEditor({
   const isNew = productId === 'new';
   const [form, setForm] = useState<{ yield_quantity: string; dish: DishForm; items: LineForm[] }>(() => ({
     yield_quantity: recipe ? String(recipe.yield_quantity) : '1',
-    dish: dishFromProduct(products.find((p) => p.id === productId)),
+    dish: prefill ? { ...emptyDish, name: prefill.name } : dishFromProduct(products.find((p) => p.id === productId)),
     items: recipe
       ? recipe.items.map((item) => ({ supply_id: item.supply_id, group_name: item.group_name ?? '', quantity: String(item.quantity), unit: item.unit }))
-      : [],
+      : prefill
+        ? [{ supply_id: prefill.supply_id, group_name: prefill.group_name ?? '', quantity: String(prefill.quantity), unit: prefill.unit }]
+        : [],
   }));
   const [aiBusy, setAiBusy] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);

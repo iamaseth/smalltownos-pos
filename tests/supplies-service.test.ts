@@ -19,7 +19,7 @@ const {
 } = require('./helpers/test-setup');
 const {
   applySupplyStockChange, createSupply, getSupply, listSupplies, listSupplyMovements, recordSupplyMovement,
-  softDeleteSupply, updateSupply, SupplyServiceError,
+  softDeleteSupply, updateSupply, SupplyServiceError, setSupplyVendors, listSupplyVendors, buildOrderList,
 } = require('../main/services/supplies');
 const { saveRecipe } = require('../main/services/recipes');
 const { convertQuantity } = require('../main/services/units');
@@ -190,6 +190,42 @@ async function main() {
   assertEqual(updated.name, 'Espresso beans', 'update renames supply');
   assertEqual(updated.base_unit, 'kg', 'update leaves base unit unchanged');
   assertEqual(updated.low_stock_threshold, null, 'update can clear threshold');
+
+  const buns = createSupply(db, { name: 'Burger bun', baseUnit: 'each', ingredientOnly: true, actorUserId: actor });
+  assertEqual(buns.ingredient_only, 1, 'create can mark a supply ingredient-only');
+  assertEqual(createSupply(db, { name: 'Coke can', baseUnit: 'each', actorUserId: actor }).ingredient_only, 0, 'supplies default to sellable');
+  assertEqual(updateSupply(db, buns.id, { name: 'Burger bun' }).ingredient_only, 1, 'update without the flag keeps it');
+  assertEqual(updateSupply(db, buns.id, { ingredientOnly: false }).ingredient_only, 0, 'update can clear ingredient-only');
+
+  assertEqual(/^(.*)S\d{4}$/.test(coffee.product_number ?? ''), true, 'create assigns a product number');
+  assertEqual(new Set([coffee.product_number, buns.product_number]).size, 2, 'product numbers are unique');
+  const numberBefore = coffee.product_number;
+  assertEqual(updateSupply(db, coffee.id, { name: 'Coffee beans (renamed)' }).product_number, numberBefore, 'rename keeps the product number');
+  assertEqual(listSupplies(db, { search: numberBefore as string }).some((r) => r.id === coffee.id), true, 'search finds a supply by product number');
+
+  // ── Several vendors per supply ──
+  const ts = '2026-01-01T00:00:00.000Z';
+  db.prepare("INSERT INTO vendors (id, name, is_active, created_at, updated_at) VALUES ('ven_a', 'Chhay', 1, ?, ?), ('ven_b', 'Kampot Wine Co', 1, ?, ?)").run(ts, ts, ts, ts);
+  const wine = createSupply(db, { name: 'House white', baseUnit: 'ml', lowStockThreshold: 5000, orderUpTo: 9000, actorUserId: actor });
+  assertEqual(listSupplyVendors(db, wine.id).length, 0, 'a new supply has no vendors');
+  const vendors = setSupplyVendors(db, wine.id, [
+    { vendorId: 'ven_a', vendorItemName: 'Chardonnay 750', packSize: 750, packLabel: 'bottle', packPrice: 9 },
+    { vendorId: 'ven_b', vendorItemName: 'Sauv Blanc 0.75L', packSize: 750, packLabel: 'bottle', packPrice: 7.5, isPreferred: true },
+  ]);
+  assertEqual(vendors.length, 2, 'both vendors are stored');
+  assertEqual(vendors[0].vendor_id, 'ven_b', 'the preferred vendor is listed first');
+  assertEqual(vendors[0].vendor_item_name, 'Sauv Blanc 0.75L', 'each vendor keeps its own spelling');
+  assertEqual(vendors.find((v: any) => v.vendor_id === 'ven_a').unit_cost, 9 / 750, 'each vendor keeps its own price');
+  assertEqual(getSupply(db, wine.id).vendor_id, 'ven_b', 'the supply follows the preferred vendor');
+  assertEqual(getSupply(db, wine.id).unit_cost, 7.5 / 750, 'an empty supply cost is filled from the preferred vendor');
+  const orderItem = buildOrderList(db).groups.find((g: any) => g.vendor_id === 'ven_b')?.items.find((i: any) => i.supply_id === wine.id);
+  assertEqual(orderItem?.vendor_item_name, 'Sauv Blanc 0.75L', 'the order list uses the preferred vendor spelling');
+  assertEqual(orderItem?.estimated_cost, 7.5 * 12, 'the order list prices with the preferred vendor price');
+  expectServiceError(() => setSupplyVendors(db, wine.id, [{ vendorId: 'ven_a' }, { vendorId: 'ven_a' }]), 400, 'duplicate vendors are rejected');
+  expectServiceError(() => setSupplyVendors(db, wine.id, [{ vendorId: 'nope' }]), 400, 'unknown vendors are rejected');
+  assertEqual(setSupplyVendors(db, wine.id, [{ vendorId: 'ven_a' }]).length, 1, 'removed vendors are dropped');
+  assertEqual(getSupply(db, wine.id).vendor_id, 'ven_a', 'removing the preferred vendor moves the preference');
+  assertEqual(listSupplies(db, { search: 'House white' })[0].vendors?.length, 1, 'the supply list carries its vendors');
 
   // conversion helper still available
   assertEqual(convertQuantity(1, 'kg', 'g'), 1000, 'units helper re-export path works');

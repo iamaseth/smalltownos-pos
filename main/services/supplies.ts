@@ -1,3 +1,5 @@
+import { supplyCostInUse } from './supply-cost';
+import { nextSupplyProductNumber } from '../lib/supply-product-number';
 import { randomBytes } from 'crypto';
 import { getDatabase, now, withTxn } from '../db';
 import {
@@ -32,11 +34,16 @@ export interface SupplyRecord {
   order_up_to: number | null;
   vendor_id: string | null;
   group_name: string | null;
+  ingredient_only: number;
+  product_number: string | null;
   is_active: number;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
   is_low_stock?: number;
+  vendors?: SupplyVendorRecord[];
+  current_unit_cost?: number | null;
+  next_unit_cost?: number | null;
 }
 
 export interface SupplyCostingInput {
@@ -66,6 +73,27 @@ export interface SupplyMovement {
   created_at: string;
 }
 
+export interface SupplyVendorRecord {
+  id: string;
+  supply_id: string;
+  vendor_id: string;
+  vendor_name: string | null;
+  vendor_item_name: string | null;
+  pack_size: number | null;
+  pack_label: string | null;
+  unit_cost: number | null;
+  is_preferred: number;
+}
+
+export interface SupplyVendorInput {
+  vendorId: string;
+  vendorItemName?: string | null;
+  packSize?: number | null;
+  packLabel?: string | null;
+  packPrice?: number | null;
+  isPreferred?: boolean;
+}
+
 export interface CreateSupplyInput extends SupplyCostingInput {
   id?: string;
   name: string;
@@ -73,6 +101,7 @@ export interface CreateSupplyInput extends SupplyCostingInput {
   stockQuantity?: number;
   lowStockThreshold?: number | null;
   isActive?: boolean;
+  ingredientOnly?: boolean;
   actorUserId?: string;
 }
 
@@ -155,6 +184,99 @@ function resolveCosting(
   };
 }
 
+function vendorRowsFor(db: ReturnType<typeof getDatabase>, supplyIds: string[]): Map<string, SupplyVendorRecord[]> {
+  const map = new Map<string, SupplyVendorRecord[]>();
+  if (supplyIds.length === 0) return map;
+  const rows = db.prepare(`
+    SELECT sv.id, sv.supply_id, sv.vendor_id, v.name AS vendor_name, sv.vendor_item_name, sv.pack_size, sv.pack_label, sv.unit_cost,
+      CASE WHEN s.vendor_id = sv.vendor_id THEN 1 ELSE 0 END AS is_preferred
+    FROM supply_vendors sv
+    JOIN supplies s ON s.id = sv.supply_id
+    LEFT JOIN vendors v ON v.id = sv.vendor_id
+    WHERE s.deleted_at IS NULL AND (v.id IS NULL OR v.deleted_at IS NULL)
+    ORDER BY is_preferred DESC, v.name COLLATE NOCASE
+  `).all() as SupplyVendorRecord[];
+  const wanted = new Set(supplyIds);
+  for (const row of rows) {
+    if (!wanted.has(row.supply_id)) continue;
+    const list = map.get(row.supply_id) ?? [];
+    list.push(row);
+    map.set(row.supply_id, list);
+  }
+  return map;
+}
+
+export function listSupplyVendors(db: ReturnType<typeof getDatabase>, supplyId: string): SupplyVendorRecord[] {
+  getSupply(db, supplyId);
+  return vendorRowsFor(db, [supplyId]).get(supplyId) ?? [];
+}
+
+/** Makes sure the supply's main vendor has a row, copying the supply's pack and cost the first time. */
+function ensurePreferredVendorRow(db: ReturnType<typeof getDatabase>, supplyId: string): void {
+  const supply = db.prepare('SELECT id, vendor_id, pack_size, pack_label, unit_cost FROM supplies WHERE id = ?').get(supplyId) as
+    Pick<SupplyRecord, 'id' | 'vendor_id' | 'pack_size' | 'pack_label' | 'unit_cost'> | undefined;
+  if (!supply?.vendor_id) return;
+  const timestamp = now();
+  db.prepare(`
+    INSERT OR IGNORE INTO supply_vendors (id, supply_id, vendor_id, pack_size, pack_label, unit_cost, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(`sv_${randomBytes(8).toString('hex')}`, supply.id, supply.vendor_id, supply.pack_size, supply.pack_label, supply.unit_cost, timestamp, timestamp);
+}
+
+export function setSupplyVendors(
+  db: ReturnType<typeof getDatabase>,
+  supplyId: string,
+  entries: SupplyVendorInput[],
+): SupplyVendorRecord[] {
+  const supply = getSupply(db, supplyId);
+  if (!Array.isArray(entries)) throw new SupplyServiceError(400, 'vendors must be a list');
+  if (entries.length > 20) throw new SupplyServiceError(400, 'too many vendors for one supply');
+  const seen = new Set<string>();
+  const clean = entries.map((entry) => {
+    const vendorId = String(entry?.vendorId ?? '').trim();
+    if (!vendorId) throw new SupplyServiceError(400, 'vendor_id is required');
+    if (seen.has(vendorId)) throw new SupplyServiceError(400, 'duplicate vendor for this supply');
+    seen.add(vendorId);
+    assertVendorExists(db, vendorId);
+    const itemName = entry.vendorItemName === undefined || entry.vendorItemName === null ? '' : String(entry.vendorItemName).trim();
+    if (itemName.length > 200) throw new SupplyServiceError(400, 'vendor item name is too long');
+    const packSize = optionalNonNegative(entry.packSize, 'pack_size', true) ?? null;
+    const packPrice = optionalNonNegative(entry.packPrice, 'pack_price') ?? null;
+    const packLabel = entry.packLabel === undefined || entry.packLabel === null || String(entry.packLabel).trim() === ''
+      ? null
+      : String(entry.packLabel).trim().slice(0, 60);
+    const unitCost = packPrice !== null && packSize !== null ? packPrice / packSize : null;
+    return { vendorId, itemName: itemName || null, packSize, packLabel, unitCost, preferred: entry.isPreferred === true };
+  });
+  const preferredId = (clean.find((entry) => entry.preferred) ?? clean[0])?.vendorId ?? null;
+
+  withTxn(() => {
+    const timestamp = now();
+    const keep = new Set(clean.map((entry) => entry.vendorId));
+    const existing = db.prepare('SELECT vendor_id FROM supply_vendors WHERE supply_id = ?').all(supplyId) as Array<{ vendor_id: string }>;
+    for (const row of existing) {
+      if (!keep.has(row.vendor_id)) db.prepare('DELETE FROM supply_vendors WHERE supply_id = ? AND vendor_id = ?').run(supplyId, row.vendor_id);
+    }
+    for (const entry of clean) {
+      db.prepare(`
+        INSERT INTO supply_vendors (id, supply_id, vendor_id, vendor_item_name, pack_size, pack_label, unit_cost, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (supply_id, vendor_id) DO UPDATE SET
+          vendor_item_name = excluded.vendor_item_name, pack_size = excluded.pack_size, pack_label = excluded.pack_label,
+          unit_cost = excluded.unit_cost, updated_at = excluded.updated_at
+      `).run(`sv_${randomBytes(8).toString('hex')}`, supplyId, entry.vendorId, entry.itemName, entry.packSize, entry.packLabel, entry.unitCost, timestamp, timestamp);
+    }
+    const preferred = clean.find((entry) => entry.vendorId === preferredId);
+    db.prepare(`
+      UPDATE supplies SET vendor_id = ?,
+        unit_cost = COALESCE(unit_cost, ?), pack_size = COALESCE(pack_size, ?), pack_label = COALESCE(pack_label, ?),
+        updated_at = ?
+      WHERE id = ?
+    `).run(preferredId, preferred?.unitCost ?? null, preferred?.packSize ?? null, preferred?.packLabel ?? null, timestamp, supply.id);
+  });
+  return vendorRowsFor(db, [supplyId]).get(supplyId) ?? [];
+}
+
 function canonicalGroupName(db: ReturnType<typeof getDatabase>, groupName: string | null, excludeId: string | null): string | null {
   if (groupName === null) return null;
   const existing = db.prepare(`
@@ -202,8 +324,8 @@ export function listSupplies(
   const params: (string | number)[] = [];
   if (!filters.includeInactive) conditions.push('is_active = 1');
   if (filters.search) {
-    conditions.push('name LIKE ?');
-    params.push(`%${filters.search}%`);
+    conditions.push('(name LIKE ? OR product_number LIKE ?)');
+    params.push(`%${filters.search}%`, `%${filters.search}%`);
   }
   let sql = `
     SELECT *,
@@ -229,7 +351,15 @@ export function listSupplies(
       ORDER BY name COLLATE NOCASE
     `;
   }
-  return db.prepare(sql).all(...params) as SupplyRecord[];
+  const supplies = db.prepare(sql).all(...params) as SupplyRecord[];
+  const vendorRows = vendorRowsFor(db, supplies.map((row) => row.id));
+  for (const supply of supplies) {
+    supply.vendors = vendorRows.get(supply.id) ?? [];
+    const cost = supplyCostInUse(db, supply.id, supply.stock_quantity, supply.unit_cost);
+    supply.current_unit_cost = cost.current;
+    supply.next_unit_cost = cost.next;
+  }
+  return supplies;
 }
 
 export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSupplyInput): SupplyRecord {
@@ -258,14 +388,16 @@ export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSu
       INSERT INTO supplies (
         id, name, base_unit, stock_quantity, low_stock_threshold,
         unit_cost, pack_size, pack_label, pour_size, order_up_to, vendor_id, group_name,
-        is_active, created_at, updated_at
+        ingredient_only, product_number, is_active, created_at, updated_at
       )
-      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, name, baseUnit, lowStockThreshold,
       costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id, costing.group_name,
-      isActive, timestamp, timestamp,
+      input.ingredientOnly ? 1 : 0, nextSupplyProductNumber(db), isActive, timestamp, timestamp,
     );
+
+    ensurePreferredVendorRow(db, id);
 
     if (stockQuantity !== 0) {
       if (!input.actorUserId) throw new SupplyServiceError(400, 'actor_user_id is required for opening stock');
@@ -289,7 +421,7 @@ export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSu
 export function updateSupply(
   db: ReturnType<typeof getDatabase>,
   id: string,
-  input: { name?: string; isActive?: boolean; lowStockThreshold?: number | null } & SupplyCostingInput,
+  input: { name?: string; isActive?: boolean; ingredientOnly?: boolean; lowStockThreshold?: number | null } & SupplyCostingInput,
 ): SupplyRecord {
   const supply = getSupply(db, id);
   const name = input.name === undefined ? supply.name : String(input.name).trim();
@@ -312,15 +444,16 @@ export function updateSupply(
   assertGroupUnit(db, costing.group_name, supply.base_unit, id);
   db.prepare(`
     UPDATE supplies SET
-      name = ?, low_stock_threshold = ?, is_active = ?,
+      name = ?, low_stock_threshold = ?, is_active = ?, ingredient_only = ?,
       unit_cost = ?, pack_size = ?, pack_label = ?, pour_size = ?, order_up_to = ?, vendor_id = ?, group_name = ?,
       updated_at = ?
     WHERE id = ? AND deleted_at IS NULL
   `).run(
-    name, lowStockThreshold, isActive,
+    name, lowStockThreshold, isActive, input.ingredientOnly === undefined ? supply.ingredient_only : (input.ingredientOnly ? 1 : 0),
     costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id, costing.group_name,
     now(), id,
   );
+  ensurePreferredVendorRow(db, id);
   return getSupply(db, id);
 }
 
@@ -596,6 +729,7 @@ export function receiveDelivery(
 
       db.prepare('UPDATE supplies SET unit_cost = ?, vendor_id = COALESCE(vendor_id, ?), updated_at = ? WHERE id = ?')
         .run(averageCost, vendorId, timestamp, supply.id);
+      ensurePreferredVendorRow(db, supply.id);
 
       results.push({
         supply_id: supply.id,
@@ -634,7 +768,9 @@ const MAX_IMPORT_ROWS = 500;
 
 export interface OrderListItem {
   supply_id: string;
+  product_number: string | null;
   name: string;
+  vendor_item_name: string | null;
   base_unit: SupplyUnit;
   stock_quantity: number;
   order_up_to: number | null;
@@ -656,14 +792,23 @@ export interface OrderListGroup {
 
 export function buildOrderList(db: ReturnType<typeof getDatabase>): { groups: OrderListGroup[] } {
   const rows = db.prepare(`
-    SELECT s.*, v.name AS vendor_name
+    SELECT s.*, v.name AS vendor_name,
+      sv.vendor_item_name AS vendor_item_name, sv.pack_size AS vendor_pack_size,
+      sv.pack_label AS vendor_pack_label, sv.unit_cost AS vendor_unit_cost
     FROM supplies s
     LEFT JOIN vendors v ON v.id = s.vendor_id AND v.deleted_at IS NULL
+    LEFT JOIN supply_vendors sv ON sv.supply_id = s.id AND sv.vendor_id = s.vendor_id
     WHERE s.deleted_at IS NULL AND s.is_active = 1
       AND s.low_stock_threshold IS NOT NULL
       AND s.stock_quantity <= s.low_stock_threshold
     ORDER BY s.name COLLATE NOCASE
-  `).all() as Array<SupplyRecord & { vendor_name: string | null }>;
+  `).all() as Array<SupplyRecord & {
+    vendor_name: string | null;
+    vendor_item_name: string | null;
+    vendor_pack_size: number | null;
+    vendor_pack_label: string | null;
+    vendor_unit_cost: number | null;
+  }>;
 
   const groups = new Map<string, OrderListGroup>();
   for (const row of rows) {
@@ -671,14 +816,17 @@ export function buildOrderList(db: ReturnType<typeof getDatabase>): { groups: Or
     const need = row.order_up_to !== null && row.order_up_to > onHand
       ? roundQuantity(row.order_up_to - onHand)
       : null;
+    const packSize = row.vendor_pack_size ?? row.pack_size;
+    const packLabel = row.vendor_pack_label ?? row.pack_label;
+    const unitCost = row.vendor_unit_cost ?? row.unit_cost;
     let packs: number | null = null;
     let orderQuantity = need;
-    if (need !== null && row.pack_size !== null && row.pack_size > 0) {
-      packs = Math.ceil(roundQuantity(need / row.pack_size));
-      orderQuantity = roundQuantity(packs * row.pack_size);
+    if (need !== null && packSize !== null && packSize > 0) {
+      packs = Math.ceil(roundQuantity(need / packSize));
+      orderQuantity = roundQuantity(packs * packSize);
     }
-    const estimatedCost = orderQuantity !== null && row.unit_cost !== null
-      ? Math.round(orderQuantity * row.unit_cost * 100) / 100
+    const estimatedCost = orderQuantity !== null && unitCost !== null
+      ? Math.round(orderQuantity * unitCost * 100) / 100
       : null;
     const key = row.vendor_name ? (row.vendor_id as string) : '';
     let group = groups.get(key);
@@ -694,15 +842,17 @@ export function buildOrderList(db: ReturnType<typeof getDatabase>): { groups: Or
     }
     group.items.push({
       supply_id: row.id,
+      product_number: row.product_number,
       name: row.name,
+      vendor_item_name: row.vendor_item_name,
       base_unit: row.base_unit,
       stock_quantity: row.stock_quantity,
       order_up_to: row.order_up_to,
-      pack_size: row.pack_size,
-      pack_label: row.pack_label,
+      pack_size: packSize,
+      pack_label: packLabel,
       packs,
       order_quantity: orderQuantity,
-      unit_cost: row.unit_cost,
+      unit_cost: unitCost,
       estimated_cost: estimatedCost,
     });
     if (estimatedCost === null) group.missing_cost_count += 1;
