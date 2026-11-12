@@ -144,6 +144,8 @@ interface DishForm {
 
 const emptyDish: DishForm = { name: '', category_id: '', price: '', image: null, imageTouched: false, is_active: false, sku: '', barcode: '', description: '', tax_category_id: '' };
 
+const photoKey = (name: string) => name.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
+
 const nextSku = (products: Product[]): string | null => {
   const groups = new Map<string, { count: number; max: number; width: number }>();
   for (const p of products) {
@@ -265,6 +267,11 @@ export default function InventoryPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const productByName = new Map<string, Product>();
+  for (const p of products) {
+    const key = photoKey(p.name);
+    if (!productByName.get(key)?.has_image) productByName.set(key, p);
+  }
   const [taxCategories, setTaxCategories] = useState<{ id: string; label: string }[]>([]);
   const [aiPhotos, setAiPhotos] = useState<{ image_url: string; thumb: string; title: string }[]>([]);
   const [aiMissing, setAiMissing] = useState<string[]>([]);
@@ -390,7 +397,7 @@ export default function InventoryPage() {
   }, [search, lowStockOnly, includeInactive, refreshKey, canManage]);
 
   useEffect(() => {
-    if (!canManage || tab !== 'recipes') return;
+    if (!canManage || tab === 'movements') return;
     const controller = new AbortController();
     Promise.all([
       api.get('/recipes', { signal: controller.signal }),
@@ -1005,10 +1012,20 @@ export default function InventoryPage() {
                 {supplies.map((s) => (
                   <tr key={s.id} className="hover:bg-muted">
                     <td className="p-4 font-medium text-foreground">
-                      {s.name}
-                      {s.is_low_stock === 1 && (
-                        <Badge variant="destructive" className="ms-2">{t('lowStock')}</Badge>
-                      )}
+                      <div className="flex items-center gap-3">
+                        {(() => {
+                          const match = productByName.get(photoKey(s.name));
+                          return match?.has_image
+                            ? <img src={`${api.defaults.baseURL}/products/${match.id}/image?t=${match.updated_at ?? ''}`} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0 border border-border" loading="lazy" />
+                            : <div className="w-10 h-10 rounded-lg bg-muted shrink-0 border border-border" />;
+                        })()}
+                        <span>
+                          {s.name}
+                          {s.is_low_stock === 1 && (
+                            <Badge variant="destructive" className="ms-2">{t('lowStock')}</Badge>
+                          )}
+                        </span>
+                      </div>
                     </td>
                     <td className="p-4 text-sm text-muted-foreground">{s.group_name || '—'}</td>
                     <td className="p-4 text-center text-sm text-muted-foreground">{s.base_unit}</td>
