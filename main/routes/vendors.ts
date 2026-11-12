@@ -9,6 +9,9 @@ interface VendorRow {
   id: string;
   name: string;
   phone: string | null;
+  contact_name: string | null;
+  email: string | null;
+  address: string | null;
   notes: string | null;
   is_active: number;
   deleted_at: string | null;
@@ -50,9 +53,9 @@ router.post('/', requirePermission('supplies.manage'), (req: Request, res: Respo
   const id = `ven_${randomBytes(8).toString('hex')}`;
   const timestamp = now();
   db.prepare(`
-    INSERT INTO vendors (id, name, phone, notes, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 1, ?, ?)
-  `).run(id, name, cleanText(body.phone, 60), cleanText(body.notes, 500), timestamp, timestamp);
+    INSERT INTO vendors (id, name, phone, contact_name, email, address, notes, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+  `).run(id, name, cleanText(body.phone, 60), cleanText(body.contact_name, 120), cleanText(body.email, 200), cleanText(body.address, 300), cleanText(body.notes, 500), timestamp, timestamp);
   res.status(201).json({ vendor: getVendor(id) });
 });
 
@@ -66,11 +69,14 @@ router.put('/:id', requirePermission('supplies.manage'), (req: Request, res: Res
   const duplicate = db.prepare('SELECT 1 FROM vendors WHERE deleted_at IS NULL AND id != ? AND name = ? COLLATE NOCASE').get(existing.id, name);
   if (duplicate) return fail(res, 409, 'A vendor with this name already exists');
   db.prepare(`
-    UPDATE vendors SET name = ?, phone = ?, notes = ?, is_active = ?, updated_at = ?
+    UPDATE vendors SET name = ?, phone = ?, contact_name = ?, email = ?, address = ?, notes = ?, is_active = ?, updated_at = ?
     WHERE id = ? AND deleted_at IS NULL
   `).run(
     name,
     body.phone === undefined ? existing.phone : cleanText(body.phone, 60),
+    body.contact_name === undefined ? existing.contact_name : cleanText(body.contact_name, 120),
+    body.email === undefined ? existing.email : cleanText(body.email, 200),
+    body.address === undefined ? existing.address : cleanText(body.address, 300),
     body.notes === undefined ? existing.notes : cleanText(body.notes, 500),
     body.is_active === undefined ? existing.is_active : (body.is_active ? 1 : 0),
     now(),

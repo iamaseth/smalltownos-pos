@@ -223,6 +223,13 @@ async function main() {
   assertEqual(orderItem?.estimated_cost, 7.5 * 12, 'the order list prices with the preferred vendor price');
   expectServiceError(() => setSupplyVendors(db, wine.id, [{ vendorId: 'ven_a' }, { vendorId: 'ven_a' }]), 400, 'duplicate vendors are rejected');
   expectServiceError(() => setSupplyVendors(db, wine.id, [{ vendorId: 'nope' }]), 400, 'unknown vendors are rejected');
+  const coded = setSupplyVendors(db, wine.id, [
+    { vendorId: 'ven_a', vendorItemName: 'Chardonnay 750', vendorSku: 'CH-0750', notes: 'Delivers Tuesdays', isPreferred: true },
+    { vendorId: 'ven_b' },
+  ]);
+  assertEqual(coded[0].vendor_sku, 'CH-0750', 'the vendor product code is stored');
+  assertEqual(coded[0].notes, 'Delivers Tuesdays', 'vendor notes are stored');
+  expectServiceError(() => setSupplyVendors(db, wine.id, [{ vendorId: 'ven_a', vendorSku: 'x'.repeat(101) }]), 400, 'an overlong vendor code is rejected');
   assertEqual(setSupplyVendors(db, wine.id, [{ vendorId: 'ven_a' }]).length, 1, 'removed vendors are dropped');
   assertEqual(getSupply(db, wine.id).vendor_id, 'ven_a', 'removing the preferred vendor moves the preference');
   assertEqual(listSupplies(db, { search: 'House white' })[0].vendors?.length, 1, 'the supply list carries its vendors');

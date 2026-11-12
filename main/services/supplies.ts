@@ -79,6 +79,8 @@ export interface SupplyVendorRecord {
   vendor_id: string;
   vendor_name: string | null;
   vendor_item_name: string | null;
+  vendor_sku: string | null;
+  notes: string | null;
   pack_size: number | null;
   pack_label: string | null;
   unit_cost: number | null;
@@ -88,6 +90,8 @@ export interface SupplyVendorRecord {
 export interface SupplyVendorInput {
   vendorId: string;
   vendorItemName?: string | null;
+  vendorSku?: string | null;
+  notes?: string | null;
   packSize?: number | null;
   packLabel?: string | null;
   packPrice?: number | null;
@@ -188,7 +192,7 @@ function vendorRowsFor(db: ReturnType<typeof getDatabase>, supplyIds: string[]):
   const map = new Map<string, SupplyVendorRecord[]>();
   if (supplyIds.length === 0) return map;
   const rows = db.prepare(`
-    SELECT sv.id, sv.supply_id, sv.vendor_id, v.name AS vendor_name, sv.vendor_item_name, sv.pack_size, sv.pack_label, sv.unit_cost,
+    SELECT sv.id, sv.supply_id, sv.vendor_id, v.name AS vendor_name, sv.vendor_item_name, sv.vendor_sku, sv.notes, sv.pack_size, sv.pack_label, sv.unit_cost,
       CASE WHEN s.vendor_id = sv.vendor_id THEN 1 ELSE 0 END AS is_preferred
     FROM supply_vendors sv
     JOIN supplies s ON s.id = sv.supply_id
@@ -240,13 +244,17 @@ export function setSupplyVendors(
     assertVendorExists(db, vendorId);
     const itemName = entry.vendorItemName === undefined || entry.vendorItemName === null ? '' : String(entry.vendorItemName).trim();
     if (itemName.length > 200) throw new SupplyServiceError(400, 'vendor item name is too long');
+    const vendorSku = entry.vendorSku === undefined || entry.vendorSku === null ? '' : String(entry.vendorSku).trim();
+    if (vendorSku.length > 100) throw new SupplyServiceError(400, 'vendor sku is too long');
+    const notes = entry.notes === undefined || entry.notes === null ? '' : String(entry.notes).trim();
+    if (notes.length > 500) throw new SupplyServiceError(400, 'notes are too long');
     const packSize = optionalNonNegative(entry.packSize, 'pack_size', true) ?? null;
     const packPrice = optionalNonNegative(entry.packPrice, 'pack_price') ?? null;
     const packLabel = entry.packLabel === undefined || entry.packLabel === null || String(entry.packLabel).trim() === ''
       ? null
       : String(entry.packLabel).trim().slice(0, 60);
     const unitCost = packPrice !== null && packSize !== null ? packPrice / packSize : null;
-    return { vendorId, itemName: itemName || null, packSize, packLabel, unitCost, preferred: entry.isPreferred === true };
+    return { vendorId, itemName: itemName || null, vendorSku: vendorSku || null, notes: notes || null, packSize, packLabel, unitCost, preferred: entry.isPreferred === true };
   });
   const preferredId = (clean.find((entry) => entry.preferred) ?? clean[0])?.vendorId ?? null;
 
@@ -259,12 +267,12 @@ export function setSupplyVendors(
     }
     for (const entry of clean) {
       db.prepare(`
-        INSERT INTO supply_vendors (id, supply_id, vendor_id, vendor_item_name, pack_size, pack_label, unit_cost, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO supply_vendors (id, supply_id, vendor_id, vendor_item_name, vendor_sku, notes, pack_size, pack_label, unit_cost, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (supply_id, vendor_id) DO UPDATE SET
-          vendor_item_name = excluded.vendor_item_name, pack_size = excluded.pack_size, pack_label = excluded.pack_label,
+          vendor_item_name = excluded.vendor_item_name, vendor_sku = excluded.vendor_sku, notes = excluded.notes, pack_size = excluded.pack_size, pack_label = excluded.pack_label,
           unit_cost = excluded.unit_cost, updated_at = excluded.updated_at
-      `).run(`sv_${randomBytes(8).toString('hex')}`, supplyId, entry.vendorId, entry.itemName, entry.packSize, entry.packLabel, entry.unitCost, timestamp, timestamp);
+      `).run(`sv_${randomBytes(8).toString('hex')}`, supplyId, entry.vendorId, entry.itemName, entry.vendorSku, entry.notes, entry.packSize, entry.packLabel, entry.unitCost, timestamp, timestamp);
     }
     const preferred = clean.find((entry) => entry.vendorId === preferredId);
     db.prepare(`
@@ -753,13 +761,16 @@ export interface ImportSupplyRow {
   parLevel?: unknown;
   orderUpTo?: unknown;
   groupName?: unknown;
+  vendorSku?: unknown;
+  vendorItemName?: unknown;
+  vendorNotes?: unknown;
 }
 
 export interface ImportSuppliesResult {
   dry_run: boolean;
   vendor_id: string | null;
   vendor_created: boolean;
-  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null; pour_size: number | null; par_level: number | null; order_up_to: number | null; group_name: string | null }>;
+  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null; pour_size: number | null; par_level: number | null; order_up_to: number | null; group_name: string | null; vendor_sku: string | null; vendor_item_name: string | null; vendor_notes: string | null }>;
   already_exist: string[];
   errors: Array<{ row: number; name: string; error: string }>;
 }
@@ -925,13 +936,16 @@ export function importSupplies(
           throw new SupplyServiceError(400, `group ${groupName} already uses ${groupUnit}; every item in a group must use the same unit`);
         }
       }
+      const vendorSku = String(row.vendorSku ?? '').trim().slice(0, 100) || null;
+      const vendorItemName = String(row.vendorItemName ?? '').trim().slice(0, 200) || null;
+      const vendorNotes = String(row.vendorNotes ?? '').trim().slice(0, 500) || null;
       const key = name.toLowerCase();
       if (existingNames.has(key) || seen.has(key)) {
         result.already_exist.push(name);
         return;
       }
       seen.add(key);
-      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel, pack_price: packPrice, unit_cost: unitCost, pour_size: pourSize, par_level: parLevel, order_up_to: orderUpTo, group_name: groupName });
+      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel, pack_price: packPrice, unit_cost: unitCost, pour_size: pourSize, par_level: parLevel, order_up_to: orderUpTo, group_name: groupName, vendor_sku: vendorSku, vendor_item_name: vendorItemName, vendor_notes: vendorNotes });
       if (groupName) groupUnits.set(groupName.toLowerCase(), baseUnit);
     } catch (error: unknown) {
       result.errors.push({ row: index + 1, name, error: error instanceof Error ? error.message : 'invalid row' });
@@ -956,7 +970,7 @@ export function importSupplies(
     }
     result.vendor_id = vendorId;
     for (const item of result.to_create) {
-      createSupply(db, {
+      const created = createSupply(db, {
         name: item.name,
         baseUnit: item.base_unit,
         packSize: item.pack_size ?? undefined,
@@ -969,6 +983,10 @@ export function importSupplies(
         vendorId: vendorId ?? undefined,
         actorUserId: input.actorUserId,
       });
+      if (vendorId && (item.vendor_sku || item.vendor_item_name || item.vendor_notes)) {
+        db.prepare('UPDATE supply_vendors SET vendor_sku = ?, vendor_item_name = ?, notes = ?, updated_at = ? WHERE supply_id = ? AND vendor_id = ?')
+          .run(item.vendor_sku, item.vendor_item_name, item.vendor_notes, now(), created.id, vendorId);
+      }
     }
   });
   return result;

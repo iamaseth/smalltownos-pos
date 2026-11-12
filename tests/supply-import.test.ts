@@ -37,7 +37,7 @@ async function main() {
 
   const rows = [
     { name: 'Cune Crianza 2021, 13.5%', baseUnit: 'ml', packSize: '750', packLabel: 'bottle' },
-    { name: 'Extra Virgin Olive Oil 5L PET', baseUnit: 'ml', packSize: '5000', packLabel: 'jug', packPrice: '46' },
+    { name: 'Extra Virgin Olive Oil 5L PET', baseUnit: 'ml', packSize: '5000', packLabel: 'jug', packPrice: '46', vendorSku: 'OIL-5L', vendorItemName: 'Olive oil 5 litre', vendorNotes: 'Ask for fresh stock' },
     { name: 'Baked Beans 3kg', baseUnit: 'each', packSize: '', packLabel: '', packPrice: '8' },
     { name: 'extra virgin olive oil 5l pet', baseUnit: 'ml', packSize: '5000', packLabel: 'jug' },
   ];
@@ -56,6 +56,9 @@ async function main() {
   assertEqualOrThrow(oil.pack_size, 5000, 'pack size is stored');
   assertEqualOrThrow(oil.pack_label, 'jug', 'pack label is stored');
   assertEqualOrThrow(oil.stock_quantity, 0, 'imported stock starts at zero');
+  assertEqualOrThrow(oil.vendors[0].vendor_sku, 'OIL-5L', 'the vendor code is imported');
+  assertEqualOrThrow(oil.vendors[0].vendor_item_name, 'Olive oil 5 litre', 'the vendor spelling is imported');
+  assertEqualOrThrow(oil.vendors[0].notes, 'Ask for fresh stock', 'the vendor notes are imported');
   assertEqualOrThrow(oil.unit_cost, 0.0092, 'cost per ml is pack price divided by pack size');
   const beans = listSupplies(db, {}).find((s: any) => s.name === 'Baked Beans 3kg');
   assertEqualOrThrow(beans.pack_size, null, 'blank pack size stays empty');

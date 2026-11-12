@@ -5414,6 +5414,20 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 100,
+    name: 'add_vendor_codes_notes_and_contacts',
+    up: () => {
+      const supplyVendorColumns = getColumns(db, 'supply_vendors');
+      for (const column of ['vendor_sku', 'notes']) {
+        if (!supplyVendorColumns.includes(column)) db.exec(`ALTER TABLE supply_vendors ADD COLUMN ${column} TEXT DEFAULT NULL`);
+      }
+      const vendorColumns = getColumns(db, 'vendors');
+      for (const column of ['contact_name', 'email', 'address']) {
+        if (!vendorColumns.includes(column)) db.exec(`ALTER TABLE vendors ADD COLUMN ${column} TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

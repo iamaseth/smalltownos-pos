@@ -41,6 +41,8 @@ interface SupplyVendor {
   vendor_id: string;
   vendor_name: string | null;
   vendor_item_name: string | null;
+  vendor_sku: string | null;
+  notes: string | null;
   pack_size: number | null;
   pack_label: string | null;
   unit_cost: number | null;
@@ -50,6 +52,8 @@ interface SupplyVendor {
 interface VendorLine {
   vendor_id: string;
   vendor_item_name: string;
+  vendor_sku: string;
+  notes: string;
   pack_size: string;
   pack_label: string;
   pack_price: string;
@@ -59,6 +63,11 @@ interface VendorLine {
 interface Vendor {
   id: string;
   name: string;
+  phone?: string | null;
+  contact_name?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
 }
 
 interface OrderListItem {
@@ -300,6 +309,30 @@ export default function InventoryPage() {
   }, [tab, refreshKey, canManage]);
 
   const [vendorLines, setVendorLines] = useState<VendorLine[]>([]);
+  const emptyVendorForm = { id: '', name: '', phone: '', contact_name: '', email: '', address: '', notes: '' };
+  const [showVendors, setShowVendors] = useState(false);
+  const [vendorForm, setVendorForm] = useState(emptyVendorForm);
+
+  const handleSaveVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const body = {
+      name: vendorForm.name, phone: vendorForm.phone, contact_name: vendorForm.contact_name,
+      email: vendorForm.email, address: vendorForm.address, notes: vendorForm.notes,
+    };
+    try {
+      if (vendorForm.id) await api.put(`/vendors/${vendorForm.id}`, body);
+      else await api.post('/vendors', body);
+      toast.success(tCommon('save'));
+      setVendorForm(emptyVendorForm);
+      const { data } = await api.get('/vendors');
+      setVendors(data.vendors || []);
+    } catch (err: unknown) {
+      const message = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+        : undefined;
+      toast.error(message || t('saveFailed'));
+    }
+  };
 
   const openAddSupply = () => {
     setVendorLines([]);
@@ -312,6 +345,8 @@ export default function InventoryPage() {
     setVendorLines((s.vendors ?? []).map((v) => ({
       vendor_id: v.vendor_id,
       vendor_item_name: v.vendor_item_name ?? '',
+      vendor_sku: v.vendor_sku ?? '',
+      notes: v.notes ?? '',
       pack_size: v.pack_size === null ? '' : String(v.pack_size),
       pack_label: v.pack_label ?? '',
       pack_price: v.unit_cost !== null && v.pack_size ? String(Math.round(v.unit_cost * v.pack_size * 100) / 100) : '',
@@ -341,6 +376,8 @@ export default function InventoryPage() {
       vendors: lines.map((line) => ({
         vendor_id: line.vendor_id,
         vendor_item_name: line.vendor_item_name.trim() || null,
+        vendor_sku: line.vendor_sku.trim() || null,
+        notes: line.notes.trim() || null,
         pack_size: optionalNumber(line.pack_size),
         pack_label: line.pack_label.trim() || null,
         pack_price: optionalNumber(line.pack_price),
@@ -619,6 +656,7 @@ export default function InventoryPage() {
         <h1 className="text-2xl font-bold text-foreground">{tNav('inventory')}</h1>
         {tab === 'supplies' && (
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => { setVendorForm(emptyVendorForm); setShowVendors(true); }}><Truck size={16} className="me-1" /> {t('vendorsTitle')}</Button>
             <Button variant="outline" onClick={openLinkMenuItems}><UtensilsCrossed size={16} className="me-1" /> {t('linkMenuItems')}</Button>
             <Button variant="outline" onClick={openOrderList}><ClipboardList size={16} className="me-1" /> {t('orderList')}</Button>
             <Button variant="outline" onClick={openImport}><Upload size={16} className="me-1" /> {t('importIngredients')}</Button>
@@ -890,6 +928,14 @@ export default function InventoryPage() {
                       onChange={(e) => setVendorLines(vendorLines.map((l, i) => (i === index ? { ...l, vendor_item_name: e.target.value } : l)))}
                       className="w-full px-2 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                     <div className="flex gap-2">
+                      <input type="text" placeholder={t('vendorSku')} value={line.vendor_sku}
+                        onChange={(e) => setVendorLines(vendorLines.map((l, i) => (i === index ? { ...l, vendor_sku: e.target.value } : l)))}
+                        className="flex-1 min-w-0 px-2 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                      <input type="text" placeholder={t('vendorNotes')} value={line.notes}
+                        onChange={(e) => setVendorLines(vendorLines.map((l, i) => (i === index ? { ...l, notes: e.target.value } : l)))}
+                        className="flex-1 min-w-0 px-2 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                    </div>
+                    <div className="flex gap-2">
                       <input type="number" step="any" min="0" placeholder={t('packSize')} value={line.pack_size}
                         onChange={(e) => setVendorLines(vendorLines.map((l, i) => (i === index ? { ...l, pack_size: e.target.value } : l)))}
                         className="flex-1 min-w-0 px-2 py-1.5 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
@@ -903,7 +949,7 @@ export default function InventoryPage() {
                   </div>
                 ))}
                 <Button type="button" variant="outline" size="sm"
-                  onClick={() => setVendorLines([...vendorLines, { vendor_id: '', vendor_item_name: '', pack_size: '', pack_label: '', pack_price: '', is_preferred: vendorLines.length === 0 }])}>
+                  onClick={() => setVendorLines([...vendorLines, { vendor_id: '', vendor_item_name: '', vendor_sku: '', notes: '', pack_size: '', pack_label: '', pack_price: '', is_preferred: vendorLines.length === 0 }])}>
                   <Plus size={14} className="me-1" /> {t('addVendorLine')}
                 </Button>
               </div>
@@ -1119,6 +1165,51 @@ export default function InventoryPage() {
           onClose={() => setMenuSupply(null)}
           onSaved={() => { setMenuSupply(null); refresh(); }}
         />
+      )}
+
+      {showVendors && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">{t('vendorsTitle')}</h2>
+              <button onClick={() => setShowVendors(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <ul className="divide-y divide-border mb-4 max-h-48 overflow-y-auto">
+              {vendors.map((v) => (
+                <li key={v.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                  <span>{v.name}{v.contact_name ? ` · ${v.contact_name}` : ''}{v.phone ? ` · ${v.phone}` : ''}</span>
+                  <Button variant="ghost" size="sm" onClick={() => setVendorForm({
+                    id: v.id, name: v.name, phone: v.phone ?? '', contact_name: v.contact_name ?? '',
+                    email: v.email ?? '', address: v.address ?? '', notes: v.notes ?? '',
+                  })} title={tCommon('edit')}><Edit size={14} /></Button>
+                </li>
+              ))}
+            </ul>
+            <form onSubmit={handleSaveVendor} className="space-y-2">
+              <input type="text" required placeholder={t('newVendor')} value={vendorForm.name}
+                onChange={(e) => setVendorForm({ ...vendorForm, name: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              <div className="flex gap-2">
+                <input type="text" placeholder={t('vendorContact')} value={vendorForm.contact_name}
+                  onChange={(e) => setVendorForm({ ...vendorForm, contact_name: e.target.value })}
+                  className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                <input type="text" placeholder={t('vendorPhone')} value={vendorForm.phone}
+                  onChange={(e) => setVendorForm({ ...vendorForm, phone: e.target.value })}
+                  className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              </div>
+              <input type="email" placeholder={t('vendorEmail')} value={vendorForm.email}
+                onChange={(e) => setVendorForm({ ...vendorForm, email: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              <input type="text" placeholder={t('vendorAddress')} value={vendorForm.address}
+                onChange={(e) => setVendorForm({ ...vendorForm, address: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              <textarea placeholder={t('vendorNotes')} value={vendorForm.notes} rows={2}
+                onChange={(e) => setVendorForm({ ...vendorForm, notes: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              <Button type="submit" className="w-full">{tCommon('save')}</Button>
+            </form>
+          </div>
+        </div>
       )}
 
       {linkPlan && (
