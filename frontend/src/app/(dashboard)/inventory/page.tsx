@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '@/lib/api';
+import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -115,6 +116,7 @@ interface Product {
   price?: number;
   category_id?: string | null;
   has_image?: boolean;
+  updated_at?: string;
   is_active?: number | boolean;
 }
 
@@ -1034,8 +1036,22 @@ export default function InventoryPage() {
                 {visibleRecipes.map((r) => (
                   <tr key={r.id} className="hover:bg-muted">
                     <td className="p-4 font-medium text-foreground">
-                      {r.product_name || r.product_id}
-                      {r.is_active !== 1 && <Badge variant="secondary" className="ms-2">{t('draft')}</Badge>}
+                      <div className="flex items-center gap-3">
+                        {(() => {
+                          const product = products.find((p) => p.id === r.product_id);
+                          const name = r.product_name || '';
+                          const src = product?.has_image
+                            ? `${api.defaults.baseURL}/products/${r.product_id}/image?t=${product.updated_at ?? ''}`
+                            : genericMenuPhoto(name);
+                          return src
+                            ? <img src={src} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0 border border-border" loading="lazy" />
+                            : <div className="w-12 h-12 rounded-lg bg-muted shrink-0 border border-border" />;
+                        })()}
+                        <span>
+                          {r.product_name || r.product_id}
+                          {r.is_active !== 1 && <Badge variant="secondary" className="ms-2">{t('draft')}</Badge>}
+                        </span>
+                      </div>
                     </td>
                     <td className="p-4 text-center text-sm">{fmtNum(Number(r.yield_quantity))}</td>
                     <td className="p-4 text-sm text-muted-foreground">
