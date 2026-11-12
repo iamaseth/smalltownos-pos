@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download, Camera } from 'lucide-react';
+import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download, Camera, SlidersHorizontal } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -118,6 +118,10 @@ interface Product {
   has_image?: boolean;
   updated_at?: string;
   is_active?: number | boolean;
+  sku?: string | null;
+  barcode?: string | null;
+  description?: string | null;
+  tax_category_id?: string | null;
 }
 
 interface Category {
@@ -132,12 +136,32 @@ interface DishForm {
   image: string | null;
   imageTouched: boolean;
   is_active: boolean;
+  sku: string;
+  barcode: string;
+  description: string;
+  tax_category_id: string;
 }
 
-const emptyDish: DishForm = { name: '', category_id: '', price: '', image: null, imageTouched: false, is_active: false };
+const emptyDish: DishForm = { name: '', category_id: '', price: '', image: null, imageTouched: false, is_active: false, sku: '', barcode: '', description: '', tax_category_id: '' };
+
+const nextSku = (products: Product[]): string | null => {
+  const groups = new Map<string, { count: number; max: number; width: number }>();
+  for (const p of products) {
+    const m = typeof p.sku === 'string' ? p.sku.match(/^(.*?)(\d+)$/) : null;
+    if (!m) continue;
+    const g = groups.get(m[1]) ?? { count: 0, max: 0, width: m[2].length };
+    g.count += 1;
+    g.max = Math.max(g.max, Number(m[2]));
+    g.width = Math.max(g.width, m[2].length);
+    groups.set(m[1], g);
+  }
+  let best: [string, { count: number; max: number; width: number }] | null = null;
+  for (const entry of groups) if (!best || entry[1].count > best[1].count) best = entry;
+  return best ? `${best[0]}${String(best[1].max + 1).padStart(best[1].width, '0')}` : null;
+};
 
 const dishFromProduct = (p: Product | undefined): DishForm => (p
-  ? { name: p.name, category_id: p.category_id ?? '', price: p.price === undefined ? '' : String(p.price), image: p.has_image ? 'EXISTING' : null, imageTouched: false, is_active: p.is_active === true || p.is_active === 1 }
+  ? { name: p.name, category_id: p.category_id ?? '', price: p.price === undefined ? '' : String(p.price), image: p.has_image ? 'EXISTING' : null, imageTouched: false, is_active: p.is_active === true || p.is_active === 1, sku: p.sku ?? '', barcode: p.barcode ?? '', description: p.description ?? '', tax_category_id: p.tax_category_id ?? '' }
   : emptyDish);
 
 const movementTypeIcons: Record<string, typeof ArrowUpCircle> = {
@@ -240,6 +264,8 @@ export default function InventoryPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [aiBusy, setAiBusy] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [taxCategories, setTaxCategories] = useState<{ id: string; label: string }[]>([]);
   const [aiPhotos, setAiPhotos] = useState<{ image_url: string; thumb: string; title: string }[]>([]);
   const [aiMissing, setAiMissing] = useState<string[]>([]);
   const [targetFoodCost, setTargetFoodCost] = useState(() => {
@@ -382,6 +408,13 @@ export default function InventoryPage() {
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, refreshKey, canManage]);
+
+  useEffect(() => {
+    if (!canManage || tab !== 'recipes') return;
+    api.get('/tax/categories')
+      .then(({ data }) => setTaxCategories((data.categories || []) as { id: string; label: string }[]))
+      .catch(() => undefined);
+  }, [canManage, tab]);
 
   useEffect(() => {
     if (!canManage) return;
@@ -694,10 +727,7 @@ export default function InventoryPage() {
           ? { group_name: item.group_name, quantity: Number(item.quantity), unit: item.unit }
           : { supply_id: item.supply_id, quantity: Number(item.quantity), unit: item.unit })),
       });
-      const product = products.find((p) => p.id === r.product_id);
-      const hidden = product !== undefined && !(product.is_active === true || product.is_active === 1);
-      if (hidden) await api.put(`/products/${r.product_id}`, { is_active: true });
-      toast.success(hidden ? t('recipeConfirmedShown') : t('recipeConfirmed'));
+      toast.success(t('recipeConfirmed'));
       refresh();
     } catch (err: unknown) {
       toast.error(importError(err));
@@ -780,6 +810,7 @@ export default function InventoryPage() {
   };
 
   const openAddRecipe = (productId = '') => {
+    setShowDetails(false);
     setShowPhotoPicker(false);
     setAiPhotos([]);
     setAiMissing([]);
@@ -789,6 +820,7 @@ export default function InventoryPage() {
   };
 
   const openEditRecipe = (r: Recipe) => {
+    setShowDetails(false);
     setShowPhotoPicker(false);
     setAiPhotos([]);
     setAiMissing([]);
@@ -815,6 +847,10 @@ export default function InventoryPage() {
           category_id: dish.category_id || null,
           price,
           is_active: dish.is_active,
+          sku: dish.sku.trim() || nextSku(products),
+          barcode: dish.barcode.trim() || null,
+          description: dish.description.trim() || null,
+          tax_category_id: dish.tax_category_id || null,
           ...(dish.imageTouched ? { image_url: dish.image } : {}),
         });
         productId = String(created.data.product.id);
@@ -825,6 +861,10 @@ export default function InventoryPage() {
           if (dish.name.trim() && dish.name.trim() !== current.name) patch.name = dish.name.trim();
           if ((dish.category_id || null) !== (current.category_id ?? null)) patch.category_id = dish.category_id || null;
           if (dish.price !== '' && price !== Number(current.price)) patch.price = price;
+          if (dish.sku.trim() !== (current.sku ?? '')) patch.sku = dish.sku.trim() || null;
+          if (dish.barcode.trim() !== (current.barcode ?? '')) patch.barcode = dish.barcode.trim() || null;
+          if (dish.description.trim() !== (current.description ?? '')) patch.description = dish.description.trim() || null;
+          if (dish.tax_category_id !== (current.tax_category_id ?? '')) patch.tax_category_id = dish.tax_category_id || null;
         }
         if (current && dish.is_active !== (current.is_active === true || current.is_active === 1)) patch.is_active = dish.is_active;
         if (dish.imageTouched) patch.image_url = dish.image;
@@ -1058,6 +1098,11 @@ export default function InventoryPage() {
                         <span>
                           {r.product_name || r.product_id}
                           {r.is_active !== 1 && <Badge variant="secondary" className="ms-2">{t('draft')}</Badge>}
+                          {(() => {
+                            const product = products.find((p) => p.id === r.product_id);
+                            const on = product?.is_active === true || product?.is_active === 1;
+                            return <Badge variant={on ? 'default' : 'outline'} className="ms-2">{on ? t('onPos') : t('offPos')}</Badge>;
+                          })()}
                         </span>
                       </div>
                     </td>
@@ -1564,7 +1609,6 @@ export default function InventoryPage() {
                         <option value="new">{t('newMenuItem')}</option>
                         {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                       </select>
-                      {isNew && <p className="text-xs text-muted-foreground mt-1">{t('hiddenUntilConfirmed')}</p>}
                     </div>
                   )}
                   {recipeForm.product_id !== '' && (
@@ -1595,6 +1639,9 @@ export default function InventoryPage() {
                           onChange={(e) => setRecipeForm({ ...recipeForm, yield_quantity: e.target.value })}
                           className={compactField} required />
                       </div>
+                      <Button type="button" variant="outline" size="sm" onClick={() => setShowDetails(true)}>
+                        <SlidersHorizontal size={14} className="me-1" /> {t('moreDetails')}
+                      </Button>
                     </div>
                   )}
 
@@ -1721,6 +1768,42 @@ export default function InventoryPage() {
                 )}
               </form>
             </div>
+
+            {showDetails && (
+              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={() => setShowDetails(false)}>
+                <div className="bg-card rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold">{t('moreDetails')}</h3>
+                    <button type="button" onClick={() => setShowDetails(false)}><X size={20} className="text-gray-400" /></button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={statLabel}>{t('dishSku')}</label>
+                      <input type="text" value={recipeForm.dish.sku} onChange={(e) => setDish({ sku: e.target.value })}
+                        placeholder={isNew && nextSku(products) ? t('skuAuto', { sku: nextSku(products) ?? '' }) : ''} className={compactField} />
+                    </div>
+                    <div>
+                      <label className={statLabel}>{t('dishBarcode')}</label>
+                      <input type="text" value={recipeForm.dish.barcode} onChange={(e) => setDish({ barcode: e.target.value })} className={compactField} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={statLabel}>{t('dishDescription')}</label>
+                    <textarea rows={3} value={recipeForm.dish.description} onChange={(e) => setDish({ description: e.target.value })} className={compactField} />
+                  </div>
+                  {taxCategories.length > 0 && (
+                    <div>
+                      <label className={statLabel}>{t('dishTaxCategory')}</label>
+                      <select value={recipeForm.dish.tax_category_id} onChange={(e) => setDish({ tax_category_id: e.target.value })} className={compactField}>
+                        <option value="">{t('taxStoreDefault')}</option>
+                        {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  <Button type="button" className="w-full" onClick={() => setShowDetails(false)}>{t('detailsDone')}</Button>
+                </div>
+              </div>
+            )}
 
             {showPhotoPicker && (
               <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={() => setShowPhotoPicker(false)}>
