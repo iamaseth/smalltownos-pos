@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download } from 'lucide-react';
+import { Plus, Search, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download, Camera } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -239,6 +239,7 @@ export default function InventoryPage() {
   const [recipeForm, setRecipeForm] = useState({ product_id: '', yield_quantity: '1', dish: emptyDish, items: [] as { supply_id: string; group_name: string; quantity: string; unit: SupplyUnit }[] });
   const [categories, setCategories] = useState<Category[]>([]);
   const [aiBusy, setAiBusy] = useState(false);
+  const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [aiPhotos, setAiPhotos] = useState<{ image_url: string; thumb: string; title: string }[]>([]);
   const [aiMissing, setAiMissing] = useState<string[]>([]);
   const [targetFoodCost, setTargetFoodCost] = useState(() => {
@@ -740,12 +741,14 @@ export default function InventoryPage() {
       if (photoRes.status === 'fulfilled') {
         const found = (photoRes.value.data.photos || []) as { image_url: string; thumbnail_url: string; title: string }[];
         const loaded = await Promise.allSettled(found.map((p) => api.post('/products/fetch-url', { url: p.thumbnail_url })));
-        setAiPhotos(found.flatMap((p, index) => {
+        const usable = found.flatMap((p, index) => {
           const result = loaded[index];
           return result.status === 'fulfilled' && result.value.data.data
             ? [{ image_url: p.image_url, thumb: String(result.value.data.data), title: p.title }]
             : [];
-        }));
+        });
+        setAiPhotos(usable);
+        if (usable.length > 0) setShowPhotoPicker(true);
       } else if (recipeRes.status === 'fulfilled') {
         toast.error(importError(photoRes.reason));
       }
@@ -767,6 +770,7 @@ export default function InventoryPage() {
       if (compressed) {
         setRecipeForm((prev) => ({ ...prev, dish: { ...prev.dish, image: compressed, imageTouched: true } }));
         setAiPhotos([]);
+        setShowPhotoPicker(false);
       } else {
         toast.error(t('saveFailed'));
       }
@@ -776,6 +780,7 @@ export default function InventoryPage() {
   };
 
   const openAddRecipe = (productId = '') => {
+    setShowPhotoPicker(false);
     setAiPhotos([]);
     setAiMissing([]);
     setEditingRecipe(null);
@@ -784,6 +789,9 @@ export default function InventoryPage() {
   };
 
   const openEditRecipe = (r: Recipe) => {
+    setShowPhotoPicker(false);
+    setAiPhotos([]);
+    setAiMissing([]);
     setEditingRecipe(r);
     setRecipeForm({
       product_id: r.product_id,
@@ -1492,17 +1500,32 @@ export default function InventoryPage() {
         const labelClass = 'block text-sm font-medium text-muted-foreground mb-1';
         const sectionClass = 'rounded-xl border border-border p-4 sm:p-5 space-y-4';
         const sectionTitle = 'text-base font-semibold text-foreground';
+        const photoSrc = recipeForm.dish.image === 'EXISTING'
+          ? (isNew ? null : `${api.defaults.baseURL}/products/${recipeForm.product_id}/image`)
+          : recipeForm.dish.image;
+        const tilePhoto = photoSrc ?? genericMenuPhoto(recipeForm.dish.name);
+        const compactField = 'w-full px-3 py-1.5 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card';
+        const statLabel = 'text-xs font-medium text-muted-foreground';
+        const addLine = () => setRecipeForm({
+          ...recipeForm,
+          items: [...recipeForm.items, { supply_id: supplies[0]?.id || '', group_name: '', quantity: '1', unit: (supplies[0]?.base_unit || 'each') as SupplyUnit }],
+        });
         return (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-card rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between gap-4 p-5 border-b border-border">
-                <div className="min-w-0">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+            <div className="bg-card rounded-2xl w-full max-w-6xl h-[96vh] flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border">
+                <div className="flex items-center gap-3 min-w-0">
                   <h2 className="text-xl font-bold truncate">
                     {recipeForm.dish.name.trim() || (editingRecipe ? t('editRecipe') : t('addRecipe'))}
                   </h2>
-                  {editingRecipe && editingRecipe.is_active !== 1 && <Badge variant="secondary" className="mt-1">{t('draft')}</Badge>}
+                  {editingRecipe && editingRecipe.is_active !== 1 && <Badge variant="secondary">{t('draft')}</Badge>}
                 </div>
                 <div className="flex items-center gap-4 shrink-0">
+                  {recipeForm.product_id !== '' && (
+                    <Button type="button" variant="outline" size="sm" disabled={aiBusy} onClick={handleAiHelp}>
+                      <Sparkles size={16} className="me-1" /> {aiBusy ? '…' : t('aiHelp')}
+                    </Button>
+                  )}
                   {recipeForm.product_id !== '' && (
                     <button type="button" role="switch" aria-checked={recipeForm.dish.is_active}
                       onClick={() => setDish({ is_active: !recipeForm.dish.is_active })}
@@ -1519,18 +1542,24 @@ export default function InventoryPage() {
                 </div>
               </div>
 
-              <form id="recipe-form" onSubmit={handleSaveRecipe} className="flex-1 overflow-y-auto p-5 space-y-5">
-                <section className={sectionClass}>
-                  <h3 className={sectionTitle}>{t('sectionDish')}</h3>
+              {(aiMissing.length > 0 || aiPhotos.length > 0) && (
+                <div className="px-5 py-2 text-xs border-b border-border bg-muted">
+                  {aiMissing.length > 0 && <span className="text-amber-600">{t('aiNotInInventory', { names: aiMissing.join(', ') })} </span>}
+                  <span className="text-muted-foreground">{t('aiDraftNote')}</span>
+                </div>
+              )}
+
+              <form id="recipe-form" onSubmit={handleSaveRecipe}
+                className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid gap-4 p-4 lg:grid-cols-[1fr_20rem]">
+                <div className="flex flex-col gap-3 min-h-0">
                   {!editingRecipe && (
                     <div>
-                      <label className={labelClass}>{t('product')}</label>
                       <select value={recipeForm.product_id}
                         onChange={(e) => {
                           const picked = e.target.value;
                           setRecipeForm({ ...recipeForm, product_id: picked, dish: picked === 'new' ? emptyDish : dishFromProduct(products.find((p) => p.id === picked)) });
                         }}
-                        className={fieldClass} required>
+                        className={compactField} required>
                         <option value="">{t('product')}</option>
                         <option value="new">{t('newMenuItem')}</option>
                         {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -1539,202 +1568,188 @@ export default function InventoryPage() {
                     </div>
                   )}
                   {recipeForm.product_id !== '' && (
-                    <div className="grid gap-4 sm:grid-cols-[1fr_11rem]">
-                      <div className="space-y-4">
-                        <div>
-                          <label className={labelClass}>{t('dishName')}</label>
-                          <input type="text" value={recipeForm.dish.name} onChange={(e) => setDish({ name: e.target.value })}
-                            className={fieldClass} required />
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div>
-                            <label className={labelClass}>{t('dishCategory')}</label>
-                            <select value={recipeForm.dish.category_id} onChange={(e) => setDish({ category_id: e.target.value })}
-                              className={fieldClass} required={isNew}>
-                              <option value="">{t('chooseCategory')}</option>
-                              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className={labelClass}>{t('yield')}</label>
-                            <input type="number" step="any" min="0.00000001" value={recipeForm.yield_quantity}
-                              onChange={(e) => setRecipeForm({ ...recipeForm, yield_quantity: e.target.value })}
-                              className={fieldClass} required />
-                          </div>
-                        </div>
+                    <div className="flex items-end gap-3">
+                      <button type="button" onClick={() => setShowPhotoPicker(true)} title={t('dishPhoto')}
+                        className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-dashed border-border bg-muted hover:ring-2 hover:ring-brand">
+                        {tilePhoto
+                          ? <img src={tilePhoto} alt="" className="h-full w-full object-cover" />
+                          : <Camera size={24} className="mx-auto text-muted-foreground" />}
+                        {aiPhotos.length > 0 && <span className="absolute bottom-0 end-0 rounded-tl-md bg-brand px-1 text-[10px] text-white">{aiPhotos.length}</span>}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <label className={statLabel}>{t('dishName')}</label>
+                        <input type="text" value={recipeForm.dish.name} onChange={(e) => setDish({ name: e.target.value })}
+                          className={compactField} required />
                       </div>
-                      <div>
-                        <label className={labelClass}>{t('dishPhoto')}</label>
-                        <ImageUploader
-                          value={recipeForm.dish.image}
-                          onChange={(val) => setDish({ image: val, imageTouched: true })}
-                          productId={isNew ? undefined : recipeForm.product_id}
-                        />
+                      <div className="w-44">
+                        <label className={statLabel}>{t('dishCategory')}</label>
+                        <select value={recipeForm.dish.category_id} onChange={(e) => setDish({ category_id: e.target.value })}
+                          className={compactField} required={isNew}>
+                          <option value="">{t('chooseCategory')}</option>
+                          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="w-20">
+                        <label className={statLabel}>{t('yield')}</label>
+                        <input type="number" step="any" min="0.00000001" value={recipeForm.yield_quantity}
+                          onChange={(e) => setRecipeForm({ ...recipeForm, yield_quantity: e.target.value })}
+                          className={compactField} required />
                       </div>
                     </div>
                   )}
-                  {recipeForm.product_id !== '' && (
-                    <div className="space-y-3">
-                      <Button type="button" variant="outline" disabled={aiBusy} onClick={handleAiHelp}>
-                        <Sparkles size={16} className="me-1" /> {aiBusy ? '…' : t('aiHelp')}
-                      </Button>
-                      {aiMissing.length > 0 && (
-                        <p className="text-sm text-amber-600">{t('aiNotInInventory', { names: aiMissing.join(', ') })}</p>
-                      )}
-                      {(aiMissing.length > 0 || aiPhotos.length > 0) && (
-                        <p className="text-xs text-muted-foreground">{t('aiDraftNote')}</p>
-                      )}
-                      {aiPhotos.length > 0 && (
-                        <div>
-                          <p className={labelClass}>{t('aiPickPhoto')}</p>
-                          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                            {aiPhotos.map((photo) => (
-                              <button key={photo.image_url} type="button" disabled={aiBusy} onClick={() => handlePickAiPhoto(photo)}
-                                className="aspect-square overflow-hidden rounded-lg border border-border hover:ring-2 hover:ring-brand" title={photo.title}>
-                                <img src={photo.thumb} alt={photo.title} className="h-full w-full object-cover" />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </section>
 
-                {recipeForm.product_id !== '' && (
-                  <>
-                    <section className={sectionClass}>
-                      <div className="flex items-center justify-between">
-                        <h3 className={sectionTitle}>{t('sectionIngredients')}</h3>
-                        <Button type="button" variant="outline"
-                          onClick={() => setRecipeForm({
-                            ...recipeForm,
-                            items: [...recipeForm.items, { supply_id: supplies[0]?.id || '', group_name: '', quantity: '1', unit: (supplies[0]?.base_unit || 'each') as SupplyUnit }],
-                          })}>
-                          <Plus size={16} /> {t('addComponent')}
+                  {recipeForm.product_id !== '' && (
+                    <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-border">
+                      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+                        <h3 className="text-sm font-semibold">{t('sectionIngredients')}</h3>
+                        <Button type="button" variant="outline" size="sm" onClick={addLine}>
+                          <Plus size={14} /> {t('addComponent')}
                         </Button>
                       </div>
                       {recipeForm.items.length > 0 && (
-                        <div className="hidden sm:grid grid-cols-[1fr_7rem_6rem_6rem_8rem_2.5rem] gap-2 px-1 text-xs uppercase text-muted-foreground">
+                        <div className="hidden sm:grid grid-cols-[1fr_5.5rem_4.5rem_4.5rem_6rem_2rem] gap-2 px-3 pt-2 text-[11px] uppercase text-muted-foreground">
                           <span>{t('recipeIngredient')}</span><span>{t('recipeAmount')}</span><span>{t('baseUnit')}</span>
                           <span className="text-end">{t('recipeLineCost')}</span><span className="text-end">{t('recipeInStock')}</span><span />
                         </div>
                       )}
-                      {recipeForm.items.map((item, index) => {
-                        const line = lines[index];
-                        return (
-                          <div key={index} className="grid grid-cols-2 sm:grid-cols-[1fr_7rem_6rem_6rem_8rem_2.5rem] gap-2 items-center">
-                            <select value={item.group_name ? `group:${item.group_name}` : item.supply_id}
-                              onChange={(e) => {
-                                const items = [...recipeForm.items];
-                                const picked = e.target.value;
-                                const groupName = picked.startsWith('group:') ? picked.slice(6) : '';
-                                const targetSupply = groupName
-                                  ? supplies.find((s) => s.group_name === groupName)
-                                  : supplies.find((s) => s.id === picked);
-                                items[index] = {
-                                  ...items[index],
-                                  supply_id: groupName ? (targetSupply?.id || '') : picked,
-                                  group_name: groupName,
-                                  unit: (targetSupply?.base_unit || 'each') as SupplyUnit,
-                                };
-                                setRecipeForm({ ...recipeForm, items });
-                              }}
-                              className={`${fieldClass} col-span-2 sm:col-span-1 min-w-0`}>
-                              <option value="">{t('supply')}</option>
-                              {groupNames.length > 0 && (
-                                <optgroup label={t('anyInGroup')}>
-                                  {groupNames.map((g) => <option key={g} value={`group:${g}`}>{g}</option>)}
+                      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-1.5">
+                        {recipeForm.items.map((item, index) => {
+                          const line = lines[index];
+                          return (
+                            <div key={index} className="grid grid-cols-2 sm:grid-cols-[1fr_5.5rem_4.5rem_4.5rem_6rem_2rem] gap-2 items-center">
+                              <select value={item.group_name ? `group:${item.group_name}` : item.supply_id}
+                                onChange={(e) => {
+                                  const items = [...recipeForm.items];
+                                  const picked = e.target.value;
+                                  const groupName = picked.startsWith('group:') ? picked.slice(6) : '';
+                                  const targetSupply = groupName
+                                    ? supplies.find((s) => s.group_name === groupName)
+                                    : supplies.find((s) => s.id === picked);
+                                  items[index] = {
+                                    ...items[index],
+                                    supply_id: groupName ? (targetSupply?.id || '') : picked,
+                                    group_name: groupName,
+                                    unit: (targetSupply?.base_unit || 'each') as SupplyUnit,
+                                  };
+                                  setRecipeForm({ ...recipeForm, items });
+                                }}
+                                className={`${compactField} col-span-2 sm:col-span-1 min-w-0`}>
+                                <option value="">{t('supply')}</option>
+                                {groupNames.length > 0 && (
+                                  <optgroup label={t('anyInGroup')}>
+                                    {groupNames.map((g) => <option key={g} value={`group:${g}`}>{g}</option>)}
+                                  </optgroup>
+                                )}
+                                <optgroup label={t('singleItems')}>
+                                  {supplies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </optgroup>
-                              )}
-                              <optgroup label={t('singleItems')}>
-                                {supplies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                              </optgroup>
-                            </select>
-                            <input type="number" step="any" min="0.00000001" placeholder={t('quantity')} value={item.quantity}
-                              onChange={(e) => {
-                                const items = [...recipeForm.items];
-                                items[index] = { ...items[index], quantity: e.target.value };
-                                setRecipeForm({ ...recipeForm, items });
-                              }}
-                              className={fieldClass} required />
-                            <select value={item.unit}
-                              onChange={(e) => {
-                                const items = [...recipeForm.items];
-                                items[index] = { ...items[index], unit: e.target.value as SupplyUnit };
-                                setRecipeForm({ ...recipeForm, items });
-                              }}
-                              className={fieldClass}>
-                              {SUPPLY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-                            </select>
-                            <span className={`text-end text-base ${line.cost === null ? 'text-amber-600' : ''}`}>
-                              {line.cost === null ? '—' : fmtNum(Math.round(line.cost * 100) / 100)}
-                            </span>
-                            <span className={`text-end text-sm ${line.supply && Number(line.supply.stock_quantity) <= 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
-                              {line.supply ? `${fmtNum(Number(line.supply.stock_quantity))} ${line.supply.base_unit}` : '—'}
-                            </span>
-                            <Button type="button" variant="ghost" size="icon-sm"
-                              onClick={() => setRecipeForm({ ...recipeForm, items: recipeForm.items.filter((_, i) => i !== index) })}>
-                              <X size={16} />
-                            </Button>
-                          </div>
-                        );
-                      })}
-                    </section>
+                              </select>
+                              <input type="number" step="any" min="0.00000001" placeholder={t('quantity')} value={item.quantity}
+                                onChange={(e) => {
+                                  const items = [...recipeForm.items];
+                                  items[index] = { ...items[index], quantity: e.target.value };
+                                  setRecipeForm({ ...recipeForm, items });
+                                }}
+                                className={compactField} required />
+                              <select value={item.unit}
+                                onChange={(e) => {
+                                  const items = [...recipeForm.items];
+                                  items[index] = { ...items[index], unit: e.target.value as SupplyUnit };
+                                  setRecipeForm({ ...recipeForm, items });
+                                }}
+                                className={compactField}>
+                                {SUPPLY_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                              </select>
+                              <span className={`text-end text-sm ${line.cost === null ? 'text-amber-600' : ''}`}>
+                                {line.cost === null ? '—' : fmtNum(Math.round(line.cost * 100) / 100)}
+                              </span>
+                              <span className={`text-end text-xs ${line.supply && Number(line.supply.stock_quantity) <= 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                                {line.supply ? `${fmtNum(Number(line.supply.stock_quantity))} ${line.supply.base_unit}` : '—'}
+                              </span>
+                              <Button type="button" variant="ghost" size="icon-sm"
+                                onClick={() => setRecipeForm({ ...recipeForm, items: recipeForm.items.filter((_, i) => i !== index) })}>
+                                <X size={14} />
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-                    <section className={sectionClass}>
-                      <h3 className={sectionTitle}>{t('sectionPricing')}</h3>
-                      <div className="grid gap-4 sm:grid-cols-3">
-                        <div>
-                          <p className={labelClass}>{t('recipeCostPerServing')}</p>
-                          <p className="text-2xl font-bold">{lines.length === 0 ? '—' : fmtNum(Math.round(costPerServing * 100) / 100)}</p>
-                        </div>
-                        <div>
-                          <label className={labelClass}>{t('targetFoodCost')}</label>
-                          <input type="number" step="any" min="1" max="99" value={targetFoodCost}
-                            onChange={(e) => updateTargetFoodCost(e.target.value)} className={fieldClass} />
-                        </div>
-                        <div>
-                          <p className={labelClass}>{t('suggestedPrice')}</p>
-                          <div className="flex items-center gap-3">
-                            <p className="text-2xl font-bold">{suggested === null ? '—' : fmtNum(suggested)}</p>
-                            <Button type="button" variant="outline" size="sm" disabled={suggested === null}
-                              onClick={() => suggested !== null && setDish({ price: String(suggested) })}>
-                              {t('useSuggested')}
-                            </Button>
-                          </div>
-                        </div>
+                {recipeForm.product_id !== '' && (
+                  <div className="flex flex-col gap-3 rounded-xl border border-border p-4 min-h-0 overflow-y-auto">
+                    <h3 className="text-sm font-semibold">{t('sectionPricing')}</h3>
+                    <div className="flex items-baseline justify-between">
+                      <span className={statLabel}>{t('recipeCostPerServing')}</span>
+                      <span className="text-xl font-bold">{lines.length === 0 ? '—' : fmtNum(Math.round(costPerServing * 100) / 100)}</span>
+                    </div>
+                    <div className="grid grid-cols-[5rem_1fr] gap-3 items-end">
+                      <div>
+                        <label className={statLabel}>{t('targetFoodCost')}</label>
+                        <input type="number" step="any" min="1" max="99" value={targetFoodCost}
+                          onChange={(e) => updateTargetFoodCost(e.target.value)} className={compactField} />
                       </div>
-                      <div className="grid gap-4 sm:grid-cols-3 rounded-xl bg-muted p-4 items-end">
-                        <div>
-                          <label className="block text-sm font-semibold text-foreground mb-1">{t('actualPrice')}</label>
-                          <input type="number" step="any" min="0" value={recipeForm.dish.price}
-                            onChange={(e) => setDish({ price: e.target.value })}
-                            className="w-full px-4 py-3 text-2xl font-bold border-2 border-brand rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card" required />
-                          <p className="text-xs text-muted-foreground mt-1">{t('actualPriceHint')}</p>
-                        </div>
-                        <div>
-                          <p className={labelClass}>{t('profitPerServing')}</p>
-                          <p className="text-2xl font-bold">{margin === null ? '—' : fmtNum(Math.round(margin * 100) / 100)}</p>
-                          {margin !== null && typeof price === 'number' && price > 0 && (
-                            <p className="text-sm text-muted-foreground">{fmtNum(Math.round((margin / price) * 1000) / 10)}%</p>
-                          )}
-                        </div>
-                        <div>
-                          <p className={labelClass}>{t('foodCostLabel')}</p>
-                          <p className="text-2xl font-bold">{foodCostPct === null ? '—' : `${fmtNum(Math.round(foodCostPct * 10) / 10)}%`}</p>
-                        </div>
+                      <Button type="button" variant="outline" size="sm" disabled={suggested === null}
+                        onClick={() => suggested !== null && setDish({ price: String(suggested) })}>
+                        {t('suggestedPrice')}: {suggested === null ? '—' : fmtNum(suggested)}
+                      </Button>
+                    </div>
+                    <div className="rounded-xl bg-muted p-3">
+                      <label className="block text-sm font-semibold mb-1">{t('actualPrice')}</label>
+                      <input type="number" step="any" min="0" value={recipeForm.dish.price}
+                        onChange={(e) => setDish({ price: e.target.value })}
+                        className="w-full px-3 py-2 text-2xl font-bold border-2 border-brand rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card" required />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className={statLabel}>{t('profitPerServing')}</p>
+                        <p className="text-xl font-bold">{margin === null ? '—' : fmtNum(Math.round(margin * 100) / 100)}</p>
+                        {margin !== null && typeof price === 'number' && price > 0 && (
+                          <p className="text-xs text-muted-foreground">{fmtNum(Math.round((margin / price) * 1000) / 10)}%</p>
+                        )}
                       </div>
-                    </section>
-                  </>
+                      <div>
+                        <p className={statLabel}>{t('foodCostLabel')}</p>
+                        <p className="text-xl font-bold">{foodCostPct === null ? '—' : `${fmtNum(Math.round(foodCostPct * 10) / 10)}%`}</p>
+                      </div>
+                    </div>
+                    <Button type="submit" size="lg" className="mt-auto w-full text-base"
+                      disabled={recipeForm.items.length === 0}>{tCommon('save')}</Button>
+                  </div>
                 )}
               </form>
-
-              <div className="p-4 border-t border-border">
-                <Button type="submit" form="recipe-form" size="lg" className="w-full text-base"
-                  disabled={recipeForm.product_id === '' || recipeForm.items.length === 0}>{tCommon('save')}</Button>
-              </div>
             </div>
+
+            {showPhotoPicker && (
+              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={() => setShowPhotoPicker(false)}>
+                <div className="bg-card rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-base font-semibold">{t('dishPhoto')}</h3>
+                    <button type="button" onClick={() => setShowPhotoPicker(false)}><X size={20} className="text-gray-400" /></button>
+                  </div>
+                  {aiPhotos.length > 0 && (
+                    <div>
+                      <p className={statLabel}>{t('aiPickPhoto')}</p>
+                      <div className="mt-1 grid grid-cols-3 gap-2">
+                        {aiPhotos.map((photo) => (
+                          <button key={photo.image_url} type="button" disabled={aiBusy} onClick={() => handlePickAiPhoto(photo)}
+                            className="aspect-square overflow-hidden rounded-lg border border-border hover:ring-2 hover:ring-brand" title={photo.title}>
+                            <img src={photo.thumb} alt={photo.title} className="h-full w-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <ImageUploader
+                    value={recipeForm.dish.image}
+                    onChange={(val) => { setDish({ image: val, imageTouched: true }); if (val) setShowPhotoPicker(false); }}
+                    productId={isNew ? undefined : recipeForm.product_id}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}
