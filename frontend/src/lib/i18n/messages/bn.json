@@ -2254,7 +2254,7 @@
     "noKitchenStations": "কোন রান্নাঘর স্টেশন উপলব্ধ",
     "passwordPlaceholder": "পাসওয়ার্ড",
     "pinHint": "ম্যানেজারের অনুমোদনের জন্য ব্যবহৃত হয় (অর্ডার বাতিল করা ইত্যাদি)",
-    "pinPlaceholderAdd": "পিন (৪-৬ সংখ্যা)",
+    "pinPlaceholderAdd": "পিন (৪ সংখ্যা)",
     "pinPlaceholderEdit": "নতুন পিন (রাখতে খালি ছেড়ে দিন)",
     "pinSet": "✓ পিন সেট",
     "reactivate": "পুনরায় সক্রিয় করুন",

@@ -2254,7 +2254,7 @@
     "noKitchenStations": "Tidak ada stasiun dapur tersedia",
     "passwordPlaceholder": "Kata Sandi",
     "pinHint": "Digunakan untuk persetujuan manajer (membatalkan pesanan, dll.)",
-    "pinPlaceholderAdd": "PIN (4-6 digit)",
+    "pinPlaceholderAdd": "PIN (4 digit)",
     "pinPlaceholderEdit": "PIN Baru (biarkan kosong untuk mempertahankan)",
     "pinSet": "✓ PIN diatur",
     "reactivate": "Aktifkan kembali",

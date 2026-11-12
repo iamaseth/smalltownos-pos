@@ -2254,7 +2254,7 @@
     "noKitchenStations": "Không có khu vực bếp khả dụng",
     "passwordPlaceholder": "Mật khẩu",
     "pinHint": "Dùng để phê duyệt của quản lý (hủy đơn hàng, v.v.)",
-    "pinPlaceholderAdd": "PIN (4-6 chữ số)",
+    "pinPlaceholderAdd": "PIN (4 chữ số)",
     "pinPlaceholderEdit": "PIN mới (để trống nếu giữ nguyên)",
     "pinSet": "✓ Đã đặt PIN",
     "reactivate": "Kích hoạt lại",

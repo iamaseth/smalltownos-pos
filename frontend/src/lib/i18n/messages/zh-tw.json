@@ -2254,7 +2254,7 @@
     "noKitchenStations": "沒有可用的廚房工作站",
     "passwordPlaceholder": "密碼",
     "pinHint": "用於經理批准（取消訂單等）",
-    "pinPlaceholderAdd": "PIN（4-6 位）",
+    "pinPlaceholderAdd": "PIN（4 位）",
     "pinPlaceholderEdit": "新 PIN（留空則保持不變）",
     "pinSet": "✓ PIN 已設定",
     "reactivate": "重新啟用",

@@ -2254,7 +2254,7 @@
     "noKitchenStations": "Kullanılabilir mutfak istasyonu yok",
     "passwordPlaceholder": "Şifre",
     "pinHint": "Hızlı POS ve KDS girişi için 4 haneli PIN kodu",
-    "pinPlaceholderAdd": "PIN (4-6 basamak)",
+    "pinPlaceholderAdd": "PIN (4 basamak)",
     "pinPlaceholderEdit": "Yeni PIN (değiştirmemek için boş bırakın)",
     "pinSet": "✓ PIN ayarlandı",
     "reactivate": "Yeniden Aktifleştir",

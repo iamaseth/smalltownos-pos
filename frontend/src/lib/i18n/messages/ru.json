@@ -2254,7 +2254,7 @@
     "noKitchenStations": "Нет доступных кухонных станций",
     "passwordPlaceholder": "Пароль",
     "pinHint": "Используется для одобрения менеджером (отмены заказов и т. д.)",
-    "pinPlaceholderAdd": "PIN (4–6 цифр)",
+    "pinPlaceholderAdd": "PIN (4 цифр)",
     "pinPlaceholderEdit": "Новый PIN-код (оставьте пустым, чтобы сохранить)",
     "pinSet": "✓ PIN-код установлен",
     "reactivate": "Повторно активировать",

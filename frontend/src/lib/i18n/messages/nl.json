@@ -2254,7 +2254,7 @@
     "noKitchenStations": "Er zijn geen keukenstations beschikbaar",
     "passwordPlaceholder": "Wachtwoord",
     "pinHint": "Wordt gebruikt voor goedkeuringen van managers (het annuleren van bestellingen, enz.)",
-    "pinPlaceholderAdd": "PIN (4-6 cijfers)",
+    "pinPlaceholderAdd": "PIN (4 cijfers)",
     "pinPlaceholderEdit": "Nieuw PIN (leeg laten om te behouden)",
     "pinSet": "✓ PIN ingesteld",
     "reactivate": "Opnieuw activeren",

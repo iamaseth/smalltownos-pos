@@ -2254,7 +2254,7 @@
     "noKitchenStations": "Aucun poste de cuisine disponible",
     "passwordPlaceholder": "Mot de passe",
     "pinHint": "Utilisé pour les approbations du responsable (annulation de commandes, etc.)",
-    "pinPlaceholderAdd": "Code PIN (4 à 6 chiffres)",
+    "pinPlaceholderAdd": "Code PIN (4 chiffres)",
     "pinPlaceholderEdit": "Nouveau code PIN (laisser vide pour conserver l’actuel)",
     "pinSet": "✓ Code PIN défini",
     "reactivate": "Réactiver",

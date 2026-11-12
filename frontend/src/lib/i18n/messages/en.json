@@ -2254,7 +2254,7 @@
     "noKitchenStations": "No kitchen stations available",
     "passwordPlaceholder": "Password",
     "pinHint": "Used for manager approvals (cancelling orders, etc.)",
-    "pinPlaceholderAdd": "PIN (4-6 digits)",
+    "pinPlaceholderAdd": "PIN (4 digits)",
     "pinPlaceholderEdit": "New PIN (leave empty to keep)",
     "pinSet": "✓ PIN set",
     "reactivate": "Reactivate",

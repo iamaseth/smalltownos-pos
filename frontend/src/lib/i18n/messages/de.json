@@ -2254,7 +2254,7 @@
     "noKitchenStations": "Keine Küchenstationen verfügbar",
     "passwordPlaceholder": "Passwort eingeben",
     "pinHint": "Wird für Managerfreigaben verwendet (z. B. beim Stornieren von Bestellungen).",
-    "pinPlaceholderAdd": "PIN (4-6 Ziffern)",
+    "pinPlaceholderAdd": "PIN (4 Ziffern)",
     "pinPlaceholderEdit": "Neue PIN (leer lassen zum Beibehalten)",
     "pinSet": "✓ PIN festgelegt",
     "reactivate": "Reaktivieren",

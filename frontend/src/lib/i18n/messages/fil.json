@@ -2254,7 +2254,7 @@
     "noKitchenStations": "Walang available na kitchen station",
     "passwordPlaceholder": "Password",
     "pinHint": "Ginagamit para sa pag-apruba ng manager (pagkansela ng mga order, atbp.)",
-    "pinPlaceholderAdd": "PIN (4-6 na digit)",
+    "pinPlaceholderAdd": "PIN (4 na digit)",
     "pinPlaceholderEdit": "Bagong PIN (iwanang blangko upang mapanatili)",
     "pinSet": "✓ Naitakda ang PIN",
     "reactivate": "Muling I-activate",

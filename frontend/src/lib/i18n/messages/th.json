@@ -2254,7 +2254,7 @@
     "noKitchenStations": "ไม่มีสถานีครัวที่ใช้ได้",
     "passwordPlaceholder": "รหัสผ่าน",
     "pinHint": "ใช้สำหรับการอนุมัติของผู้จัดการ เช่น การยกเลิกคำสั่งซื้อ",
-    "pinPlaceholderAdd": "PIN (4-6 หลัก)",
+    "pinPlaceholderAdd": "PIN (4 หลัก)",
     "pinPlaceholderEdit": "PIN ใหม่ (เว้นว่างหากไม่เปลี่ยน)",
     "pinSet": "✓ ตั้ง PIN แล้ว",
     "reactivate": "เปิดใช้งานอีกครั้ง",

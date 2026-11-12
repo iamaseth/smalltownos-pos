@@ -2254,7 +2254,7 @@
     "noKitchenStations": "No hay estaciones de cocina disponibles",
     "passwordPlaceholder": "Contraseña",
     "pinHint": "Se usa para aprobaciones del encargado (cancelar pedidos, etc.)",
-    "pinPlaceholderAdd": "PIN (4-6 dígitos)",
+    "pinPlaceholderAdd": "PIN (4 dígitos)",
     "pinPlaceholderEdit": "Nuevo PIN (dejalo vacío para mantener)",
     "pinSet": "✓ PIN configurado",
     "reactivate": "Reactivar",

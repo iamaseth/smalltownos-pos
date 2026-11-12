@@ -2254,7 +2254,7 @@
     "noKitchenStations": "사용 가능한 주방 스테이션 없음",
     "passwordPlaceholder": "비밀번호",
     "pinHint": "관리자 승인(주문 취소 등)에 사용됩니다",
-    "pinPlaceholderAdd": "PIN (4-6자리)",
+    "pinPlaceholderAdd": "PIN (4자리)",
     "pinPlaceholderEdit": "새 PIN (비워 두면 유지)",
     "pinSet": "✓ PIN 설정됨",
     "reactivate": "활성화",

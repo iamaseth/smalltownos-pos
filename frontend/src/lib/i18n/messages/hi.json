@@ -2254,7 +2254,7 @@
     "noKitchenStations": "कोई रसोई स्टेशन उपलब्ध नहीं है",
     "passwordPlaceholder": "पासवर्ड",
     "pinHint": "प्रबंधक अनुमोदन (आदेश रद्द करना, आदि) के लिए उपयोग किया जाता है",
-    "pinPlaceholderAdd": "पिन (4-6 अंक)",
+    "pinPlaceholderAdd": "पिन (4 अंक)",
     "pinPlaceholderEdit": "नया पिन (रखने के लिए खाली छोड़ें)",
     "pinSet": "✓ पिन सेट",
     "reactivate": "पुनः सक्रिय करें",
