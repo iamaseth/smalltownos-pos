@@ -1,0 +1,125 @@
+# ---------------------------------------------------------------
+# One-button apply: register fixes (2026-11-13)
+#
+# Actions tab -> "Apply register fixes" -> Run workflow.
+# Type  push it  in the box, then press the green button.
+#
+# What it does:
+#   1. Checks out the target branch (default: the Railway test branch).
+#   2. Applies patches/smalltownos-pos-register-fixes-2026-11-13.patch (stored on main).
+#   3. Builds the backend and runs the register-guards + held-orders tests.
+#   4. Only if all of that passes: commits and pushes to the branch.
+#      Railway auto-deploys that branch, so the test site rebuilds.
+# If anything fails, nothing is pushed and Railway is untouched.
+# Running it twice is safe: if the fixes are already on the branch it stops.
+# ---------------------------------------------------------------
+
+name: Apply register fixes
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "push it" to apply, commit and push (Railway will rebuild)'
+        required: true
+        default: ''
+      branch:
+        description: 'Branch to apply the fixes to'
+        required: true
+        default: 'design/the-bay-exact-html-integration'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-register-fixes
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Apply, test, push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PATCH_PATH: patches/smalltownos-pos-register-fixes-2026-11-13.patch
+    steps:
+      - name: Check confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "push it" ]; then
+            echo "::error::Confirmation box must say exactly: push it"
+            exit 1
+          fi
+
+      - name: Check out target branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+
+      - name: Get the patch from main
+        run: |
+          git fetch origin main --depth=1
+          git show "FETCH_HEAD:${PATCH_PATH}" > "$RUNNER_TEMP/fix.patch"
+          wc -l "$RUNNER_TEMP/fix.patch"
+
+      - name: Apply the patch
+        id: apply
+        run: |
+          if git apply --reverse --check "$RUNNER_TEMP/fix.patch" 2>/dev/null; then
+            echo "The fixes are already on ${{ inputs.branch }}. Nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git apply --check "$RUNNER_TEMP/fix.patch"
+          git apply "$RUNNER_TEMP/fix.patch"
+          git status --short
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js 22
+        if: steps.apply.outputs.skip == 'false'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.apply.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Build backend
+        if: steps.apply.outputs.skip == 'false'
+        run: npm run build
+
+      - name: Test register guards
+        if: steps.apply.outputs.skip == 'false'
+        run: npm run test:register-guards
+
+      - name: Test held orders
+        if: steps.apply.outputs.skip == 'false'
+        run: npm run test:held-orders
+
+      - name: Commit and push (Railway rebuilds)
+        if: steps.apply.outputs.skip == 'false'
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+          rm -rf dist
+          git add -A -- . ':!dist' ':!node_modules'
+          git status --short
+          git commit -F - <<'MSG'
+          fix: register guards for unavailable products, held orders and cash shifts
+
+          - Refuse selling switched-off, deleted or unknown menu items (400, not 500)
+          - Holding a table can't overwrite another held order (audit B3)
+          - Holding on a busy or unknown table is refused (audit B4)
+          - Till shows the server's reason when a hold is refused
+          - Settings > Payment methods: "Require an open shift for cash" (audit B5), off by default
+          - New tests/register-guards.test.ts; held-order tests extended
+
+          Applied by the "Apply register fixes" workflow.
+
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+          Claude-Session: https://claude.ai/code/session_01UygduoySiRRVctAe3oKZRc
+          MSG
+          git push origin "HEAD:${{ inputs.branch }}"
+          echo "Pushed to ${{ inputs.branch }}. Railway should now rebuild the test site."
