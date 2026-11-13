@@ -1,0 +1,694 @@
+diff --git a/frontend/src/components/pos/CartPanel.tsx b/frontend/src/components/pos/CartPanel.tsx
+index 01e9662..ab7a65e 100644
+--- a/frontend/src/components/pos/CartPanel.tsx
++++ b/frontend/src/components/pos/CartPanel.tsx
+@@ -147,8 +147,9 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDe
+       await heldOrders.holdOrder(cart.tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
+       cart.clearCart();
+       toast.success(t('orderHeldFor', { table: tableName }));
+-    } catch {
+-      toast.error(t('holdOrderFailed'));
++    } catch (error) {
++      const response = (error as { response?: { status?: number; data?: { error?: string } } })?.response;
++      toast.error(response?.status === 409 && response.data?.error ? response.data.error : t('holdOrderFailed'));
+     }
+   };
+ 
+diff --git a/frontend/src/components/settings/PaymentMethodsSettings.tsx b/frontend/src/components/settings/PaymentMethodsSettings.tsx
+index f5f629e..ac4a2f2 100644
+--- a/frontend/src/components/settings/PaymentMethodsSettings.tsx
++++ b/frontend/src/components/settings/PaymentMethodsSettings.tsx
+@@ -35,18 +35,21 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
+   const [mergeTargets, setMergeTargets] = useState<Record<number, string>>({});
+   const [merges, setMerges] = useState<MergeRecord[]>([]);
+   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
++  const [requireOpenShift, setRequireOpenShift] = useState(false);
+ 
+   const load = async () => {
+-    const [methodsRes, historyRes, splitRes] = await Promise.all([
++    const [methodsRes, historyRes, splitRes, shiftRes] = await Promise.all([
+       api.get('/payment-methods?include_inactive=true'),
+       api.get('/payment-methods/merge-history'),
+       api.get('/settings/split_checks_enabled').catch(() => ({ data: { setting: { value: 'false' } } })),
++      api.get('/settings/require_open_shift').catch(() => ({ data: { setting: { value: 'false' } } })),
+     ]);
+     const rows = methodsRes.data.payment_methods || [];
+     setMethods(rows);
+     setNames(Object.fromEntries(rows.map((row: CustomPaymentMethod) => [row.id, row.name])));
+     setMerges(historyRes.data.merges || []);
+     setSplitChecksEnabled(splitRes.data?.setting?.value === 'true');
++    setRequireOpenShift(shiftRes.data?.setting?.value === 'true');
+   };
+ 
+   useEffect(() => {
+@@ -134,6 +137,11 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
+         <input type="checkbox" className="size-5" disabled={!isAdmin} checked={splitChecksEnabled} onChange={async (e) => { const value = e.target.checked; setSplitChecksEnabled(value); try { await api.put('/settings/split_checks_enabled', { value: String(value) }); } catch { setSplitChecksEnabled(!value); toast.error(t('saveFailed')); } }} />
+       </div>
+ 
++      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
++        <div><h2 className="font-semibold text-foreground">{t('requireOpenShift')}</h2><p className="text-sm text-muted-foreground mt-1">{t('requireOpenShiftHint')}</p></div>
++        <input type="checkbox" className="size-5" disabled={!isAdmin} checked={requireOpenShift} onChange={async (e) => { const value = e.target.checked; setRequireOpenShift(value); try { await api.put('/settings/require_open_shift', { value: String(value) }); } catch { setRequireOpenShift(!value); toast.error(t('saveFailed')); } }} />
++      </div>
++
+       {merges.length > 0 && <div className="bg-card rounded-xl border border-border p-6"><h2 className="font-semibold text-foreground mb-3">{t('mergeHistory')}</h2><div className="space-y-2 text-sm text-muted-foreground">{merges.map((entry) => <p key={entry.id}>{entry.source_name} → {entry.target_name} · {entry.affected_payments} · {formatDate(entry.merged_at)}</p>)}</div></div>}
+     </SettingsTabShell>
+   );
+diff --git a/frontend/src/lib/i18n/messages/ar.json b/frontend/src/lib/i18n/messages/ar.json
+index 843690f..e46f71c 100644
+--- a/frontend/src/lib/i18n/messages/ar.json
++++ b/frontend/src/lib/i18n/messages/ar.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "يتم توزيع هذه النسخة عبر متجر التطبيقات. ويتولى المتجر إدارة التحديثات.",
+     "splitChecks": "تقسيم الفواتير",
+     "splitChecksHint": "السماح بتقسيم أصناف الطعام أو الكميات المخصصة لتناول الطعام في المطعم إلى فواتير منفصلة. هذه الميزة معطلة افتراضيًا.",
++    "requireOpenShift": "طلب وردية مفتوحة للدفع النقدي",
++    "requireOpenShiftHint": "تُرفض المدفوعات النقدية حتى تُفتح وردية، بحيث تُحتسب كل عملية بيع نقدية ضمن جلسة الدرج. معطّل افتراضيًا.",
+     "stationAssignedCategories": "مخصص لمكان آخر — حدد هذا الخيار للنقل",
+     "stationAvailableCategories": "الفئات المتاحة",
+     "stationCategories": "الفئات التي يتم توجيهها إلى هنا",
+diff --git a/frontend/src/lib/i18n/messages/bn.json b/frontend/src/lib/i18n/messages/bn.json
+index 3822c2e..11d43d5 100644
+--- a/frontend/src/lib/i18n/messages/bn.json
++++ b/frontend/src/lib/i18n/messages/bn.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "এই সংস্করণটি অ্যাপ স্টোরের মাধ্যমে বিতরণ করা হয়। আপডেট স্টোর দ্বারা পরিচালিত হয়.",
+     "splitChecks": "বিভক্ত চেক",
+     "splitChecksHint": "ডাইন-ইন আইটেম বা পরিমাণ আলাদা বিলে ভাগ করার অনুমতি দিন। ডিফল্টরূপে নিষ্ক্রিয়.",
++    "requireOpenShift": "নগদের জন্য খোলা শিফট আবশ্যক",
++    "requireOpenShiftHint": "শিফট খোলা না হওয়া পর্যন্ত নগদ পেমেন্ট গ্রহণ করা হবে না, যাতে প্রতিটি নগদ বিক্রি ড্রয়ার সেশনে গোনা হয়। ডিফল্টভাবে বন্ধ।",
+     "stationAssignedCategories": "অন্য কোথাও বরাদ্দ করা হয়েছে — সরানোর জন্য নির্বাচন করুন",
+     "stationAvailableCategories": "উপলব্ধ বিভাগ",
+     "stationCategories": "এখানে রুট করা বিভাগ",
+diff --git a/frontend/src/lib/i18n/messages/de.json b/frontend/src/lib/i18n/messages/de.json
+index 6c98d81..f42a4b5 100644
+--- a/frontend/src/lib/i18n/messages/de.json
++++ b/frontend/src/lib/i18n/messages/de.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Verwaltet über den App Store.",
+     "splitChecks": "Rechnungen teilen",
+     "splitChecksHint": "Erlaubt, Speisen oder Mengen im Restaurant auf getrennte Rechnungen aufzuteilen. Standardmäßig deaktiviert.",
++    "requireOpenShift": "Offene Schicht für Barzahlungen verlangen",
++    "requireOpenShiftHint": "Barzahlungen werden abgelehnt, bis eine Schicht geöffnet ist, damit jeder Barverkauf in einer Kassensitzung erfasst wird. Standardmäßig aus.",
+     "stationAssignedCategories": "Anderswo zugewiesen – zum Verschieben auswählen",
+     "stationAvailableCategories": "Verfügbare Kategorien",
+     "stationCategories": "Kategorien",
+diff --git a/frontend/src/lib/i18n/messages/en.json b/frontend/src/lib/i18n/messages/en.json
+index 217ab41..24f5924 100644
+--- a/frontend/src/lib/i18n/messages/en.json
++++ b/frontend/src/lib/i18n/messages/en.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "This version is distributed via the App Store. Updates are managed by the store.",
+     "splitChecks": "Split checks",
+     "splitChecksHint": "Allow dine-in items or quantities to be divided into separate bills. Disabled by default.",
++    "requireOpenShift": "Require an open shift for cash",
++    "requireOpenShiftHint": "Cash payments are refused until a shift is opened, so every cash sale is counted in a drawer session. Off by default.",
+     "stationAssignedCategories": "Assigned elsewhere — select to move",
+     "stationAvailableCategories": "Available categories",
+     "stationCategories": "Categories routed here",
+diff --git a/frontend/src/lib/i18n/messages/es.json b/frontend/src/lib/i18n/messages/es.json
+index e4c3881..82dbef3 100644
+--- a/frontend/src/lib/i18n/messages/es.json
++++ b/frontend/src/lib/i18n/messages/es.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Esta versión se distribuye por la App Store. Las actualizaciones las maneja la tienda.",
+     "splitChecks": "Dividir cuentas",
+     "splitChecksHint": "Permite dividir artículos o cantidades de mesa en cuentas separadas. Desactivado por defecto.",
++    "requireOpenShift": "Exigir turno abierto para efectivo",
++    "requireOpenShiftHint": "Los pagos en efectivo se rechazan hasta que se abra un turno, para que cada venta en efectivo se cuente en una sesión de caja. Desactivado por defecto.",
+     "stationAssignedCategories": "Asignadas en otra estación — seleccioná para mover",
+     "stationAvailableCategories": "Categorías disponibles",
+     "stationCategories": "Categorías enviadas aquí",
+diff --git a/frontend/src/lib/i18n/messages/fa.json b/frontend/src/lib/i18n/messages/fa.json
+index 6a14575..4e9945b 100644
+--- a/frontend/src/lib/i18n/messages/fa.json
++++ b/frontend/src/lib/i18n/messages/fa.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "این نسخه از طریق فروشگاه برنامه توزیع می‌شود. به‌روزرسانی‌ها توسط فروشگاه مدیریت می‌شوند.",
+     "splitChecks": "جدا کردن صورت‌حساب‌ها",
+     "splitChecksHint": "اجازه می‌دهد کالاها یا شمار آن‌ها در سفارش‌های داخل رستوران میان چند صورت‌حساب جدا شوند. به‌گونه پیش‌گزیده خاموش است.",
++    "requireOpenShift": "الزام شیفت باز برای پرداخت نقدی",
++    "requireOpenShiftHint": "پرداخت‌های نقدی تا باز شدن شیفت پذیرفته نمی‌شوند تا هر فروش نقدی در یک جلسه صندوق ثبت شود. به‌طور پیش‌فرض خاموش است.",
+     "stationAssignedCategories": "اختصاص‌یافته در جای دیگر — برای انتقال انتخاب کنید",
+     "stationAvailableCategories": "دسته‌های در دسترس",
+     "stationCategories": "دسته‌های هدایت‌شده به اینجا",
+diff --git a/frontend/src/lib/i18n/messages/fil.json b/frontend/src/lib/i18n/messages/fil.json
+index 873c47a..7dae533 100644
+--- a/frontend/src/lib/i18n/messages/fil.json
++++ b/frontend/src/lib/i18n/messages/fil.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Ipinapamahagi ang bersyong ito sa pamamagitan ng App Store. Pinamamahalaan ng store ang mga update.",
+     "splitChecks": "I-split ang mga check",
+     "splitChecksHint": "Allow dine-in items or quantities to be divided into separate bills. Naka-disable by default.",
++    "requireOpenShift": "Mangailangan ng bukas na shift para sa cash",
++    "requireOpenShiftHint": "Tinatanggihan ang mga bayad na cash hangga't walang bukas na shift, para mabilang ang bawat cash na benta sa isang drawer session. Naka-off bilang default.",
+     "stationAssignedCategories": "Naka-assign sa iba — piliin para ilipat",
+     "stationAvailableCategories": "Mga available na kategorya",
+     "stationCategories": "Mga Kategorya routed here",
+diff --git a/frontend/src/lib/i18n/messages/fr.json b/frontend/src/lib/i18n/messages/fr.json
+index 714125f..a5c6071 100644
+--- a/frontend/src/lib/i18n/messages/fr.json
++++ b/frontend/src/lib/i18n/messages/fr.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Cette version est distribuée par l’App Store. Les mises à jour sont gérées par la boutique.",
+     "splitChecks": "Diviser les additions",
+     "splitChecksHint": "Autoriser la répartition des articles ou des quantités consommés sur place entre plusieurs factures. Désactivé par défaut.",
++    "requireOpenShift": "Exiger un service ouvert pour les espèces",
++    "requireOpenShiftHint": "Les paiements en espèces sont refusés tant qu'aucun service n'est ouvert, afin que chaque vente en espèces soit comptée dans une session de caisse. Désactivé par défaut.",
+     "stationAssignedCategories": "Affectées ailleurs — sélectionner pour déplacer",
+     "stationAvailableCategories": "Catégories disponibles",
+     "stationCategories": "Catégories acheminées ici",
+diff --git a/frontend/src/lib/i18n/messages/hi.json b/frontend/src/lib/i18n/messages/hi.json
+index a09ed2d..8185352 100644
+--- a/frontend/src/lib/i18n/messages/hi.json
++++ b/frontend/src/lib/i18n/messages/hi.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "यह संस्करण ऐप स्टोर के माध्यम से वितरित किया जाता है। अपडेट स्टोर द्वारा प्रबंधित किए जाते हैं.",
+     "splitChecks": "विभाजित जाँचें",
+     "splitChecksHint": "भोजन की वस्तुओं या मात्राओं को अलग-अलग बिलों में विभाजित करने की अनुमति दें। डिफ़ॉल्ट रूप से अक्षम.",
++    "requireOpenShift": "नकद के लिए खुली शिफ्ट आवश्यक",
++    "requireOpenShiftHint": "शिफ्ट खुलने तक नकद भुगतान अस्वीकार किए जाते हैं, ताकि हर नकद बिक्री दराज़ सत्र में गिनी जाए। डिफ़ॉल्ट रूप से बंद।",
+     "stationAssignedCategories": "अन्यत्र असाइन किया गया - स्थानांतरित करने के लिए चयन करें",
+     "stationAvailableCategories": "उपलब्ध श्रेणियां",
+     "stationCategories": "श्रेणियाँ यहाँ रूट की गईं",
+diff --git a/frontend/src/lib/i18n/messages/id.json b/frontend/src/lib/i18n/messages/id.json
+index 56f5680..14d8905 100644
+--- a/frontend/src/lib/i18n/messages/id.json
++++ b/frontend/src/lib/i18n/messages/id.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Versi ini didistribusikan melalui App Store. Pembaruan dikelola oleh toko.",
+     "splitChecks": "Pisah tagihan",
+     "splitChecksHint": "Izinkan item atau jumlah makan di tempat dibagi menjadi tagihan terpisah. Nonaktif secara bawaan.",
++    "requireOpenShift": "Wajibkan shift terbuka untuk tunai",
++    "requireOpenShiftHint": "Pembayaran tunai ditolak sampai shift dibuka, sehingga setiap penjualan tunai tercatat dalam sesi laci kas. Nonaktif secara default.",
+     "stationAssignedCategories": "Ditugaskan di tempat lain — pilih untuk memindahkan",
+     "stationAvailableCategories": "Kategori tersedia",
+     "stationCategories": "Kategori yang diarahkan ke sini",
+diff --git a/frontend/src/lib/i18n/messages/it.json b/frontend/src/lib/i18n/messages/it.json
+index 7ae219f..08d7d11 100644
+--- a/frontend/src/lib/i18n/messages/it.json
++++ b/frontend/src/lib/i18n/messages/it.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Questa versione è distribuita tramite l'App Store. Gli aggiornamenti sono gestiti dallo store.",
+     "splitChecks": "Dividi conti",
+     "splitChecksHint": "Consenti di dividere gli articoli o le quantità al tavolo in conti separati. Disabilitato per impostazione predefinita.",
++    "requireOpenShift": "Richiedi un turno aperto per i contanti",
++    "requireOpenShiftHint": "I pagamenti in contanti vengono rifiutati finché non si apre un turno, così ogni vendita in contanti è conteggiata in una sessione di cassa. Disattivato per impostazione predefinita.",
+     "stationAssignedCategories": "Assegnate altrove — seleziona per spostare",
+     "stationAvailableCategories": "Categorie disponibili",
+     "stationCategories": "Categorie instradate qui",
+diff --git a/frontend/src/lib/i18n/messages/ja.json b/frontend/src/lib/i18n/messages/ja.json
+index 6bd2fe6..10cd1cb 100644
+--- a/frontend/src/lib/i18n/messages/ja.json
++++ b/frontend/src/lib/i18n/messages/ja.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "このバージョンはApp Store経由で配布されています。更新はストアで管理されます。",
+     "splitChecks": "会計を分割",
+     "splitChecksHint": "店内飲食の商品や数量を複数の請求書に分けられるようにします。既定では無効です。",
++    "requireOpenShift": "現金払いにはシフト開始を必須にする",
++    "requireOpenShiftHint": "シフトが開始されるまで現金払いを受け付けません。すべての現金売上がドロワーセッションで集計されます。初期設定はオフです。",
+     "stationAssignedCategories": "他のステーションに割り当て済み — 選択して移動",
+     "stationAvailableCategories": "利用可能なカテゴリ",
+     "stationCategories": "ここに割り当てたカテゴリ",
+diff --git a/frontend/src/lib/i18n/messages/ko.json b/frontend/src/lib/i18n/messages/ko.json
+index 4f4ad96..f45fb60 100644
+--- a/frontend/src/lib/i18n/messages/ko.json
++++ b/frontend/src/lib/i18n/messages/ko.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "이 버전은 App Store를 통해 배포됩니다. 업데이트는 스토어에서 관리합니다.",
+     "splitChecks": "계산서 분할",
+     "splitChecksHint": "매장 식사 항목이나 수량을 별도 청구서로 나눌 수 있게 합니다. 기본적으로 비활성화되어 있습니다.",
++    "requireOpenShift": "현금 결제 시 열린 교대 필수",
++    "requireOpenShiftHint": "교대가 열릴 때까지 현금 결제를 거부하여 모든 현금 판매가 서랍 세션에 집계되도록 합니다. 기본값은 꺼짐입니다.",
+     "stationAssignedCategories": "다른 스테이션에 배정됨 — 선택하여 이동",
+     "stationAvailableCategories": "사용 가능한 카테고리",
+     "stationCategories": "여기로 라우팅된 카테고리",
+diff --git a/frontend/src/lib/i18n/messages/ne.json b/frontend/src/lib/i18n/messages/ne.json
+index 57f1e3a..0cf8425 100644
+--- a/frontend/src/lib/i18n/messages/ne.json
++++ b/frontend/src/lib/i18n/messages/ne.json
+@@ -2019,6 +2019,8 @@
+     "softwareUpdatesHintStore": "यो संस्करण एप स्टोर मार्फत वितरण गरिएको छ। अद्यावधिकहरू स्टोर द्वारा व्यवस्थित छन्।",
+     "splitChecks": "विभाजन जाँचहरू",
+     "splitChecksHint": "खाना खाने वस्तुहरू वा परिमाणहरूलाई छुट्टै बिलहरूमा विभाजन गर्न अनुमति दिनुहोस्। पूर्वनिर्धारित रूपमा असक्षम।",
++    "requireOpenShift": "नगदका लागि खुला सिफ्ट आवश्यक",
++    "requireOpenShiftHint": "सिफ्ट नखुलेसम्म नगद भुक्तानी अस्वीकार गरिन्छ, ताकि हरेक नगद बिक्री दराज सत्रमा गनिन्छ। पूर्वनिर्धारित रूपमा बन्द।",
+     "stationAssignedCategories": "अन्यत्र तोकिएको — सार्न चयन गर्नुहोस्",
+     "stationAvailableCategories": "उपलब्ध कोटिहरू",
+     "stationCategories": "कोटिहरू यहाँ रूट गरियो",
+diff --git a/frontend/src/lib/i18n/messages/nl.json b/frontend/src/lib/i18n/messages/nl.json
+index 21d64a6..979bac3 100644
+--- a/frontend/src/lib/i18n/messages/nl.json
++++ b/frontend/src/lib/i18n/messages/nl.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Deze versie wordt verspreid via de App Store. Updates worden beheerd door de winkel.",
+     "splitChecks": "Gesplitste bonnen",
+     "splitChecksHint": "Sta toe dat artikelen of hoeveelheden die ter plaatse worden gegeten, in aparte bonnen worden verdeeld. Standaard uitgeschakeld.",
++    "requireOpenShift": "Open dienst vereisen voor contant",
++    "requireOpenShiftHint": "Contante betalingen worden geweigerd totdat er een dienst is geopend, zodat elke contante verkoop in een kassasessie wordt geteld. Standaard uit.",
+     "stationAssignedCategories": "Elders toegewezen: selecteer om te verplaatsen",
+     "stationAvailableCategories": "Beschikbare categorieën",
+     "stationCategories": "Categorieën worden hierheen gerouteerd",
+diff --git a/frontend/src/lib/i18n/messages/pt.json b/frontend/src/lib/i18n/messages/pt.json
+index 639fdce..6f3d0f3 100644
+--- a/frontend/src/lib/i18n/messages/pt.json
++++ b/frontend/src/lib/i18n/messages/pt.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Esta versão é distribuída pela App Store. As atualizações são gerenciadas pela loja.",
+     "splitChecks": "Dividir contas",
+     "splitChecksHint": "Permite dividir itens ou quantidades de mesa em contas separadas. Desativado por padrão.",
++    "requireOpenShift": "Exigir turno aberto para dinheiro",
++    "requireOpenShiftHint": "Pagamentos em dinheiro são recusados até que um turno seja aberto, para que cada venda em dinheiro seja contada numa sessão de caixa. Desativado por padrão.",
+     "stationAssignedCategories": "Atribuídas em outro lugar — selecione para mover",
+     "stationAvailableCategories": "Categorias disponíveis",
+     "stationCategories": "Categorias direcionadas para cá",
+diff --git a/frontend/src/lib/i18n/messages/ru.json b/frontend/src/lib/i18n/messages/ru.json
+index f5f031a..b9da008 100644
+--- a/frontend/src/lib/i18n/messages/ru.json
++++ b/frontend/src/lib/i18n/messages/ru.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Эта версия распространяется через App Store. Обновления управляются магазином.",
+     "splitChecks": "Раздельные чеки",
+     "splitChecksHint": "Разрешить разделение позиций или их количества на отдельные счета. По умолчанию отключено.",
++    "requireOpenShift": "Требовать открытую смену для наличных",
++    "requireOpenShiftHint": "Оплата наличными отклоняется, пока смена не открыта, чтобы каждая продажа за наличные учитывалась в кассовой сессии. По умолчанию выключено.",
+     "stationAssignedCategories": "Назначено в другом месте — выберите, чтобы переместить",
+     "stationAvailableCategories": "Доступные категории",
+     "stationCategories": "Категории перенаправлены сюда",
+diff --git a/frontend/src/lib/i18n/messages/sq.json b/frontend/src/lib/i18n/messages/sq.json
+index 84b9db9..da92f5d 100644
+--- a/frontend/src/lib/i18n/messages/sq.json
++++ b/frontend/src/lib/i18n/messages/sq.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Ky version shpërndahet përmes App Store. Përditësimet menaxhohen nga dyqani.",
+     "splitChecks": "Ndarja e çeqeve",
+     "splitChecksHint": "Lejo që artikujt ose sasitë e ushqimit të ndahen në dëftesa të veçanta. Çaktivizuar si parazgjedhje.",
++    "requireOpenShift": "Kërko turn të hapur për para në dorë",
++    "requireOpenShiftHint": "Pagesat me para në dorë refuzohen derisa të hapet një turn, që çdo shitje me para të llogaritet në një seancë arke. Çaktivizuar si parazgjedhje.",
+     "stationAssignedCategories": "Caktuar diku tjetër — zgjidhni për të lëvizur",
+     "stationAvailableCategories": "Kategoritë e disponueshme",
+     "stationCategories": "Kategoritë e drejtuara këtu",
+diff --git a/frontend/src/lib/i18n/messages/th.json b/frontend/src/lib/i18n/messages/th.json
+index 9eecea6..5731090 100644
+--- a/frontend/src/lib/i18n/messages/th.json
++++ b/frontend/src/lib/i18n/messages/th.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "รุ่นนี้แจกจ่ายผ่าน App Store และจัดการการอัปเดตโดยสถานี",
+     "splitChecks": "แยกบิล",
+     "splitChecksHint": "อนุญาตให้แยกสินค้าทานที่ร้านหรือจำนวนออกเป็นหลายบิล ปิดไว้โดยค่าเริ่มต้น",
++    "requireOpenShift": "ต้องเปิดกะก่อนรับเงินสด",
++    "requireOpenShiftHint": "จะปฏิเสธการชำระเงินสดจนกว่าจะเปิดกะ เพื่อให้ยอดขายเงินสดทุกรายการถูกนับในรอบลิ้นชัก ปิดเป็นค่าเริ่มต้น",
+     "stationAssignedCategories": "กำหนดไว้ที่อื่น - เลือกเพื่อย้าย",
+     "stationAvailableCategories": "หมวดหมู่ที่ใช้ได้",
+     "stationCategories": "หมวดหมู่ที่ส่งมาที่นี่",
+diff --git a/frontend/src/lib/i18n/messages/tr.json b/frontend/src/lib/i18n/messages/tr.json
+index ff3a82d..817199a 100644
+--- a/frontend/src/lib/i18n/messages/tr.json
++++ b/frontend/src/lib/i18n/messages/tr.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Uygulama mağazası tarafından otomatik güncellenir",
+     "splitChecks": "Hesap Bölme Özelliği",
+     "splitChecksHint": "Masada parçalı ve ayrı ödeme almayı etkinleştirir",
++    "requireOpenShift": "Nakit için açık vardiya zorunlu",
++    "requireOpenShiftHint": "Vardiya açılana kadar nakit ödemeler reddedilir; böylece her nakit satış bir kasa oturumunda sayılır. Varsayılan olarak kapalı.",
+     "stationAssignedCategories": "Başka yerde atanmış — taşımak için seçin",
+     "stationAvailableCategories": "Kullanılabilir kategoriler",
+     "stationCategories": "Atanan Kategoriler",
+diff --git a/frontend/src/lib/i18n/messages/ur.json b/frontend/src/lib/i18n/messages/ur.json
+index ab50202..430ae77 100644
+--- a/frontend/src/lib/i18n/messages/ur.json
++++ b/frontend/src/lib/i18n/messages/ur.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "یہ ورژن App Store کے ذریعے تقسیم ہوتا ہے۔ اپ ڈیٹس اسٹور سنبھالتا ہے۔",
+     "splitChecks": "بل تقسیم کریں",
+     "splitChecksHint": "میز پر کھانے والے آئٹم یا مقدار کو مختلف بلوں میں تقسیم کرنے دیں۔ طے شدہ طور پر بند ہے۔",
++    "requireOpenShift": "نقد کے لیے کھلی شفٹ لازمی",
++    "requireOpenShiftHint": "شفٹ کھلنے تک نقد ادائیگیاں مسترد کی جاتی ہیں تاکہ ہر نقد فروخت دراز سیشن میں شمار ہو۔ بطور طے شدہ بند۔",
+     "stationAssignedCategories": "کہیں اور مقرر ہیں — منتقل کرنے کے لیے منتخب کریں",
+     "stationAvailableCategories": "دستیاب زمرے",
+     "stationCategories": "یہاں بھیجے گئے زمرے",
+diff --git a/frontend/src/lib/i18n/messages/vi.json b/frontend/src/lib/i18n/messages/vi.json
+index 46b14c9..e6e190d 100644
+--- a/frontend/src/lib/i18n/messages/vi.json
++++ b/frontend/src/lib/i18n/messages/vi.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "Phiên bản này được phân phối qua App Store. Cửa hàng quản lý cập nhật.",
+     "splitChecks": "Tách hóa đơn",
+     "splitChecksHint": "Cho phép chia món ăn tại chỗ hoặc số lượng thành các hóa đơn riêng. Mặc định tắt.",
++    "requireOpenShift": "Yêu cầu mở ca khi nhận tiền mặt",
++    "requireOpenShiftHint": "Thanh toán tiền mặt bị từ chối cho đến khi mở ca, để mọi khoản bán bằng tiền mặt được tính vào một phiên ngăn kéo. Mặc định tắt.",
+     "stationAssignedCategories": "Đã được gán nơi khác - chọn để chuyển",
+     "stationAvailableCategories": "Danh mục khả dụng",
+     "stationCategories": "Danh mục được định tuyến đến đây",
+diff --git a/frontend/src/lib/i18n/messages/zh-tw.json b/frontend/src/lib/i18n/messages/zh-tw.json
+index 61b78cc..cd23d5e 100644
+--- a/frontend/src/lib/i18n/messages/zh-tw.json
++++ b/frontend/src/lib/i18n/messages/zh-tw.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "此版本透過 App Store 分發。更新由商店管理。",
+     "splitChecks": "拆分帳單",
+     "splitChecksHint": "允許將內用商品或數量拆分到不同帳單。預設關閉。",
++    "requireOpenShift": "現金收款需先開班",
++    "requireOpenShiftHint": "開班前拒絕現金付款，確保每筆現金銷售都計入錢箱班次。預設關閉。",
+     "stationAssignedCategories": "已指派到其他工作站 — 選擇以移動",
+     "stationAvailableCategories": "可用分類",
+     "stationCategories": "路由到此處的分類",
+diff --git a/frontend/src/lib/i18n/messages/zh.json b/frontend/src/lib/i18n/messages/zh.json
+index 8a2a846..e2000ad 100644
+--- a/frontend/src/lib/i18n/messages/zh.json
++++ b/frontend/src/lib/i18n/messages/zh.json
+@@ -2021,6 +2021,8 @@
+     "softwareUpdatesHintStore": "此版本通过 App Store 分发。更新由商店管理。",
+     "splitChecks": "拆分账单",
+     "splitChecksHint": "允许将堂食商品或数量拆分到不同账单。默认关闭。",
++    "requireOpenShift": "现金收款需先开班",
++    "requireOpenShiftHint": "开班前拒绝现金付款，确保每笔现金销售都计入钱箱班次。默认关闭。",
+     "stationAssignedCategories": "已指派到其他工作站 — 选择以移动",
+     "stationAvailableCategories": "可用分类",
+     "stationCategories": "路由到此处的分类",
+diff --git a/main/routes/held-orders.ts b/main/routes/held-orders.ts
+index 83c83ef..0242391 100644
+--- a/main/routes/held-orders.ts
++++ b/main/routes/held-orders.ts
+@@ -25,6 +25,11 @@ interface HeldOrderRow {
+ 
+ const MAX_HELD_ORDER_ITEMS = 100;
+ const MAX_IDENTIFIER_LENGTH = 128;
++const ACTIVE_ORDER_STATUS_SQL = "status NOT IN ('completed', 'cancelled')";
++
++function httpError(message: string, statusCode: number): Error {
++  return Object.assign(new Error(message), { statusCode });
++}
+ 
+ function isRecord(value: unknown): value is Record<string, any> {
+   return typeof value === 'object' && value !== null && !Array.isArray(value);
+@@ -67,11 +72,16 @@ function validateHeldOrderInput(body: any, db: any): {
+   customerId: string | number | null;
+   guestCount: number;
+   orderNotes: string;
++  replaceHeldOrderId: string | null;
+ } {
+   if (!isRecord(body)) {
+     throw new Error('Request body must be an object');
+   }
+-  const { tableId, items, customerId, guestCount, orderNotes } = body;
++  const { tableId, items, customerId, guestCount, orderNotes, replaceHeldOrderId } = body;
++  if (replaceHeldOrderId !== undefined && replaceHeldOrderId !== null
++    && (typeof replaceHeldOrderId !== 'string' || replaceHeldOrderId.length === 0 || replaceHeldOrderId.length > MAX_IDENTIFIER_LENGTH)) {
++    throw new Error('replaceHeldOrderId must be a held-order id');
++  }
+   if (typeof tableId !== 'string' || tableId.trim().length === 0 || tableId.length > MAX_IDENTIFIER_LENGTH) {
+     throw new Error('tableId must be a non-empty string');
+   }
+@@ -95,6 +105,7 @@ function validateHeldOrderInput(body: any, db: any): {
+     customerId: customerId ?? null,
+     guestCount: guestCount ?? 1,
+     orderNotes: orderNotes ?? '',
++    replaceHeldOrderId: replaceHeldOrderId ?? null,
+   };
+ }
+ 
+@@ -148,11 +159,21 @@ router.post('/', heldOrderWriteRateLimit, requirePermission('held-orders.manage'
+     } catch (error: any) {
+       return res.status(400).json({ error: error.message });
+     }
+-    const { tableId, items, customerId, guestCount, orderNotes } = input;
++    const { tableId, items, customerId, guestCount, orderNotes, replaceHeldOrderId } = input;
+     let heldOrderId = '';
+     
+     withTxn(() => {
++      const table = db.prepare('SELECT id, is_active FROM tables WHERE id = ?').get(tableId) as { id: string; is_active: number } | undefined;
++      if (!table || table.is_active === 0) {
++        throw httpError('Table not found', 404);
++      }
++      if (db.prepare(`SELECT 1 FROM orders WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL} LIMIT 1`).get(tableId)) {
++        throw httpError('This table has an open order. Add the items to that order instead of holding them.', 409);
++      }
+       const existing = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId) as { id: string } | undefined;
++      if (existing && existing.id !== replaceHeldOrderId) {
++        throw httpError('This table already has a held order. Resume it before holding new items.', 409);
++      }
+       heldOrderId = `ho-${randomUUID().slice(0, 8)}`;
+       
+       if (existing) {
+@@ -174,6 +195,9 @@ router.post('/', heldOrderWriteRateLimit, requirePermission('held-orders.manage'
+     // Return held order identity so clients can verify snapshot validity on deletion.
+     res.json({ success: true, id: heldOrderId });
+   } catch (error: any) {
++    if (typeof error?.statusCode === 'number') {
++      return res.status(error.statusCode).json({ error: error.message });
++    }
+     console.error("[API] Hold order error:", error);
+     res.status(500).json({ error: "Could not hold order" });
+   }
+diff --git a/main/routes/orders.ts b/main/routes/orders.ts
+index e70f6b9..a2901f4 100644
+--- a/main/routes/orders.ts
++++ b/main/routes/orders.ts
+@@ -130,6 +130,17 @@ function syncCustomerTagCounts(db: any, customerId: string, items: { product_id:
+ }
+ 
+ /** Resolves and validates item add-ons against catalog to enforce authoritative pricing. */
++function getSellableProduct(db: ReturnType<typeof getDatabase>, productId: unknown): any {
++  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId) as any;
++  if (!product) {
++    throw Object.assign(new Error(`Product ${productId} not found`), { statusCode: 400 });
++  }
++  if (product.deleted_at || product.is_active === 0) {
++    throw Object.assign(new Error(`${product.name} is not available`), { statusCode: 400 });
++  }
++  return product;
++}
++
+ function resolveItemAddons(
+   db: ReturnType<typeof getDatabase>,
+   productId: string,
+@@ -637,10 +648,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req:
+       `);
+ 
+       for (const item of items) {
+-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
+-        if (!product) {
+-          throw new Error(`Product ${item.product_id} not found`);
+-        }
++        const product = getSellableProduct(db, item.product_id);
+ 
+         const unitPrice = parseFloat(product.price);
+         const quantity = item.quantity;
+@@ -880,10 +888,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
+ 
+       const insertedItemIds: (number | bigint)[] = [];
+       for (const item of items) {
+-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
+-        if (!product) {
+-          throw new Error(`Product ${item.product_id} not found`);
+-        }
++        const product = getSellableProduct(db, item.product_id);
+         const unitPrice = parseFloat(product.price);
+         const quantity = item.quantity;
+         // Item discounts are applied via dedicated discount routes, not creation.
+diff --git a/main/routes/settings.ts b/main/routes/settings.ts
+index 6bdaadd..f7fba78 100644
+--- a/main/routes/settings.ts
++++ b/main/routes/settings.ts
+@@ -97,6 +97,7 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
+   // Returns 'system' if not yet explicitly saved by the user.
+   theme_mode: 'system',
+   usd_khr_exchange_rate: '4100',
++  require_open_shift: 'false',
+ };
+ 
+ function maskSetting(key: string, value: string): string {
+@@ -882,6 +883,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
+   'diagnostics_consent',
+   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled', 'server_app_bill_printing_enabled',
+   'split_checks_enabled',
++  'require_open_shift',
+   BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, Z_REPORT_LANGUAGE_POLICY_KEY,
+   'currency_display', 'number_digits', 'calendar',
+   'theme_mode',
+@@ -1087,6 +1089,12 @@ router.put('/:key', settingsWriteRateLimit, requirePermission('settings.manage')
+     if (req.params.key === 'bill_template') {
+       valueToPersist = upgradeBillTemplateValue(value);
+     }
++    if (req.params.key === 'require_open_shift') {
++      if (value !== 'true' && value !== 'false' && typeof value !== 'boolean') {
++        return res.status(400).json({ error: 'require_open_shift must be true or false' });
++      }
++      valueToPersist = boolFlag(value);
++    }
+     if (req.params.key === 'usd_khr_exchange_rate') {
+       const parsedRate = Number(value);
+       if (!Number.isInteger(parsedRate) || parsedRate < 1000 || parsedRate > 10000) {
+diff --git a/package.json b/package.json
+index d1f7aea..08a8b19 100644
+--- a/package.json
++++ b/package.json
+@@ -40,7 +40,7 @@
+     "pretest": "npm run test:script-coverage && bash tests/run-test.sh npm run test:payment-methods-split && bash tests/run-test.sh npm run test:release-regressions && bash tests/run-test.sh npm run test:diagnostics-event",
+     "start": "electron .",
+     "rebuild": "HOME=~/.electron-gyp node-gyp rebuild --target=$(node -p \"require('./node_modules/electron/package.json').version\") --arch=$(node -p \"process.arch\") --dist-url=https://electronjs.org/headers --runtime=electron --directory node_modules/better-sqlite3",
+-    "test": "bash tests/run-test.sh npm run test:smoke && bash tests/run-test.sh npm run test:server-port-collision && bash tests/run-test.sh npm run test:kds-integration && bash tests/run-test.sh npm run test:kds-contract && bash tests/run-test.sh npm run test:kds-frontend-conflict && bash tests/run-test.sh npm run test:kds-window-hardening && bash tests/run-test.sh npm run test:electron-api-contract && bash tests/run-test.sh npm run test:titlebar-window-options && bash tests/run-test.sh npm run test:menu-surface && bash tests/run-test.sh npm run test:window-readiness && bash tests/run-test.sh npm run test:window-load-retry && bash tests/run-test.sh npm run test:cors && bash tests/run-test.sh npm run test:csp-lan && bash tests/run-test.sh npm run test:release-config && bash tests/run-test.sh npm run test:update-state && bash tests/run-test.sh npm run test:update-ui && bash tests/run-test.sh npm run test:update-channel && bash tests/run-test.sh npm run test:telemetry && bash tests/run-test.sh npm run test:country-provenance && bash tests/run-test.sh npm run test:first-run && bash tests/run-test.sh npm run test:phase7-setup-i18n && bash tests/run-test.sh npm run test:security && bash tests/run-test.sh npm run test:jwt-secret-cache-identity && bash tests/run-test.sh npm run test:staff-authz && bash tests/run-test.sh npm run test:orders-authz && bash tests/run-test.sh npm run test:order-item-cancel-restore && bash tests/run-test.sh npm run test:order-totals-recompute && bash tests/run-test.sh npm run test:issue-718-whatsapp-order-status && bash tests/run-test.sh npm run test:order-audit-log && bash tests/run-test.sh npm run test:authz-phase3 && bash tests/run-test.sh npm run test:authorization-permissions && bash tests/run-test.sh npm run test:auth-ui-deterministic && bash tests/run-test.sh npm run test:customer-auth && bash tests/run-test.sh npm run test:customer-soft-reactivate-bindings && bash tests/run-test.sh npm run test:customer-pagination && bash tests/run-test.sh npm run test:server-app-server-role && bash tests/run-test.sh npm run test:backup && bash tests/run-test.sh npm run test:issue-278-fail-closed-db && bash tests/run-test.sh npm run test:recovery-cloud && bash tests/run-test.sh npm run test:cloud-account-status && bash tests/run-test.sh npm run test:printer && bash tests/run-test.sh npm run test:printing-settings && bash tests/run-test.sh npm run test:printer-width-refresh && bash tests/run-test.sh npm run test:printer-migrations && bash tests/run-test.sh npm run test:print-parity && bash tests/run-test.sh npm run test:thermal-capabilities && bash tests/run-test.sh npm run test:raster && bash tests/run-test.sh npm run test:merchant-print-templates && bash tests/run-test.sh npm run test:merchant-template-transfer && bash tests/run-test.sh npm run test:print-document && bash tests/run-test.sh npm run test:print-kernel && bash tests/run-test.sh npm run test:translations && bash tests/run-test.sh npm run test:print-labels && bash tests/run-test.sh npm run test:locale-chunks && bash tests/run-test.sh npm run test:rtl-foundation && bash tests/run-test.sh npm run test:rtl-setup-auth-settings && bash tests/run-test.sh npm run test:rtl-dashboard-pos-common && bash tests/run-test.sh npm run test:rtl-kds-server-whatsapp && bash tests/run-test.sh npm run test:phone && bash tests/run-test.sh npm run test:country-localization && bash tests/run-test.sh npm run test:e2e-argentina-flow && bash tests/run-test.sh npm run test:currency && bash tests/run-test.sh npm run test:tax-engine && bash tests/run-test.sh npm run test:tax-components && bash tests/run-test.sh npm run test:tax-pack-catalog && bash tests/run-test.sh npm run test:tax-pack-management && bash tests/run-test.sh npm run test:manual-tax-config && bash tests/run-test.sh npm run test:legacy-tax-pack-digest && bash tests/run-test.sh npm run test:community-tax-packs && bash tests/run-test.sh npm run test:support-ticket && bash tests/run-test.sh npm run test:customer-phone-search && bash tests/run-test.sh npm run test:phone-search-integration && bash tests/run-test.sh npm run test:orders-search && bash tests/run-test.sh npm run test:receipt-column-width && bash tests/run-test.sh npm run test:receipt-column-oracle && bash tests/run-test.sh npm run test:notes-validation && bash tests/run-test.sh npm run test:receipt-printing && bash tests/run-test.sh npm run test:cancel-override && bash tests/run-test.sh npm run test:refunds && bash tests/run-test.sh npm run test:refund-completed-orders && bash tests/run-test.sh npm run test:cash-closures && bash tests/run-test.sh npm run test:cash-sessions && bash tests/run-test.sh npm run test:kitchen-addons && bash tests/run-test.sh npm run test:order-item-addons && bash tests/run-test.sh npm run test:issue-125-addon-reads && bash tests/run-test.sh npm run test:windows-country-code-crash && bash tests/run-test.sh npm run test:reports-insights && bash tests/run-test.sh npm run test:reports-daily-stats-table-turn && bash tests/run-test.sh npm run test:timezone-report-boundaries && bash tests/run-test.sh npm run test:sequence && bash tests/run-test.sh npm run test:order-numbering-settings && bash tests/run-test.sh npm run test:integration-happy && bash tests/run-test.sh npm run test:clear-test-sales && bash tests/run-test.sh npm run test:customer-import && bash tests/run-test.sh npm run test:partial-payment && bash tests/run-test.sh npm run test:order-status-payment-guard && bash tests/run-test.sh npm run test:orders-date-range && bash tests/run-test.sh npm run test:integration-tax && bash tests/run-test.sh npm run test:integration-payments && bash tests/run-test.sh npm run test:issue-214 && bash tests/run-test.sh npm run test:issue-214-auth && bash tests/run-test.sh npm run test:issue-214-migration && bash tests/run-test.sh npm run test:issue-255 && bash tests/run-test.sh npm run test:issue-788-order-attempt-storage && bash tests/run-test.sh npm run test:integration-lifecycle && bash tests/run-test.sh npm run test:integration-reconciliation && bash tests/run-test.sh npm run test:integration-loyalty && bash tests/run-test.sh npm run test:integration-discount && bash tests/run-test.sh npm run test:loyalty-toggle && bash tests/run-test.sh npm run test:discount-system && bash tests/run-test.sh npm run test:integration-discount-settings && bash tests/run-test.sh npm run test:integration-loyalty-global && bash tests/run-test.sh npm run test:issue-248-csv && bash tests/run-test.sh npm run test:integration-loyalty-redemption && bash tests/run-test.sh npm run test:bills-print-api && bash tests/run-test.sh npm run test:issue-24 && bash tests/run-test.sh npm run test:issue-134-routing && bash tests/run-test.sh npm run test:issue-134-mgmt && bash tests/run-test.sh npm run test:issue-137-barcode && bash tests/run-test.sh npm run test:issue-244-product-addon-links && bash tests/run-test.sh npm run test:issue-245-246-addon-groups && bash tests/run-test.sh npm run test:issue-247-catalog-invariants && bash tests/run-test.sh npm run test:issue-250-catalog-perf && bash tests/run-test.sh npm run test:issue-252 && bash tests/run-test.sh npm run test:inventory-ledger && bash tests/run-test.sh npm run test:issue-printing-and-kds-resilience && bash tests/run-test.sh npm run test:issue-258-bill-pagination && bash tests/run-test.sh npm run test:issue-265-morocco-profile && bash tests/run-test.sh npm run test:issue-266-currency-symbol-print && bash tests/run-test.sh npm run test:tables-string-ids && bash tests/run-test.sh npm run test:issue-646-floor-management && bash tests/run-test.sh npm run test:held-orders && bash tests/run-test.sh npm run test:product-images && bash tests/run-test.sh npm run test:schema-health && bash tests/run-test.sh npm run test:migration-registry && bash tests/run-test.sh npm run test:upgrade-path && bash tests/run-test.sh npm run test:upgrade-matrix-harness && bash tests/run-test.sh npm run test:migration-v56-v57 && bash tests/run-test.sh npm run test:migration-v71-repair && bash tests/run-test.sh npm run test:migration-v80-cash-drawer-pulse && bash tests/run-test.sh npm run test:migration-v81-cash-closures && bash tests/run-test.sh npm run test:master-pin && bash tests/run-test.sh npm run test:google-drive && bash tests/run-test.sh npm run test:database-tools-api && bash tests/run-test.sh npm run test:phone-validation && bash tests/run-test.sh npm run test:phone-migration && bash tests/run-test.sh npm run test:issue-133-kds-kot-toggles && bash tests/run-test.sh npm run test:whatsapp-schema && bash tests/run-test.sh npm run test:whatsapp-service && bash tests/run-test.sh npm run test:whatsapp-middleware && bash tests/run-test.sh npm run test:issue-127-password-recovery && bash tests/run-test.sh npm run test:dev-tooling && bash tests/run-test.sh npm run test:windows-uninstaller && bash tests/run-test.sh npm run test:shutdown-lifecycle && bash tests/run-test.sh npm run test:redos-hardening && bash tests/run-test.sh npm run test:startup-cache && bash tests/run-test.sh npm run test:service-worker && bash tests/run-test.sh npm run test:issue-389-timezone-override && bash tests/run-test.sh npm run test:issue-390-locale-preference-invariants && bash tests/run-test.sh npm run test:issue-475-picker-highlight && bash tests/run-test.sh npm run test:theme-mode-settings && bash tests/run-test.sh npm run test:theme-fouc-script && bash tests/run-test.sh npm run test:ui-regressions-621-623-626 && bash tests/run-test.sh npm run test:issue-zero-balance-settlement && bash tests/run-test.sh npm run test:daily-sales-export && bash tests/run-test.sh npm run test:issue-terminal-state-guards && bash tests/run-test.sh npm run test:issue-payload-and-discount-bounds && bash tests/run-test.sh npm run test:units && bash tests/run-test.sh npm run test:supplies-service && bash tests/run-test.sh npm run test:supply-costing-deliveries && bash tests/run-test.sh npm run test:supply-import && bash tests/run-test.sh npm run test:recipe-order-lifecycle && bash tests/run-test.sh npm run test:recipe-costing && bash tests/run-test.sh npm run test:supply-order-list && bash tests/run-test.sh npm run test:recipe-import && bash tests/run-test.sh npm run test:ingredient-groups && bash tests/run-test.sh npm run test:ai-recipe-helper",
++    "test": "bash tests/run-test.sh npm run test:smoke && bash tests/run-test.sh npm run test:server-port-collision && bash tests/run-test.sh npm run test:kds-integration && bash tests/run-test.sh npm run test:kds-contract && bash tests/run-test.sh npm run test:kds-frontend-conflict && bash tests/run-test.sh npm run test:kds-window-hardening && bash tests/run-test.sh npm run test:electron-api-contract && bash tests/run-test.sh npm run test:titlebar-window-options && bash tests/run-test.sh npm run test:menu-surface && bash tests/run-test.sh npm run test:window-readiness && bash tests/run-test.sh npm run test:window-load-retry && bash tests/run-test.sh npm run test:cors && bash tests/run-test.sh npm run test:csp-lan && bash tests/run-test.sh npm run test:release-config && bash tests/run-test.sh npm run test:update-state && bash tests/run-test.sh npm run test:update-ui && bash tests/run-test.sh npm run test:update-channel && bash tests/run-test.sh npm run test:telemetry && bash tests/run-test.sh npm run test:country-provenance && bash tests/run-test.sh npm run test:first-run && bash tests/run-test.sh npm run test:phase7-setup-i18n && bash tests/run-test.sh npm run test:security && bash tests/run-test.sh npm run test:jwt-secret-cache-identity && bash tests/run-test.sh npm run test:staff-authz && bash tests/run-test.sh npm run test:orders-authz && bash tests/run-test.sh npm run test:order-item-cancel-restore && bash tests/run-test.sh npm run test:order-totals-recompute && bash tests/run-test.sh npm run test:issue-718-whatsapp-order-status && bash tests/run-test.sh npm run test:order-audit-log && bash tests/run-test.sh npm run test:authz-phase3 && bash tests/run-test.sh npm run test:authorization-permissions && bash tests/run-test.sh npm run test:auth-ui-deterministic && bash tests/run-test.sh npm run test:customer-auth && bash tests/run-test.sh npm run test:customer-soft-reactivate-bindings && bash tests/run-test.sh npm run test:customer-pagination && bash tests/run-test.sh npm run test:server-app-server-role && bash tests/run-test.sh npm run test:backup && bash tests/run-test.sh npm run test:issue-278-fail-closed-db && bash tests/run-test.sh npm run test:recovery-cloud && bash tests/run-test.sh npm run test:cloud-account-status && bash tests/run-test.sh npm run test:printer && bash tests/run-test.sh npm run test:printing-settings && bash tests/run-test.sh npm run test:printer-width-refresh && bash tests/run-test.sh npm run test:printer-migrations && bash tests/run-test.sh npm run test:print-parity && bash tests/run-test.sh npm run test:thermal-capabilities && bash tests/run-test.sh npm run test:raster && bash tests/run-test.sh npm run test:merchant-print-templates && bash tests/run-test.sh npm run test:merchant-template-transfer && bash tests/run-test.sh npm run test:print-document && bash tests/run-test.sh npm run test:print-kernel && bash tests/run-test.sh npm run test:translations && bash tests/run-test.sh npm run test:print-labels && bash tests/run-test.sh npm run test:locale-chunks && bash tests/run-test.sh npm run test:rtl-foundation && bash tests/run-test.sh npm run test:rtl-setup-auth-settings && bash tests/run-test.sh npm run test:rtl-dashboard-pos-common && bash tests/run-test.sh npm run test:rtl-kds-server-whatsapp && bash tests/run-test.sh npm run test:phone && bash tests/run-test.sh npm run test:country-localization && bash tests/run-test.sh npm run test:e2e-argentina-flow && bash tests/run-test.sh npm run test:currency && bash tests/run-test.sh npm run test:tax-engine && bash tests/run-test.sh npm run test:tax-components && bash tests/run-test.sh npm run test:tax-pack-catalog && bash tests/run-test.sh npm run test:tax-pack-management && bash tests/run-test.sh npm run test:manual-tax-config && bash tests/run-test.sh npm run test:legacy-tax-pack-digest && bash tests/run-test.sh npm run test:community-tax-packs && bash tests/run-test.sh npm run test:support-ticket && bash tests/run-test.sh npm run test:customer-phone-search && bash tests/run-test.sh npm run test:phone-search-integration && bash tests/run-test.sh npm run test:orders-search && bash tests/run-test.sh npm run test:receipt-column-width && bash tests/run-test.sh npm run test:receipt-column-oracle && bash tests/run-test.sh npm run test:notes-validation && bash tests/run-test.sh npm run test:receipt-printing && bash tests/run-test.sh npm run test:cancel-override && bash tests/run-test.sh npm run test:refunds && bash tests/run-test.sh npm run test:refund-completed-orders && bash tests/run-test.sh npm run test:cash-closures && bash tests/run-test.sh npm run test:cash-sessions && bash tests/run-test.sh npm run test:kitchen-addons && bash tests/run-test.sh npm run test:order-item-addons && bash tests/run-test.sh npm run test:issue-125-addon-reads && bash tests/run-test.sh npm run test:windows-country-code-crash && bash tests/run-test.sh npm run test:reports-insights && bash tests/run-test.sh npm run test:reports-daily-stats-table-turn && bash tests/run-test.sh npm run test:timezone-report-boundaries && bash tests/run-test.sh npm run test:sequence && bash tests/run-test.sh npm run test:order-numbering-settings && bash tests/run-test.sh npm run test:integration-happy && bash tests/run-test.sh npm run test:clear-test-sales && bash tests/run-test.sh npm run test:customer-import && bash tests/run-test.sh npm run test:partial-payment && bash tests/run-test.sh npm run test:register-guards && bash tests/run-test.sh npm run test:order-status-payment-guard && bash tests/run-test.sh npm run test:orders-date-range && bash tests/run-test.sh npm run test:integration-tax && bash tests/run-test.sh npm run test:integration-payments && bash tests/run-test.sh npm run test:issue-214 && bash tests/run-test.sh npm run test:issue-214-auth && bash tests/run-test.sh npm run test:issue-214-migration && bash tests/run-test.sh npm run test:issue-255 && bash tests/run-test.sh npm run test:issue-788-order-attempt-storage && bash tests/run-test.sh npm run test:integration-lifecycle && bash tests/run-test.sh npm run test:integration-reconciliation && bash tests/run-test.sh npm run test:integration-loyalty && bash tests/run-test.sh npm run test:integration-discount && bash tests/run-test.sh npm run test:loyalty-toggle && bash tests/run-test.sh npm run test:discount-system && bash tests/run-test.sh npm run test:integration-discount-settings && bash tests/run-test.sh npm run test:integration-loyalty-global && bash tests/run-test.sh npm run test:issue-248-csv && bash tests/run-test.sh npm run test:integration-loyalty-redemption && bash tests/run-test.sh npm run test:bills-print-api && bash tests/run-test.sh npm run test:issue-24 && bash tests/run-test.sh npm run test:issue-134-routing && bash tests/run-test.sh npm run test:issue-134-mgmt && bash tests/run-test.sh npm run test:issue-137-barcode && bash tests/run-test.sh npm run test:issue-244-product-addon-links && bash tests/run-test.sh npm run test:issue-245-246-addon-groups && bash tests/run-test.sh npm run test:issue-247-catalog-invariants && bash tests/run-test.sh npm run test:issue-250-catalog-perf && bash tests/run-test.sh npm run test:issue-252 && bash tests/run-test.sh npm run test:inventory-ledger && bash tests/run-test.sh npm run test:issue-printing-and-kds-resilience && bash tests/run-test.sh npm run test:issue-258-bill-pagination && bash tests/run-test.sh npm run test:issue-265-morocco-profile && bash tests/run-test.sh npm run test:issue-266-currency-symbol-print && bash tests/run-test.sh npm run test:tables-string-ids && bash tests/run-test.sh npm run test:issue-646-floor-management && bash tests/run-test.sh npm run test:held-orders && bash tests/run-test.sh npm run test:product-images && bash tests/run-test.sh npm run test:schema-health && bash tests/run-test.sh npm run test:migration-registry && bash tests/run-test.sh npm run test:upgrade-path && bash tests/run-test.sh npm run test:upgrade-matrix-harness && bash tests/run-test.sh npm run test:migration-v56-v57 && bash tests/run-test.sh npm run test:migration-v71-repair && bash tests/run-test.sh npm run test:migration-v80-cash-drawer-pulse && bash tests/run-test.sh npm run test:migration-v81-cash-closures && bash tests/run-test.sh npm run test:master-pin && bash tests/run-test.sh npm run test:google-drive && bash tests/run-test.sh npm run test:database-tools-api && bash tests/run-test.sh npm run test:phone-validation && bash tests/run-test.sh npm run test:phone-migration && bash tests/run-test.sh npm run test:issue-133-kds-kot-toggles && bash tests/run-test.sh npm run test:whatsapp-schema && bash tests/run-test.sh npm run test:whatsapp-service && bash tests/run-test.sh npm run test:whatsapp-middleware && bash tests/run-test.sh npm run test:issue-127-password-recovery && bash tests/run-test.sh npm run test:dev-tooling && bash tests/run-test.sh npm run test:windows-uninstaller && bash tests/run-test.sh npm run test:shutdown-lifecycle && bash tests/run-test.sh npm run test:redos-hardening && bash tests/run-test.sh npm run test:startup-cache && bash tests/run-test.sh npm run test:service-worker && bash tests/run-test.sh npm run test:issue-389-timezone-override && bash tests/run-test.sh npm run test:issue-390-locale-preference-invariants && bash tests/run-test.sh npm run test:issue-475-picker-highlight && bash tests/run-test.sh npm run test:theme-mode-settings && bash tests/run-test.sh npm run test:theme-fouc-script && bash tests/run-test.sh npm run test:ui-regressions-621-623-626 && bash tests/run-test.sh npm run test:issue-zero-balance-settlement && bash tests/run-test.sh npm run test:daily-sales-export && bash tests/run-test.sh npm run test:issue-terminal-state-guards && bash tests/run-test.sh npm run test:issue-payload-and-discount-bounds && bash tests/run-test.sh npm run test:units && bash tests/run-test.sh npm run test:supplies-service && bash tests/run-test.sh npm run test:supply-costing-deliveries && bash tests/run-test.sh npm run test:supply-import && bash tests/run-test.sh npm run test:recipe-order-lifecycle && bash tests/run-test.sh npm run test:recipe-costing && bash tests/run-test.sh npm run test:supply-order-list && bash tests/run-test.sh npm run test:recipe-import && bash tests/run-test.sh npm run test:ingredient-groups && bash tests/run-test.sh npm run test:ai-recipe-helper",
+     "test:dev-tooling": "ts-node --transpile-only -P tests/tsconfig.json tests/dev-tooling-scripts.test.ts && npm run test:phase2 && npm run test:runtime-recovery && npm run test:backend-health && npm run test:url-allowlist && npm run test:static-routes",
+     "test:script-coverage": "node scripts/ci/validate-test-script-coverage.cjs && node tests/test-script-coverage.test.cjs && ts-node --transpile-only -P tests/tsconfig.json tests/test-harness-assertions.test.ts",
+     "test:shutdown-lifecycle": "npm run build && node tests/run-electron-node-test.cjs tests/shutdown-lifecycle.test.ts",
+@@ -127,6 +127,7 @@
+     "test:clear-test-sales": "node tests/run-electron-node-test.cjs tests/clear-test-sales.test.ts",
+     "test:customer-import": "node tests/run-electron-node-test.cjs tests/customer-import.test.ts",
+     "test:partial-payment": "node tests/run-electron-node-test.cjs tests/partial-payment.test.ts",
++    "test:register-guards": "node tests/run-electron-node-test.cjs tests/register-guards.test.ts",
+     "test:order-status-payment-guard": "node tests/run-electron-node-test.cjs tests/order-status-payment-guard.test.ts",
+     "test:orders-date-range": "node tests/run-electron-node-test.cjs tests/orders-date-range.test.ts",
+     "test:integration-happy": "node tests/run-electron-node-test.cjs tests/integration-happy-path.test.ts",
+diff --git a/tests/held-orders.test.ts b/tests/held-orders.test.ts
+index 0dadcd6..d2f1af3 100644
+--- a/tests/held-orders.test.ts
++++ b/tests/held-orders.test.ts
+@@ -195,11 +195,21 @@ async function main() {
+     });
+     const firstReplacementId = firstReplacement.data.id;
+     const replacementItems = [{ ...mockItems[0], product: { ...mockItems[0].product, name: 'Cappuccino' } }];
+-    const secondReplacement = await api(baseUrl, '/api/held-orders', {
++    const blindReplacement = await api(baseUrl, '/api/held-orders', {
+       method: 'POST',
+       body: { tableId: replacementTableId, items: replacementItems },
+       headers: authHeader,
+     });
++    assertEqualOrThrow(blindReplacement.status, 409, 'Holding over an existing held order without naming it is refused');
++    const keptAfterBlind = (await api(baseUrl, '/api/held-orders', { headers: authHeader })).data.orders
++      .find((order: any) => order.tableId === replacementTableId);
++    assertEqualOrThrow(keptAfterBlind?.items[0].product.name, 'Latte', 'A refused hold keeps the original held items');
++    const secondReplacement = await api(baseUrl, '/api/held-orders', {
++      method: 'POST',
++      body: { tableId: replacementTableId, items: replacementItems, replaceHeldOrderId: firstReplacementId },
++      headers: authHeader,
++    });
++    assertEqualOrThrow(secondReplacement.status, 200, 'Naming the current held order replaces it');
+     const secondReplacementId = secondReplacement.data.id;
+     assertOrThrow(firstReplacementId !== secondReplacementId, 'Replacing a held order changes its identity');
+ 
+@@ -221,6 +231,23 @@ async function main() {
+     );
+     assertEqualOrThrow(currentReplacementDelete.data.deleted, true, 'Current identity can consume the replacement row');
+ 
++    console.log('\n─── Scenario G: holds need a real, free table ───');
++    const unknownTable = await api(baseUrl, '/api/held-orders', {
++      method: 'POST', body: { tableId: 'tbl-does-not-exist', items: mockItems }, headers: authHeader,
++    });
++    assertEqualOrThrow(unknownTable.status, 404, 'Holding for an unknown table is refused');
++    const busyTableId = 'tbl-busy-open-order';
++    seedTable(db, busyTableId, 4);
++    db.prepare(`INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
++      VALUES ('T-BUSY-1', ?, 'dine_in', 'pending', 10, 10, ?, ?)`).run(busyTableId, now(), now());
++    db.prepare("UPDATE tables SET status = 'occupied' WHERE id = ?").run(busyTableId);
++    const busyHold = await api(baseUrl, '/api/held-orders', {
++      method: 'POST', body: { tableId: busyTableId, items: mockItems }, headers: authHeader,
++    });
++    assertEqualOrThrow(busyHold.status, 409, 'Holding on a table with an open order is refused');
++    assertEqualOrThrow((db.prepare('SELECT status FROM tables WHERE id = ?').get(busyTableId) as any).status, 'occupied', 'The busy table stays occupied');
++    console.log('  ✓ Holds are refused for unknown or busy tables');
++
+     // ─── Scenario F: malformed legacy rows do not hide valid rows ───
+     console.log('\n─── Scenario F: malformed legacy rows are isolated ───');
+     db.prepare(`
+diff --git a/tests/payment-modal-currency-adapter.test.ts b/tests/payment-modal-currency-adapter.test.ts
+index 3434f0c..8a21a79 100644
+--- a/tests/payment-modal-currency-adapter.test.ts
++++ b/tests/payment-modal-currency-adapter.test.ts
+@@ -278,7 +278,7 @@ async function runModalKeypadIntegrationTests() {
+   };
+   const currentTenant = { currency: 'JPY', country: 'JP' };
+   const mocks: Record<string, unknown> = {
+-    'lucide-react': { X: Icon, Wallet: Icon, ArrowLeftRight: Icon, CheckCircle2: Icon, Sparkles: Icon, User: Icon, Percent: Icon, Send: Icon, ChevronDown: Icon, Banknote: Icon, CreditCard: Icon },
++    'lucide-react': { X: Icon, Wallet: Icon, ArrowLeftRight: Icon, CheckCircle2: Icon, Sparkles: Icon, User: Icon, Percent: Icon, Send: Icon, ChevronDown: Icon, Banknote: Icon, CreditCard: Icon, Minus: Icon, Plus: Icon },
+     '@/components/ui/button': {
+       Button: ({ children, variant: _variant, size: _size, ...props }: any) => React.createElement('button', props, children),
+     },
+diff --git a/tests/register-guards.test.ts b/tests/register-guards.test.ts
+new file mode 100644
+index 0000000..22b6c57
+--- /dev/null
++++ b/tests/register-guards.test.ts
+@@ -0,0 +1,82 @@
++/**
++ * Register guards: orders refuse products that are switched off or deleted, and
++ * the owner can turn on the open-shift requirement for cash from settings.
++ *
++ * Usage: node tests/run-electron-node-test.cjs tests/register-guards.test.ts
++ */
++const Module = require('module');
++const originalLoad = Module._load;
++const fs = require('fs');
++const os = require('os');
++const path = require('path');
++const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-register-guards-'));
++Module._load = function (request: string) {
++  if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
++  return originalLoad.apply(this, arguments as any);
++};
++
++const {
++  initTestDb, createApp, startServer, seedOwnerUser, seedCategory, seedProduct,
++  api, assertOrThrow, assertEqualOrThrow, closeDatabase, now,
++} = require('./helpers/test-setup');
++const { orderRoutes } = require('../main/routes/orders');
++const { billRoutes } = require('../main/routes/bills');
++const { settingsRoutes } = require('../main/routes/settings');
++
++async function main() {
++  const db = initTestDb();
++  const { authHeader } = seedOwnerUser(db);
++  seedCategory(db, 'cat-guard', 'Drinks');
++  seedProduct(db, 'prod-live', 'cat-guard', 'Beer', 300);
++  seedProduct(db, 'prod-off', 'cat-guard', 'Old cocktail', 500);
++  seedProduct(db, 'prod-gone', 'cat-guard', 'Deleted wine', 700);
++  db.prepare('UPDATE products SET is_active = 0 WHERE id = ?').run('prod-off');
++  db.prepare('UPDATE products SET deleted_at = ? WHERE id = ?').run(now(), 'prod-gone');
++
++  const app = createApp({ '/api/orders': orderRoutes, '/api/bills': billRoutes, '/api/settings': settingsRoutes });
++  const { baseUrl, server } = await startServer(app);
++  const orderCount = () => (db.prepare('SELECT COUNT(*) AS n FROM orders').get() as { n: number }).n;
++  try {
++    const before = orderCount();
++    for (const [productId, label] of [['prod-off', 'switched-off'], ['prod-gone', 'deleted'], ['prod-missing', 'unknown']]) {
++      const res = await api(baseUrl, '/api/orders', { method: 'POST', headers: authHeader, body: { type: 'takeaway', items: [{ product_id: productId, quantity: 1 }] } });
++      assertEqualOrThrow(res.status, 400, `new order with a ${label} product is refused`);
++    }
++    assertEqualOrThrow(orderCount(), before, 'refused orders leave nothing behind');
++
++    const order = await api(baseUrl, '/api/orders', { method: 'POST', headers: authHeader, body: { type: 'takeaway', items: [{ product_id: 'prod-live', quantity: 1 }] } });
++    assertEqualOrThrow(order.status, 201, 'order with an active product is accepted');
++    const orderId = order.data.order.id;
++    const addOff = await api(baseUrl, `/api/orders/${orderId}/items`, { method: 'POST', headers: authHeader, body: { items: [{ product_id: 'prod-off', quantity: 1 }] } });
++    assertEqualOrThrow(addOff.status, 400, 'adding a switched-off product to an open order is refused');
++    assertOrThrow(String(addOff.data.error).includes('Old cocktail'), 'the refusal names the product');
++    const itemCount = (db.prepare('SELECT COUNT(*) AS n FROM order_items WHERE order_id = ?').get(orderId) as { n: number }).n;
++    assertEqualOrThrow(itemCount, 1, 'the open order keeps only its original line');
++
++    const badSetting = await api(baseUrl, '/api/settings/require_open_shift', { method: 'PUT', headers: authHeader, body: { value: 'maybe' } });
++    assertEqualOrThrow(badSetting.status, 400, 'open-shift setting accepts only true or false');
++    const turnOn = await api(baseUrl, '/api/settings/require_open_shift', { method: 'PUT', headers: authHeader, body: { value: 'true' } });
++    assertEqualOrThrow(turnOn.status, 200, 'owner can turn on the open-shift requirement');
++    const readBack = await api(baseUrl, '/api/settings/require_open_shift', { headers: authHeader });
++    assertEqualOrThrow(readBack.data.setting.value, 'true', 'open-shift setting is saved');
++
++    const bill = await api(baseUrl, '/api/bills/generate', { method: 'POST', headers: authHeader, body: { order_id: orderId } });
++    assertEqualOrThrow(bill.status, 201, 'bill generated');
++    const billId = bill.data.bill.id;
++    const total = Number(bill.data.bill.total);
++    const cash = await api(baseUrl, `/api/bills/${billId}/payments`, { method: 'POST', headers: authHeader, body: { payments: [{ method: 'cash', amount: total }] } });
++    assertEqualOrThrow(cash.status, 409, 'cash is refused with no open shift once the setting is on');
++    const card = await api(baseUrl, `/api/bills/${billId}/payments`, { method: 'POST', headers: authHeader, body: { payments: [{ method: 'card', amount: total }] } });
++    assertEqualOrThrow(card.status, 200, 'card payments are not affected');
++
++    const turnOff = await api(baseUrl, '/api/settings/require_open_shift', { method: 'PUT', headers: authHeader, body: { value: 'false' } });
++    assertEqualOrThrow(turnOff.status, 200, 'owner can turn the requirement off again');
++    console.log('register-guards: all checks passed');
++  } finally {
++    server.close();
++    closeDatabase();
++    try { fs.rmSync(testDir, { recursive: true, force: true }); } catch {}
++  }
++}
++
++main().catch((err: any) => { console.error(err); process.exit(1); });
