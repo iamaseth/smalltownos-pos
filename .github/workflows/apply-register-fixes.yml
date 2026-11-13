@@ -81,9 +81,17 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - name: Install dependencies
         if: steps.apply.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Install frontend dependencies (held-orders store test uses them)
+        if: steps.apply.outputs.skip == 'false'
+        working-directory: frontend
         run: npm ci
 
       - name: Build backend
