@@ -147,8 +147,9 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDe
       await heldOrders.holdOrder(cart.tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
       cart.clearCart();
       toast.success(t('orderHeldFor', { table: tableName }));
-    } catch {
-      toast.error(t('holdOrderFailed'));
+    } catch (error) {
+      const response = (error as { response?: { status?: number; data?: { error?: string } } })?.response;
+      toast.error(response?.status === 409 && response.data?.error ? response.data.error : t('holdOrderFailed'));
     }
   };
 

@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "Questa versione è distribuita tramite l'App Store. Gli aggiornamenti sono gestiti dallo store.",
     "splitChecks": "Dividi conti",
     "splitChecksHint": "Consenti di dividere gli articoli o le quantità al tavolo in conti separati. Disabilitato per impostazione predefinita.",
+    "requireOpenShift": "Richiedi un turno aperto per i contanti",
+    "requireOpenShiftHint": "I pagamenti in contanti vengono rifiutati finché non si apre un turno, così ogni vendita in contanti è conteggiata in una sessione di cassa. Disattivato per impostazione predefinita.",
     "stationAssignedCategories": "Assegnate altrove — seleziona per spostare",
     "stationAvailableCategories": "Categorie disponibili",
     "stationCategories": "Categorie instradate qui",

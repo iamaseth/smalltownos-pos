@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "Ky version shpërndahet përmes App Store. Përditësimet menaxhohen nga dyqani.",
     "splitChecks": "Ndarja e çeqeve",
     "splitChecksHint": "Lejo që artikujt ose sasitë e ushqimit të ndahen në dëftesa të veçanta. Çaktivizuar si parazgjedhje.",
+    "requireOpenShift": "Kërko turn të hapur për para në dorë",
+    "requireOpenShiftHint": "Pagesat me para në dorë refuzohen derisa të hapet një turn, që çdo shitje me para të llogaritet në një seancë arke. Çaktivizuar si parazgjedhje.",
     "stationAssignedCategories": "Caktuar diku tjetër — zgjidhni për të lëvizur",
     "stationAvailableCategories": "Kategoritë e disponueshme",
     "stationCategories": "Kategoritë e drejtuara këtu",

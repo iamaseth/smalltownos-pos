@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "Verwaltet über den App Store.",
     "splitChecks": "Rechnungen teilen",
     "splitChecksHint": "Erlaubt, Speisen oder Mengen im Restaurant auf getrennte Rechnungen aufzuteilen. Standardmäßig deaktiviert.",
+    "requireOpenShift": "Offene Schicht für Barzahlungen verlangen",
+    "requireOpenShiftHint": "Barzahlungen werden abgelehnt, bis eine Schicht geöffnet ist, damit jeder Barverkauf in einer Kassensitzung erfasst wird. Standardmäßig aus.",
     "stationAssignedCategories": "Anderswo zugewiesen – zum Verschieben auswählen",
     "stationAvailableCategories": "Verfügbare Kategorien",
     "stationCategories": "Kategorien",

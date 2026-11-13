@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "此版本通过 App Store 分发。更新由商店管理。",
     "splitChecks": "拆分账单",
     "splitChecksHint": "允许将堂食商品或数量拆分到不同账单。默认关闭。",
+    "requireOpenShift": "现金收款需先开班",
+    "requireOpenShiftHint": "开班前拒绝现金付款，确保每笔现金销售都计入钱箱班次。默认关闭。",
     "stationAssignedCategories": "已指派到其他工作站 — 选择以移动",
     "stationAvailableCategories": "可用分类",
     "stationCategories": "路由到此处的分类",

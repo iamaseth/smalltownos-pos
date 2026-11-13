@@ -195,11 +195,21 @@ async function main() {
     });
     const firstReplacementId = firstReplacement.data.id;
     const replacementItems = [{ ...mockItems[0], product: { ...mockItems[0].product, name: 'Cappuccino' } }];
-    const secondReplacement = await api(baseUrl, '/api/held-orders', {
+    const blindReplacement = await api(baseUrl, '/api/held-orders', {
       method: 'POST',
       body: { tableId: replacementTableId, items: replacementItems },
       headers: authHeader,
     });
+    assertEqualOrThrow(blindReplacement.status, 409, 'Holding over an existing held order without naming it is refused');
+    const keptAfterBlind = (await api(baseUrl, '/api/held-orders', { headers: authHeader })).data.orders
+      .find((order: any) => order.tableId === replacementTableId);
+    assertEqualOrThrow(keptAfterBlind?.items[0].product.name, 'Latte', 'A refused hold keeps the original held items');
+    const secondReplacement = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: { tableId: replacementTableId, items: replacementItems, replaceHeldOrderId: firstReplacementId },
+      headers: authHeader,
+    });
+    assertEqualOrThrow(secondReplacement.status, 200, 'Naming the current held order replaces it');
     const secondReplacementId = secondReplacement.data.id;
     assertOrThrow(firstReplacementId !== secondReplacementId, 'Replacing a held order changes its identity');
 
@@ -220,6 +230,23 @@ async function main() {
       { method: 'DELETE', headers: authHeader },
     );
     assertEqualOrThrow(currentReplacementDelete.data.deleted, true, 'Current identity can consume the replacement row');
+
+    console.log('\n─── Scenario G: holds need a real, free table ───');
+    const unknownTable = await api(baseUrl, '/api/held-orders', {
+      method: 'POST', body: { tableId: 'tbl-does-not-exist', items: mockItems }, headers: authHeader,
+    });
+    assertEqualOrThrow(unknownTable.status, 404, 'Holding for an unknown table is refused');
+    const busyTableId = 'tbl-busy-open-order';
+    seedTable(db, busyTableId, 4);
+    db.prepare(`INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
+      VALUES ('T-BUSY-1', ?, 'dine_in', 'pending', 10, 10, ?, ?)`).run(busyTableId, now(), now());
+    db.prepare("UPDATE tables SET status = 'occupied' WHERE id = ?").run(busyTableId);
+    const busyHold = await api(baseUrl, '/api/held-orders', {
+      method: 'POST', body: { tableId: busyTableId, items: mockItems }, headers: authHeader,
+    });
+    assertEqualOrThrow(busyHold.status, 409, 'Holding on a table with an open order is refused');
+    assertEqualOrThrow((db.prepare('SELECT status FROM tables WHERE id = ?').get(busyTableId) as any).status, 'occupied', 'The busy table stays occupied');
+    console.log('  ✓ Holds are refused for unknown or busy tables');
 
     // ─── Scenario F: malformed legacy rows do not hide valid rows ───
     console.log('\n─── Scenario F: malformed legacy rows are isolated ───');

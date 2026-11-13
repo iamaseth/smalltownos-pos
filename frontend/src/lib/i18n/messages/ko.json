@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "이 버전은 App Store를 통해 배포됩니다. 업데이트는 스토어에서 관리합니다.",
     "splitChecks": "계산서 분할",
     "splitChecksHint": "매장 식사 항목이나 수량을 별도 청구서로 나눌 수 있게 합니다. 기본적으로 비활성화되어 있습니다.",
+    "requireOpenShift": "현금 결제 시 열린 교대 필수",
+    "requireOpenShiftHint": "교대가 열릴 때까지 현금 결제를 거부하여 모든 현금 판매가 서랍 세션에 집계되도록 합니다. 기본값은 꺼짐입니다.",
     "stationAssignedCategories": "다른 스테이션에 배정됨 — 선택하여 이동",
     "stationAvailableCategories": "사용 가능한 카테고리",
     "stationCategories": "여기로 라우팅된 카테고리",

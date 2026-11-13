@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "このバージョンはApp Store経由で配布されています。更新はストアで管理されます。",
     "splitChecks": "会計を分割",
     "splitChecksHint": "店内飲食の商品や数量を複数の請求書に分けられるようにします。既定では無効です。",
+    "requireOpenShift": "現金払いにはシフト開始を必須にする",
+    "requireOpenShiftHint": "シフトが開始されるまで現金払いを受け付けません。すべての現金売上がドロワーセッションで集計されます。初期設定はオフです。",
     "stationAssignedCategories": "他のステーションに割り当て済み — 選択して移動",
     "stationAvailableCategories": "利用可能なカテゴリ",
     "stationCategories": "ここに割り当てたカテゴリ",

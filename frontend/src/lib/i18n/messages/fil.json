@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "Ipinapamahagi ang bersyong ito sa pamamagitan ng App Store. Pinamamahalaan ng store ang mga update.",
     "splitChecks": "I-split ang mga check",
     "splitChecksHint": "Allow dine-in items or quantities to be divided into separate bills. Naka-disable by default.",
+    "requireOpenShift": "Mangailangan ng bukas na shift para sa cash",
+    "requireOpenShiftHint": "Tinatanggihan ang mga bayad na cash hangga't walang bukas na shift, para mabilang ang bawat cash na benta sa isang drawer session. Naka-off bilang default.",
     "stationAssignedCategories": "Naka-assign sa iba — piliin para ilipat",
     "stationAvailableCategories": "Mga available na kategorya",
     "stationCategories": "Mga Kategorya routed here",

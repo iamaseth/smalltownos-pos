@@ -35,18 +35,21 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
   const [mergeTargets, setMergeTargets] = useState<Record<number, string>>({});
   const [merges, setMerges] = useState<MergeRecord[]>([]);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
+  const [requireOpenShift, setRequireOpenShift] = useState(false);
 
   const load = async () => {
-    const [methodsRes, historyRes, splitRes] = await Promise.all([
+    const [methodsRes, historyRes, splitRes, shiftRes] = await Promise.all([
       api.get('/payment-methods?include_inactive=true'),
       api.get('/payment-methods/merge-history'),
       api.get('/settings/split_checks_enabled').catch(() => ({ data: { setting: { value: 'false' } } })),
+      api.get('/settings/require_open_shift').catch(() => ({ data: { setting: { value: 'false' } } })),
     ]);
     const rows = methodsRes.data.payment_methods || [];
     setMethods(rows);
     setNames(Object.fromEntries(rows.map((row: CustomPaymentMethod) => [row.id, row.name])));
     setMerges(historyRes.data.merges || []);
     setSplitChecksEnabled(splitRes.data?.setting?.value === 'true');
+    setRequireOpenShift(shiftRes.data?.setting?.value === 'true');
   };
 
   useEffect(() => {
@@ -132,6 +135,11 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
       <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
         <div><h2 className="font-semibold text-foreground">{t('splitChecks')}</h2><p className="text-sm text-muted-foreground mt-1">{t('splitChecksHint')}</p></div>
         <input type="checkbox" className="size-5" disabled={!isAdmin} checked={splitChecksEnabled} onChange={async (e) => { const value = e.target.checked; setSplitChecksEnabled(value); try { await api.put('/settings/split_checks_enabled', { value: String(value) }); } catch { setSplitChecksEnabled(!value); toast.error(t('saveFailed')); } }} />
+      </div>
+
+      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+        <div><h2 className="font-semibold text-foreground">{t('requireOpenShift')}</h2><p className="text-sm text-muted-foreground mt-1">{t('requireOpenShiftHint')}</p></div>
+        <input type="checkbox" className="size-5" disabled={!isAdmin} checked={requireOpenShift} onChange={async (e) => { const value = e.target.checked; setRequireOpenShift(value); try { await api.put('/settings/require_open_shift', { value: String(value) }); } catch { setRequireOpenShift(!value); toast.error(t('saveFailed')); } }} />
       </div>
 
       {merges.length > 0 && <div className="bg-card rounded-xl border border-border p-6"><h2 className="font-semibold text-foreground mb-3">{t('mergeHistory')}</h2><div className="space-y-2 text-sm text-muted-foreground">{merges.map((entry) => <p key={entry.id}>{entry.source_name} → {entry.target_name} · {entry.affected_payments} · {formatDate(entry.merged_at)}</p>)}</div></div>}

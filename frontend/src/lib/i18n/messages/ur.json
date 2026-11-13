@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "یہ ورژن App Store کے ذریعے تقسیم ہوتا ہے۔ اپ ڈیٹس اسٹور سنبھالتا ہے۔",
     "splitChecks": "بل تقسیم کریں",
     "splitChecksHint": "میز پر کھانے والے آئٹم یا مقدار کو مختلف بلوں میں تقسیم کرنے دیں۔ طے شدہ طور پر بند ہے۔",
+    "requireOpenShift": "نقد کے لیے کھلی شفٹ لازمی",
+    "requireOpenShiftHint": "شفٹ کھلنے تک نقد ادائیگیاں مسترد کی جاتی ہیں تاکہ ہر نقد فروخت دراز سیشن میں شمار ہو۔ بطور طے شدہ بند۔",
     "stationAssignedCategories": "کہیں اور مقرر ہیں — منتقل کرنے کے لیے منتخب کریں",
     "stationAvailableCategories": "دستیاب زمرے",
     "stationCategories": "یہاں بھیجے گئے زمرے",

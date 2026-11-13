@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "Uygulama mağazası tarafından otomatik güncellenir",
     "splitChecks": "Hesap Bölme Özelliği",
     "splitChecksHint": "Masada parçalı ve ayrı ödeme almayı etkinleştirir",
+    "requireOpenShift": "Nakit için açık vardiya zorunlu",
+    "requireOpenShiftHint": "Vardiya açılana kadar nakit ödemeler reddedilir; böylece her nakit satış bir kasa oturumunda sayılır. Varsayılan olarak kapalı.",
     "stationAssignedCategories": "Başka yerde atanmış — taşımak için seçin",
     "stationAvailableCategories": "Kullanılabilir kategoriler",
     "stationCategories": "Atanan Kategoriler",

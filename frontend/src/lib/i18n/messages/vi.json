@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "Phiên bản này được phân phối qua App Store. Cửa hàng quản lý cập nhật.",
     "splitChecks": "Tách hóa đơn",
     "splitChecksHint": "Cho phép chia món ăn tại chỗ hoặc số lượng thành các hóa đơn riêng. Mặc định tắt.",
+    "requireOpenShift": "Yêu cầu mở ca khi nhận tiền mặt",
+    "requireOpenShiftHint": "Thanh toán tiền mặt bị từ chối cho đến khi mở ca, để mọi khoản bán bằng tiền mặt được tính vào một phiên ngăn kéo. Mặc định tắt.",
     "stationAssignedCategories": "Đã được gán nơi khác - chọn để chuyển",
     "stationAvailableCategories": "Danh mục khả dụng",
     "stationCategories": "Danh mục được định tuyến đến đây",

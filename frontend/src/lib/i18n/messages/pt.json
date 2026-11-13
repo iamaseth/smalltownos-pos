@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "Esta versão é distribuída pela App Store. As atualizações são gerenciadas pela loja.",
     "splitChecks": "Dividir contas",
     "splitChecksHint": "Permite dividir itens ou quantidades de mesa em contas separadas. Desativado por padrão.",
+    "requireOpenShift": "Exigir turno aberto para dinheiro",
+    "requireOpenShiftHint": "Pagamentos em dinheiro são recusados até que um turno seja aberto, para que cada venda em dinheiro seja contada numa sessão de caixa. Desativado por padrão.",
     "stationAssignedCategories": "Atribuídas em outro lugar — selecione para mover",
     "stationAvailableCategories": "Categorias disponíveis",
     "stationCategories": "Categorias direcionadas para cá",

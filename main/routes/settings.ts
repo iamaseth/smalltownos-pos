@@ -97,6 +97,7 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   // Returns 'system' if not yet explicitly saved by the user.
   theme_mode: 'system',
   usd_khr_exchange_rate: '4100',
+  require_open_shift: 'false',
 };
 
 function maskSetting(key: string, value: string): string {
@@ -882,6 +883,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'diagnostics_consent',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled', 'server_app_bill_printing_enabled',
   'split_checks_enabled',
+  'require_open_shift',
   BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, Z_REPORT_LANGUAGE_POLICY_KEY,
   'currency_display', 'number_digits', 'calendar',
   'theme_mode',
@@ -1086,6 +1088,12 @@ router.put('/:key', settingsWriteRateLimit, requirePermission('settings.manage')
     }
     if (req.params.key === 'bill_template') {
       valueToPersist = upgradeBillTemplateValue(value);
+    }
+    if (req.params.key === 'require_open_shift') {
+      if (value !== 'true' && value !== 'false' && typeof value !== 'boolean') {
+        return res.status(400).json({ error: 'require_open_shift must be true or false' });
+      }
+      valueToPersist = boolFlag(value);
     }
     if (req.params.key === 'usd_khr_exchange_rate') {
       const parsedRate = Number(value);

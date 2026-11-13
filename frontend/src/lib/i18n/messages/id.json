@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "Versi ini didistribusikan melalui App Store. Pembaruan dikelola oleh toko.",
     "splitChecks": "Pisah tagihan",
     "splitChecksHint": "Izinkan item atau jumlah makan di tempat dibagi menjadi tagihan terpisah. Nonaktif secara bawaan.",
+    "requireOpenShift": "Wajibkan shift terbuka untuk tunai",
+    "requireOpenShiftHint": "Pembayaran tunai ditolak sampai shift dibuka, sehingga setiap penjualan tunai tercatat dalam sesi laci kas. Nonaktif secara default.",
     "stationAssignedCategories": "Ditugaskan di tempat lain — pilih untuk memindahkan",
     "stationAvailableCategories": "Kategori tersedia",
     "stationCategories": "Kategori yang diarahkan ke sini",

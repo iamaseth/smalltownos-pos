@@ -130,6 +130,17 @@ function syncCustomerTagCounts(db: any, customerId: string, items: { product_id:
 }
 
 /** Resolves and validates item add-ons against catalog to enforce authoritative pricing. */
+function getSellableProduct(db: ReturnType<typeof getDatabase>, productId: unknown): any {
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId) as any;
+  if (!product) {
+    throw Object.assign(new Error(`Product ${productId} not found`), { statusCode: 400 });
+  }
+  if (product.deleted_at || product.is_active === 0) {
+    throw Object.assign(new Error(`${product.name} is not available`), { statusCode: 400 });
+  }
+  return product;
+}
+
 function resolveItemAddons(
   db: ReturnType<typeof getDatabase>,
   productId: string,
@@ -637,10 +648,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       `);
 
       for (const item of items) {
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-        if (!product) {
-          throw new Error(`Product ${item.product_id} not found`);
-        }
+        const product = getSellableProduct(db, item.product_id);
 
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
@@ -880,10 +888,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
 
       const insertedItemIds: (number | bigint)[] = [];
       for (const item of items) {
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-        if (!product) {
-          throw new Error(`Product ${item.product_id} not found`);
-        }
+        const product = getSellableProduct(db, item.product_id);
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.

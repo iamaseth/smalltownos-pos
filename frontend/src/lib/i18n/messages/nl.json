@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "Deze versie wordt verspreid via de App Store. Updates worden beheerd door de winkel.",
     "splitChecks": "Gesplitste bonnen",
     "splitChecksHint": "Sta toe dat artikelen of hoeveelheden die ter plaatse worden gegeten, in aparte bonnen worden verdeeld. Standaard uitgeschakeld.",
+    "requireOpenShift": "Open dienst vereisen voor contant",
+    "requireOpenShiftHint": "Contante betalingen worden geweigerd totdat er een dienst is geopend, zodat elke contante verkoop in een kassasessie wordt geteld. Standaard uit.",
     "stationAssignedCategories": "Elders toegewezen: selecteer om te verplaatsen",
     "stationAvailableCategories": "Beschikbare categorieën",
     "stationCategories": "Categorieën worden hierheen gerouteerd",

@@ -2021,6 +2021,8 @@
     "softwareUpdatesHintStore": "This version is distributed via the App Store. Updates are managed by the store.",
     "splitChecks": "Split checks",
     "splitChecksHint": "Allow dine-in items or quantities to be divided into separate bills. Disabled by default.",
+    "requireOpenShift": "Require an open shift for cash",
+    "requireOpenShiftHint": "Cash payments are refused until a shift is opened, so every cash sale is counted in a drawer session. Off by default.",
     "stationAssignedCategories": "Assigned elsewhere — select to move",
     "stationAvailableCategories": "Available categories",
     "stationCategories": "Categories routed here",

@@ -278,7 +278,7 @@ async function runModalKeypadIntegrationTests() {
   };
   const currentTenant = { currency: 'JPY', country: 'JP' };
   const mocks: Record<string, unknown> = {
-    'lucide-react': { X: Icon, Wallet: Icon, ArrowLeftRight: Icon, CheckCircle2: Icon, Sparkles: Icon, User: Icon, Percent: Icon, Send: Icon, ChevronDown: Icon, Banknote: Icon, CreditCard: Icon },
+    'lucide-react': { X: Icon, Wallet: Icon, ArrowLeftRight: Icon, CheckCircle2: Icon, Sparkles: Icon, User: Icon, Percent: Icon, Send: Icon, ChevronDown: Icon, Banknote: Icon, CreditCard: Icon, Minus: Icon, Plus: Icon },
     '@/components/ui/button': {
       Button: ({ children, variant: _variant, size: _size, ...props }: any) => React.createElement('button', props, children),
     },
