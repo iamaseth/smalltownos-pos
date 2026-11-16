@@ -3,7 +3,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Search, Keyboard, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Zap, LayoutGrid } from 'lucide-react';
+import { Plus, Search, Keyboard, Star, Zap, LayoutGrid } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -57,7 +57,6 @@ function menuSearchScore(name: string, rawQuery: string): number {
 }
 
 const FAVORITES_KEY = 'pos-favorite-products';
-const SUBCATEGORY_LIMIT = 8;
 
 const subscribeCoarsePointer = (callback: () => void) => {
   const query = window.matchMedia('(pointer: coarse)');
@@ -104,47 +103,31 @@ export default function ProductGrid({
     return quantities;
   }, [cart.items]);
 
-  // UI-only grouping: preserve original categories, products, and database.
-  const [openGroup, setOpenGroup] = useState<string | null>(null);
+  // BackStreet: render active database categories directly, not fixed Food/Drinks groups.
   const [favorites, setFavorites] = useState<string[]>([]);
   const toggleFavorite = (id: string) => setFavorites(prev => {
     const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
     try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); } catch {}
     return next;
   });
-  // Bundled illustrations load locally, including when Flo is offline.
-  const groupLabels = ['Favorites', 'Food', 'Cocktails', 'Spirits', 'Beer & Wine', 'Non-Alcoholic'] as const;
-  const groups = useMemo(() => {
-    const result = new Map<string, Category[]>();
-    groupLabels.forEach((label) => result.set(label, []));
-    // Some imported menus place burgers inside a broad Food category.
-    // Expose Burgers as a virtual submenu without changing stored category IDs.
-    for (const cat of categories) {
-      const name = cat.name.toLowerCase();
-      const group = /^spirits(?:\s|$|[—–-])/.test(name) ? 'Spirits'
-        : name.includes('cocktail') ? 'Cocktails'
-        : /beer|wine/.test(name) ? 'Beer & Wine'
-        : /coffee|juice|water|soft drink|tea|smoothie/.test(name) ? 'Non-Alcoholic'
-        : 'Food';
-      result.get(group)!.push(cat);
-    }
-    return result;
-  }, [categories]);
-  const activeGroup = openGroup && groups.has(openGroup) ? openGroup : null;
-  const children = activeGroup ? groups.get(activeGroup) ?? [] : [];
-  const burgerProducts = useMemo(() => products.filter((p) => /burger/i.test(p.name)), [products]);
-  const hasBurgerCategory = (groups.get('Food') ?? []).some((cat) => /burger/i.test(cat.name));
-  const showVirtualBurgers = activeGroup === 'Food' && burgerProducts.length > 0 && !hasBurgerCategory;
-  const burgerFilterSelected = selectedCategory === '__virtual_burgers__';
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const visibleCategories = useMemo(
+    () => categories.filter(cat => cat.is_active !== false).sort((a, b) =>
+      (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name)),
+    [categories]
+  );
+  const categoryColor = (value: string | null) => {
+    const palette: Record<string, string> = {
+      amber: '#D97706', green: '#16A34A', blue: '#2563EB',
+      red: '#DC2626', pink: '#DB2777', orange: '#EA580C',
+      purple: '#9333EA', teal: '#0D9488', yellow: '#CA8A04',
+    };
+    const color = (value || '').toLowerCase().trim();
+    return palette[color] ?? (/^#[0-9a-f]{6}$/i.test(color) ? color : '#334155');
+  };
   const filtered = products.filter((p) => {
-    // No selected category means show the entire menu.
-    if (!activeGroup && !search.trim()) return true;
-    const matchCat = burgerFilterSelected ? /burger/i.test(p.name)
-      : selectedCategory ? p.category_id === selectedCategory
-      : activeGroup === 'Favorites' ? favorites.includes(String(p.id))
-      : activeGroup ? children.some((cat) => cat.id === p.category_id) : true;
-    // Search only within the selected category or subcategory.
-    // With no category selected, matchCat is true and search covers the full menu.
+    const matchCat = favoritesOnly ? favorites.includes(String(p.id))
+      : selectedCategory ? p.category_id === selectedCategory : true;
     return matchCat && menuSearchScore(p.name, search) > 0;
   });
   const ordered = [...filtered].sort((a,b) => {
@@ -166,21 +149,10 @@ export default function ProductGrid({
     } catch { toast.error('Could not save order. Refresh and retry.'); }
     finally { setSaving(false); }
   };
-  // VeloxPOS category-pill styling; retain FloPOS group IDs and filtering.
-  const referenceCategories = [
-    { label: 'FAV', group: 'Favorites', filter: null, color: '#CA8A04', Icon: Star },
-    { label: 'Beer', group: 'Beer & Wine', filter: /beer/i, color: '#F59E0B', Icon: Beer },
-    { label: 'Wine', group: 'Beer & Wine', filter: /wine/i, color: '#DC2626', Icon: Wine },
-    { label: 'Cocktails', group: 'Cocktails', filter: null, color: '#2563EB', Icon: Martini },
-    { label: 'Spirits', group: 'Spirits', filter: null, color: '#0284C7', Icon: Coffee },
-    { label: 'Food', group: 'Food', filter: null, color: '#16A34A', Icon: UtensilsCrossed },
-    { label: 'Drinks', group: 'Non-Alcoholic', filter: null, color: '#EA580C', Icon: Coffee },
-  ] as const;
-  const [referenceCategory, setReferenceCategory] = useState<string | null>(null);
+  // Category buttons are driven by the active category records.
   const [catalogView, setCatalogView] = useState<'photo' | 'compact'>('compact');
   const isTouch = useSyncExternalStore(subscribeCoarsePointer, getCoarsePointer, () => false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const [showAllSubcategories, setShowAllSubcategories] = useState(false);
   const gridScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -268,57 +240,35 @@ export default function ProductGrid({
           </button>}
         </div>
         <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto py-1 mb-1">
-          {referenceCategories.map(({ label, group, filter, color, Icon }) => {
-            const selected = referenceCategory === label;
-            return <button key={label} type="button" aria-pressed={selected}
+          <button type="button" aria-pressed={favoritesOnly}
+            onClick={() => { setFavoritesOnly(!favoritesOnly); setSelectedCategory(null); setSearch(''); setArranging(false); }}
+            className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white ${favoritesOnly ? 'ring-2 ring-white' : ''}`}
+            style={{ backgroundColor: '#CA8A04' }}><Star size={16} className="inline mr-1" />FAV</button>
+          {visibleCategories.map(cat => {
+            const selected = !favoritesOnly && selectedCategory === cat.id;
+            return <button key={cat.id} type="button" aria-pressed={selected}
               onClick={() => {
-                setReferenceCategory(selected ? null : label);
+                setFavoritesOnly(false);
+                setSelectedCategory(selected ? null : cat.id);
                 setSearch('');
-                setOpenGroup(selected ? null : group);
-                setSelectedCategory(selected ? null : (filter ? (groups.get(group) ?? []).find(c => filter.test(c.name))?.id ?? null : null));
                 setArranging(false);
               }}
-              className={`group relative h-10 shrink-0 rounded-xl overflow-hidden border border-white/10 shadow-[inset_0_-2px_0_rgba(0,0,0,0.20)] flex flex-row items-center justify-center gap-1.5 px-3.5 transition-[filter,transform] active:scale-95 text-white ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17] brightness-110' : 'hover:brightness-110'}`}
-              style={{ backgroundColor: color }}>
-              <Icon size={18} strokeWidth={2} className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
-              <span className={`font-bold text-xs tracking-wide text-white drop-shadow ${selected ? 'font-black' : ''}`}>{label}</span>
-            </button>;
+              className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white transition-[filter,transform] active:scale-95 ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17]' : 'hover:brightness-110'}`}
+              style={{ backgroundColor: categoryColor(cat.color) }}>{cat.name}</button>;
           })}
         </nav>
-        {activeGroup && activeGroup !== 'Favorites' && (
-          (() => {
-            const subcategories = [
-              ...(showVirtualBurgers ? [{ id: '__virtual_burgers__', name: 'Burgers' }] : []),
-              ...children.map(cat => ({ id: cat.id, name: activeGroup === 'Cocktails' ? cat.name.replace(/\\s+Cocktails?$/i, '') : cat.name.replace(/^Spirits\s*[—–-]\s*/i, '') })),
-            ];
-            const selectedIndex = subcategories.findIndex(cat => cat.id === selectedCategory);
-            const collapsible = subcategories.length > SUBCATEGORY_LIMIT;
-            const expanded = showAllSubcategories || selectedIndex >= SUBCATEGORY_LIMIT;
-            const visible = collapsible && !expanded ? subcategories.slice(0, SUBCATEGORY_LIMIT) : subcategories;
-            const pill = (active: boolean) => `h-11 shrink-0 rounded-xl border px-4 text-sm font-semibold touch-manipulation ${active ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card hover:bg-muted'}`;
-            return (
-              <nav aria-label="Menu subcategories" className="flex flex-wrap gap-2 py-1">
-                <button type="button" onClick={() => setSelectedCategory(null)} className={pill(!selectedCategory)}>All {activeGroup}</button>
-                {visible.map(cat => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)} className={pill(selectedCategory === cat.id)}>{cat.name}</button>)}
-                {collapsible && selectedIndex < SUBCATEGORY_LIMIT && (
-                  <button type="button" onClick={() => setShowAllSubcategories(v => !v)} className={pill(false)}>{expanded ? 'Less ▴' : `More (${subcategories.length - SUBCATEGORY_LIMIT}) ▾`}</button>
-                )}
-              </nav>
-            );
-          })()
-        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
       <div ref={gridScrollRef} className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
-        {activeGroup === 'Favorites' && !search.trim() && displayed.length === 0 && (
+        {favoritesOnly && !search.trim() && displayed.length === 0 && (
           <p className="py-10 text-center text-sm text-slate-400">No favorites yet. Tap the ☆ on any product to pin it here.</p>
         )}
         
         {<>
           <div className="flex items-center justify-between mb-2 gap-2">
             <div className="flex items-center gap-3">
-              <h2 className="text-sm font-bold text-white tracking-tight">{selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : referenceCategory || activeGroup || 'All Products'}</h2>
+              <h2 className="text-sm font-bold text-white tracking-tight">{selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : favoritesOnly ? 'Favorites' : 'All Products'}</h2>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length}</span>
             </div>
             <div className="flex items-center gap-2">
@@ -339,8 +289,7 @@ export default function ProductGrid({
           <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
           {displayed.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
-            const categoryAccent = referenceCategories.find(c => c.label === referenceCategory)?.color
-              ?? referenceCategories.find(c => c.group === activeGroup)?.color
+            const categoryAccent = favoritesOnly ? '#CA8A04' : categoryColor(categories.find(c => c.id === selectedCategory)?.color ?? null)
               ?? '#2563EB';
             
 
