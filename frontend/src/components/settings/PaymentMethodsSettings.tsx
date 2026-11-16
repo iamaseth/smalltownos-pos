@@ -68,6 +68,21 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
     }
   };
 
+  const enableAbaManual = async () => {
+    const existing = methods.find((method) => method.name.trim().toLowerCase() === 'aba (manual)');
+    try {
+      if (existing) {
+        if (!existing.is_active) await api.put(`/payment-methods/${existing.id}`, { is_active: true });
+      } else {
+        await api.post('/payment-methods', { name: 'ABA (Manual)' });
+      }
+      await load();
+      toast.success('ABA (Manual) is available at checkout. Verify the transfer in the bank app before recording payment.');
+    } catch {
+      toast.error('Unable to enable ABA (Manual)');
+    }
+  };
+
   const update = async (method: CustomPaymentMethod, changes: Record<string, unknown>) => {
     try {
       await api.put(`/payment-methods/${method.id}`, changes);
@@ -107,6 +122,13 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
       <div className="bg-card rounded-xl border border-border p-6">
         <div className="flex items-center gap-2 mb-2"><CreditCard size={20} className="text-muted-foreground" /><h2 className="font-semibold text-foreground">{t('paymentMethods')}</h2></div>
         <p className="text-sm text-muted-foreground mb-5">{t('paymentMethodsHint')}</p>
+        <div className="mb-5 rounded-lg border border-border p-3">
+          <p className="text-sm font-semibold">ABA payments without bank integration</p>
+          <p className="mt-1 text-xs text-muted-foreground">Staff verify the transfer in the bar's ABA account, then record the sale as ABA (Manual). The POS receipt is the sale record, not proof of bank settlement.</p>
+          {methods.some((method) => method.name.trim().toLowerCase() === 'aba (manual)' && method.is_active)
+            ? <p className="mt-2 text-sm font-semibold text-emerald-600">ABA (Manual) enabled</p>
+            : <Button className="mt-3" disabled={!isAdmin} onClick={() => void enableAbaManual()}>Enable ABA (Manual)</Button>}
+        </div>
         <div className="rounded-lg border border-border divide-y">
           {builtInMethods.map((method) => <div key={method.key} className="px-3 py-2 flex justify-between text-sm"><span>{tPos(method.labelKey)}</span><span className="text-xs text-gray-400">{t('builtIn')}</span></div>)}
         </div>
