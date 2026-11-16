@@ -56,6 +56,18 @@ function menuSearchScore(name: string, rawQuery: string): number {
   return 0;
 }
 
+// Display-only grouping for existing Spirits products. Unrecognized products stay in Other.
+const SPIRIT_GROUPS = ['Whiskey', 'Gin', 'Rum', 'Vodka', 'Liqueurs', 'Other'] as const;
+function spiritGroup(name: string): typeof SPIRIT_GROUPS[number] {
+  const n = name.toLowerCase();
+  if (/whisk(e)?y|bourbon|scotch|jack daniel|chivas|ballantine|glenfiddich|jameson|jim beam|johnnie walker|fireball/.test(n)) return 'Whiskey';
+  if (/gin|beefeater|hendrick|tanqueray|bombay|gordon/.test(n)) return 'Gin';
+  if (/rum|bacardi|havana club|captain morgan|malibu/.test(n)) return 'Rum';
+  if (/vodka|absolut|belvedere|smirnoff|grey goose|stolichnaya/.test(n)) return 'Vodka';
+  if (/liqueur|amaretto|baileys|campari|aperol|frangelico|grand marnier|jäger|jager|sambuca|kahlua|cointreau|triple sec|limoncello|schnapps/.test(n)) return 'Liqueurs';
+  return 'Other';
+}
+
 const FAVORITES_KEY = 'pos-favorite-products';
 
 const subscribeCoarsePointer = (callback: () => void) => {
@@ -111,8 +123,9 @@ export default function ProductGrid({
     return next;
   });
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
   const visibleCategories = useMemo(
-    () => categories.filter(cat => cat.is_active !== false).sort((a, b) =>
+    () => categories.filter(cat => cat.is_active !== false && !cat.parent_id).sort((a, b) =>
       (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name)),
     [categories]
   );
@@ -125,10 +138,19 @@ export default function ProductGrid({
     const color = (value || '').toLowerCase().trim();
     return palette[color] ?? (/^#[0-9a-f]{6}$/i.test(color) ? color : '#334155');
   };
+  const selectedMainCategory = visibleCategories.find(c => c.id === selectedCategory);
+  const childCategories = categories.filter(c => c.is_active !== false && c.parent_id === selectedCategory)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name));
+  const spiritVirtualGroups = selectedMainCategory?.name.toLowerCase() === 'spirits' && childCategories.length === 0;
+  const subcategoryNames = spiritVirtualGroups ? [...SPIRIT_GROUPS] : childCategories.map(c => c.name);
+  const subcategoryId = childCategories.find(c => c.name === selectedSubcategory)?.id;
   const filtered = products.filter((p) => {
     const matchCat = favoritesOnly ? favorites.includes(String(p.id))
-      : selectedCategory ? p.category_id === selectedCategory : true;
-    return matchCat && menuSearchScore(p.name, search) > 0;
+      : selectedCategory ? (p.category_id === selectedCategory || childCategories.some(c => c.id === p.category_id)) : true;
+    const matchSub = !selectedSubcategory ? true
+      : spiritVirtualGroups ? spiritGroup(p.name) === selectedSubcategory
+      : p.category_id === subcategoryId;
+    return matchCat && matchSub && menuSearchScore(p.name, search) > 0;
   });
   const ordered = [...filtered].sort((a,b) => {
     if (search.trim()) {
@@ -240,7 +262,7 @@ export default function ProductGrid({
         </div>
         <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto py-1 mb-1">
           <button type="button" aria-pressed={favoritesOnly}
-            onClick={() => { setFavoritesOnly(!favoritesOnly); setSelectedCategory(null); setSearch(''); setArranging(false); }}
+            onClick={() => { setFavoritesOnly(!favoritesOnly); setSelectedCategory(null); setSelectedSubcategory(null); setSearch(''); setArranging(false); }}
             className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white ${favoritesOnly ? 'ring-2 ring-white' : ''}`}
             style={{ backgroundColor: '#CA8A04' }}><Star size={16} className="inline mr-1" />FAV</button>
           {visibleCategories.map(cat => {
@@ -249,6 +271,7 @@ export default function ProductGrid({
               onClick={() => {
                 setFavoritesOnly(false);
                 setSelectedCategory(selected ? null : cat.id);
+                setSelectedSubcategory(null);
                 setSearch('');
                 setArranging(false);
               }}
@@ -256,6 +279,18 @@ export default function ProductGrid({
               style={{ backgroundColor: categoryColor(cat.color) }}>{cat.name}</button>;
           })}
         </nav>
+        {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && (
+          <nav aria-label="Menu subcategories" className="flex gap-2 overflow-x-auto py-1">
+            {['All', ...subcategoryNames].map(name => {
+              const active = name === 'All' ? !selectedSubcategory : selectedSubcategory === name;
+              return <button key={name} type="button" aria-pressed={active}
+                onClick={() => { setSelectedSubcategory(name === 'All' ? null : name); setArranging(false); }}
+                className={`h-9 shrink-0 rounded-lg border px-3 text-xs font-semibold ${active ? 'border-blue-500 bg-blue-600 text-white' : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'}`}>
+                {name}
+              </button>;
+            })}
+          </nav>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
