@@ -259,6 +259,12 @@ export default function SetupPage() {
       }
     }
 
+    // A hosted first-run install requires the deployment's one-time setup code.
+    // Keep it only in memory for this request; never store it in browser storage.
+    const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+    const setupCode = isLocal ? '' : window.prompt('Enter the deployment setup code from your Railway administrator:');
+    if (!isLocal && !setupCode) return;
+
     setLoading(true);
     try {
       const countryProfile = selectedCountry;
@@ -287,7 +293,7 @@ export default function SetupPage() {
         email_product_updates: productUpdates,
         email_marketing: marketing,
         ...countryPayload,
-      });
+      }, { headers: setupCode ? { 'x-flo-setup-secret': setupCode } : {} });
       completeSetup();
     } catch {
       toast.error(t('errorGeneric'));
