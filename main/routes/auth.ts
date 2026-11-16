@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
 import { getJWTSecret } from '../security/jwt-secret';
 import { seedSetupProfile } from '../setup/seed-data';
@@ -145,7 +145,17 @@ function isLocalSetupRequest(req: Request): boolean {
 
 function requireLocalSetup(req: Request, res: Response): boolean {
   if (isLocalSetupRequest(req)) return true;
-  res.status(403).json({ error: 'Initial setup must be completed on the POS computer.' });
+  // Opt-in, single-use remote bootstrap for privately deployed cloud POS instances.
+  // Never enable without a high-entropy secret. The endpoint is also disabled
+  // permanently once an owner exists (checked in /setup/initialize).
+  const configured = process.env.FLO_REMOTE_SETUP_SECRET || '';
+  const provided = req.get('x-flo-setup-secret') || '';
+  if (configured.length >= 32 && provided.length === configured.length) {
+    const expected = Buffer.from(configured, 'utf8');
+    const actual = Buffer.from(provided, 'utf8');
+    if (expected.length === actual.length && timingSafeEqual(expected, actual)) return true;
+  }
+  res.status(403).json({ error: 'Initial setup requires local access or the deployment setup code.' });
   return false;
 }
 
