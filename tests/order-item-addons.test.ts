@@ -167,6 +167,24 @@ async function main() {
   const authHeader = `Bearer ${token}`;
 
   try {
+    // ── Test 0: tab_name is stored trimmed and returned on the order ──
+    console.log('\n0. POST /api/orders stores tab_name for table-less tabs');
+    {
+      const res = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: JSON.stringify({ type: 'dine_in', tab_name: '  Tom  ', items: [{ product_id: 'prod-addon-norm', quantity: 1 }] }),
+      });
+      assertEqual(res.status, 201, `order with tab_name is created (got ${res.status}, ${JSON.stringify(res.data)})`);
+      assertEqual(res.data.order.tab_name, 'Tom', 'tab_name is trimmed and returned');
+      const bad = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: JSON.stringify({ type: 'dine_in', tab_name: 5, items: [{ product_id: 'prod-addon-norm', quantity: 1 }] }),
+      });
+      assertEqual(bad.status, 400, 'a non-string tab_name is rejected');
+    }
+
     // ── Test 1: order creation dual-writes addons into the normalized table ──
     console.log('\n1. POST /api/orders snapshots addons into order_item_addons');
     let orderId: number;

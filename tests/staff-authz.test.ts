@@ -178,11 +178,11 @@ async function main() {
   assertEqual(result.status, 400, 'operational roles reject a non-empty PIN');
 
   console.log('\n── PIN policy ─────────────────────────────────────────────────');
-  for (const pin of ['abcd', '123', '1234567']) {
+  for (const pin of ['abcd', '123', '12345', '1234567']) {
     result = await request(app).post('/api/staff').set(ownerAuth).send({
       name: `Bad PIN ${pin}`, email: `bad-pin-${pin}@test.local`, password: 'StrongPass1', role: 'manager', pin,
     });
-    assertEqual(result.status, 400, `PIN ${pin} is rejected unless it is 4-6 numeric digits`);
+    assertEqual(result.status, 400, `PIN ${pin} is rejected unless it is exactly 4 digits`);
   }
 
   result = await request(app).put('/api/staff/manager-target-145').set(ownerAuth).send({ role: 'server' });

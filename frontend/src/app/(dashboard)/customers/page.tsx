@@ -15,6 +15,7 @@ import { countryName } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
+import ImportCustomersButton from '@/components/customers/ImportCustomersButton';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -157,7 +158,10 @@ export default function CustomersPage() {
             </span>
           )}
         </div>
-        <Button onClick={openAdd}><Plus size={16} className="me-1" /> {tCustomer('add')}</Button>
+        <div className="flex items-center gap-2">
+          <ImportCustomersButton onImported={() => setRefreshKey((k) => k + 1)} />
+          <Button onClick={openAdd}><Plus size={16} className="me-1" /> {tCustomer('add')}</Button>
+        </div>
       </div>
 
       <div className="relative mb-4">

@@ -195,6 +195,7 @@ export function startServer(): Promise<void> {
         status: db.ok ? 'ok' : 'error',
         db: db.ok ? 'ok' : db.error,
         service: 'Flo Local API',
+        training: process.env.FLO_DEMO_MODE === '1',
         version: process.env.npm_package_version || '2.4.7',
         timestamp: new Date().toISOString(),
       });

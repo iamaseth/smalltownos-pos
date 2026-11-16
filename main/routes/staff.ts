@@ -29,7 +29,7 @@ function hasNonEmptyPin(pin: unknown): boolean {
 }
 
 function isValidPin(pin: unknown): boolean {
-  return /^\d{4,6}$/.test(String(pin));
+  return /^\d{4}$/.test(String(pin));
 }
 
 function normalizeStaffEmail(email: unknown): string {
@@ -139,7 +139,7 @@ router.post('/', requirePermission('staff.operational.manage'), authRateLimit(),
       return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
     }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
-      return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
+      return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
     }
 
     const db = getDatabase();
@@ -228,7 +228,7 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
       return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
     }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
-      return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
+      return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
     }
 
     if (emailProvided && !normalizedEmail) {

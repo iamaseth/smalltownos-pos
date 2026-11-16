@@ -6,9 +6,8 @@ import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
-import { ShoppingCart, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ShoppingCart, X } from 'lucide-react';
 import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
@@ -20,8 +19,10 @@ import CartPanel from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
 import CustomerSearch from '@/components/pos/CustomerSearch';
 import TablePickerModal from '@/components/pos/TablePickerModal';
+import TabChoiceModal from '@/components/pos/TabChoiceModal';
 import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
 import PaymentModal from '@/components/pos/PaymentModal';
+import OpenTabsModal from '@/components/pos/OpenTabsModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
@@ -101,7 +102,6 @@ export default function POSPage() {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { customerMandatory, autoPrintKot, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
-  const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
@@ -115,22 +115,41 @@ export default function POSPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
-  const [tableRailOpen, setTableRailOpen] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
+  const [showTabChoice, setShowTabChoice] = useState(false);
+  const [placeAfterChoice, setPlaceAfterChoice] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
+  const [payNow, setPayNow] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [openTabs, setOpenTabs] = useState<Order[]>([]);
+  const [showOpenTabs, setShowOpenTabs] = useState(false);
+  const [payingTabId, setPayingTabId] = useState<number | null>(null);
+  const [tabsNow, setTabsNow] = useState(() => Date.now());
+  const refreshOpenTabs = useCallback(async () => {
+    try {
+      const { data } = await api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } });
+      setOpenTabs(((data.orders || []) as Order[]).filter((o) => !o.table_id && o.tab_name));
+      setTabsNow(Date.now());
+    } catch { /* the tab list is optional */ }
+  }, []);
+  useEffect(() => {
+    const first = setTimeout(() => { void refreshOpenTabs(); }, 0);
+    const timer = setInterval(() => { void refreshOpenTabs(); }, 15000);
+    return () => { clearTimeout(first); clearInterval(timer); };
+  }, [refreshOpenTabs]);
   const [supportError, setSupportError] = useState<{ title: string; subject: string; code: string; message: string; payload: Record<string, unknown> } | null>(null);
   const [sentTicketId, setSentTicketId] = useState<string | null>(null);
   const delivery = useSupportTicketStatus(sentTicketId);
@@ -562,6 +581,17 @@ export default function POSPage() {
     setAddonProduct(product);
   };
 
+  const handleQuickAdd = (product: Product) => {
+    const requiredGroups = (product.addon_groups || []).filter(
+      group => group.is_active && (group.is_required || group.min_selection > 0)
+    );
+    if (requiredGroups.length > 0) {
+      setAddonProduct(product);
+      return;
+    }
+    cart.addItem(product, 1, [], '');
+  };
+
   const handleAddonAdd = (product: Product, quantity: number, addons: Addon[], instructions: string) => {
     cart.addItem(product, quantity, addons, instructions);
   };
@@ -573,7 +603,7 @@ export default function POSPage() {
 
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyModalOpen = showTablePicker || !!addonProduct || !!editingCartItem || !!checkoutTable
+  const anyModalOpen = showTablePicker || showTabChoice || !!addonProduct || !!editingCartItem || !!checkoutTable
     || !!paymentBill || showCustomerPrompt || showPrepaidCheckout || cashDrawer.open
     || shift.openModalOpen || shift.closeModalOpen;
 
@@ -587,6 +617,20 @@ export default function POSPage() {
     }
   }, !anyModalOpen);
 
+  const handlePayNow = () => {
+    if (pendingOrder) return;
+    if (cart.items.length === 0) {
+      toast.error(t('cartEmpty'));
+      return;
+    }
+    if (customerMandatory && !cart.customerId) {
+      setShowCustomerPrompt(true);
+      return;
+    }
+    setPayNow(true);
+    setShowPrepaidCheckout(true);
+  };
+
   const handlePlaceOrder = async () => {
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
@@ -596,8 +640,8 @@ export default function POSPage() {
       setShowCustomerPrompt(true);
       return;
     }
-    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId) {
-      setShowTablePicker(true);
+    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId && !cart.tabName) {
+      setShowTabChoice(true);
       return;
     }
 
@@ -651,6 +695,7 @@ export default function POSPage() {
       } else {
         const orderPayload = {
           table_id: cart.tableId,
+          tab_name: cart.tabName || undefined,
           customer_id: cart.customerId,
           type: cart.orderType,
           guest_count: cart.guestCount,
@@ -707,8 +752,9 @@ export default function POSPage() {
   };
 
   // Handle prepaid checkout - place order and pay in one step
-  const handlePrepaidCheckout = async (payments: PrepaidPayment[], walletAmount: number, discount: PrepaidDiscount | null) => {
-    const isPrepaidCheckout = shouldTakePaymentNow;
+  const handlePrepaidCheckout = async (payments: PrepaidPayment[], walletAmount: number, discount: PrepaidDiscount | null, partial = false) => {
+    const isPrepaidCheckout = shouldTakePaymentNow || payNow;
+    setPayNow(false);
     setShowPrepaidCheckout(false);
     setSubmitting(true);
     const orderItems = cart.items.map((item) => ({
@@ -879,16 +925,19 @@ export default function POSPage() {
         ? paymentResponse.data.loyaltyPointsEarned
         : 0;
 
-      if (paidBill.payment_status !== 'paid') {
+      const keepBillOpen = partial && paidBill.payment_status === 'partial';
+      if (paidBill.payment_status !== 'paid' && !keepBillOpen) {
         toast.error(t('paymentIncomplete', {
           amount: currencyFmt(Number(paidBill.balance) || 0),
         }));
         return;
       }
 
-      const successMsg = pointsEarned > 0
-        ? t('orderPaidWithPoints', { number: orderData.order.order_number, points: pointsEarned })
-        : t('orderPaid', { number: orderData.order.order_number });
+      const successMsg = keepBillOpen
+        ? `Payment recorded. ${currencyFmt(Number(paidBill.balance) || 0)} left to pay.`
+        : pointsEarned > 0
+          ? t('orderPaidWithPoints', { number: orderData.order.order_number, points: pointsEarned })
+          : t('orderPaid', { number: orderData.order.order_number });
       toast.success(successMsg);
       if (cart.tableId) {
         try {
@@ -906,6 +955,10 @@ export default function POSPage() {
 
       await printKotIfEnabled(orderData.order);
 
+      if (keepBillOpen) {
+        setPaymentBill(paidBill);
+        return;
+      }
       await printBillForTenant(paidBill, isPrepaidCheckout);
     } catch (error) {
       if (error instanceof OrderAttemptStorageError) reportOrderStorageFailure(t('processOrderFailed'));
@@ -951,6 +1004,65 @@ export default function POSPage() {
 
     setShowTablePicker(false);
     setCheckoutTable(table);
+  };
+
+  const placeAfterDestination = () => {
+    setShowTabChoice(false);
+    setPlaceAfterChoice(true);
+  };
+
+  useEffect(() => {
+    if (!placeAfterChoice) return;
+    const timer = setTimeout(() => {
+      setPlaceAfterChoice(false);
+      void handlePlaceOrder();
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeAfterChoice]);
+
+  const handleNewTab = (name: string) => {
+    cart.setTableId(null);
+    cart.setOrderType('dine_in');
+    cart.setTabName(name);
+    placeAfterDestination();
+  };
+
+  const handleTakeawayChoice = (name: string) => {
+    cart.setTableId(null);
+    cart.setOrderType('takeaway');
+    cart.setTabName(name);
+    placeAfterDestination();
+  };
+
+  const handleOpenTab = (order: Order) => {
+    cart.setTableId(null);
+    cart.setOrderType('dine_in');
+    cart.setTabName(order.tab_name || '');
+    setPendingOrder(order);
+    placeAfterDestination();
+  };
+
+  const handleAddToTab = (order: Order) => {
+    cart.setTableId(null);
+    cart.setOrderType('dine_in');
+    cart.setTabName(order.tab_name || '');
+    setPendingOrder(order);
+    setShowOpenTabs(false);
+    toast.success(`Adding to tab: ${order.tab_name}. Pick items, then tap Add to tab.`);
+  };
+
+  const handlePayTab = async (order: Order) => {
+    setPayingTabId(order.id);
+    try {
+      const { data } = await api.post('/bills/generate', { order_id: order.id });
+      setShowOpenTabs(false);
+      setPaymentBill(data.bill);
+    } catch {
+      toast.error(t('generateBillFailed'));
+    } finally {
+      setPayingTabId(null);
+    }
   };
 
   const handleSelectHeldTable = async (tableId: string) => {
@@ -1055,6 +1167,7 @@ export default function POSPage() {
     setPaymentBill(null);
     setCheckoutTable(null);
     refreshTables();
+    void refreshOpenTabs();
 
     if (bill) {
       try {
@@ -1070,7 +1183,10 @@ export default function POSPage() {
     currency,
     submitting,
     onPlaceOrder: handlePlaceOrder,
-    onShowTablePicker: () => setShowTablePicker(true),
+    onPayNow: handlePayNow,
+    onChooseDestination: () => setShowTabChoice(true),
+    onShowTabs: () => { void refreshOpenTabs(); void refreshTables(); setShowOpenTabs(true); },
+    openTabCount: openTabs.length + tables.filter((tb) => tb.status === 'occupied' && (tb.current_order || tb.activeOrder)).length,
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
   };
@@ -1155,6 +1271,10 @@ export default function POSPage() {
           )}
         </div>
       )}
+
+      {/* Main content area */}
+      <div className="pos-reference-font pos-cashier-preview flex flex-1 min-h-0 overflow-hidden bg-[#0b0f17] gap-0 text-slate-100">
+        <div className="flex min-w-0 flex-1 flex-col">
       <PosTopbar
         tables={tables}
         onShowTablePicker={() => setShowTablePicker(true)}
@@ -1177,77 +1297,9 @@ export default function POSPage() {
         canUseShift={canUseShift}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
+        searchSlotRef={setSearchSlot}
       />
-
-      {/* Main content area */}
-      <div className="pos-reference-font pos-cashier-preview flex flex-1 min-h-0 overflow-hidden bg-[#0b0f17] gap-0 text-slate-100">
-        {/* Collapsible desktop table rail; reuses the same table actions as the picker. */}
-        {isRestaurant && tablesRequired && cart.orderType === 'dine_in' && (
-          <aside className={`hidden lg:flex shrink-0 flex-col border-r border-slate-700/50 bg-[#10192b] ${tableRailOpen ? 'w-44 xl:w-48' : 'w-12'}`}>
-            <div className="flex items-center justify-between gap-1 border-b border-[#1e293b] p-4">
-              {tableRailOpen && <span className="pos-reference-display text-sm font-semibold">Tables</span>}
-              <button type="button" onClick={() => setTableRailOpen(v => !v)}
-                className="rounded-md p-2 hover:bg-muted" aria-label={tableRailOpen ? 'Collapse tables' : 'Expand tables'}
-                title={tableRailOpen ? 'Collapse tables' : 'Expand tables'}>
-                {tableRailOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
-              </button>
-            </div>
-            {tableRailOpen && (
-              <>
-                <div className="flex-1 overflow-y-auto p-3 space-y-4">
-                  {['Front', 'Middle', 'Back', 'Upstairs', 'Unassigned'].map(area => {
-                    const sectionTables = tables.filter(table => {
-                      const section = (table.section || '').trim().toLowerCase();
-                      return area === 'Unassigned'
-                        ? !['front', 'middle', 'back', 'upstairs'].includes(section)
-                        : section === area.toLowerCase();
-                    });
-                    if (!sectionTables.length) return null;
-                    return (
-                      <section key={area}>
-                        <h3 className="pos-reference-display mb-1.5 px-1 text-xs font-bold uppercase tracking-wide text-slate-400">{area}</h3>
-                        <div className="grid grid-cols-2 gap-2">
-                          {sectionTables.map(table => {
-                            const held = heldOrders.hasHeldOrder(table.id) || table.status === 'held';
-                            const occupied = table.status === 'occupied';
-                            const selected = cart.tableId === table.id;
-                            const unavailable = table.status === 'cleaning';
-                            const color = selected ? 'border-2 border-blue-500 bg-[#131d31] text-white shadow-lg shadow-blue-900/30 ring-2 ring-blue-500/20' : 'border border-[#1e293b] bg-[#131b2e] text-slate-100 hover:border-slate-600';
-                            return (
-                              <button key={table.id} type="button" disabled={unavailable}
-                                title={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
-                                aria-label={`${table.name} — ${held ? 'On hold' : occupied ? 'Open order' : table.status}`}
-                                onClick={() => {
-                                  if (held) void handleSelectHeldTable(table.id);
-                                  else if (occupied) void handleSelectOccupiedTable(table);
-                                  else handleSelectAvailableTable(table.id, table.status === 'reserved' && table.reservation_customer_id
-                                    ? { id: table.reservation_customer_id, name: table.reservation_customer_name ?? '', phone: table.reservation_customer_phone ?? '' }
-                                    : null);
-                                }}
-                                className={`min-h-[72px] rounded-xl p-2.5 text-left text-xs font-semibold transition active:scale-95 flex flex-col justify-between shadow-sm ${color} ${unavailable ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-                                <span className="flex items-center justify-between gap-1"><span className="truncate font-bold text-sm font-[family-name:var(--font-geist-sans)]">{table.name}</span><span className={`h-2 w-2 shrink-0 rounded-full ${selected ? 'bg-blue-400' : held ? 'bg-slate-400' : occupied ? 'bg-amber-400' : unavailable ? 'bg-slate-500' : 'bg-emerald-400'}`} /></span>
-                                <span className="flex items-end justify-between gap-1 text-[10px] font-[family-name:var(--font-geist-sans)]">
-                                  <span className="text-slate-400">{selected ? cart.guestCount : (table.capacity || 4)} Pax</span>
-                                  <span className={`font-semibold ${selected ? 'text-blue-300' : occupied ? 'text-amber-400' : held ? 'text-slate-400' : 'text-emerald-400'}`}>{selected ? 'Active' : held ? 'Hold' : occupied ? 'Occupied' : unavailable ? 'Cleaning' : 'Open'}</span>
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    );
-                  })}
-                </div>
-                <div className="mt-auto border-t border-border p-2 text-[10px] text-muted-foreground">
-                  <div>🟢 Free · ◼ Hold</div>
-                  <div>🟠 Ordered</div>
-                  <button type="button" onClick={() => setShowTablePicker(true)}
-                    className="mt-2 w-full rounded-md border border-border px-2 py-2 text-xs font-medium text-foreground hover:bg-muted">All tables</button>
-                </div>
-              </>
-            )}
-          </aside>
-        )}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
           <ProductGrid
@@ -1257,16 +1309,20 @@ export default function POSPage() {
             setSelectedCategory={setSelectedCategory}
             search={search}
             setSearch={setSearch}
+            searchSlot={searchSlot}
             currency={currency}
             canArrange={tenantCan(currentTenant, 'catalog.manage')}
             onOrderSaved={async () => { const response = await api.get('/products?active=1'); setProducts((response.data.products as Product[]) || []); }}
             onProductClick={handleProductClick}
-            sidebarOpen={leftSidebarOpen}
+            onQuickAdd={handleQuickAdd}
           />
         </div>
 
+        </div>
+        </div>
+
         {/* Desktop Cart — always open, hidden on mobile */}
-        <div className="hidden md:flex md:w-[25%] md:min-w-[220px] md:max-w-[320px] md:shrink-0 h-full border-l border-[#1e293b] bg-[#131d31]">
+        <div className="hidden md:flex md:w-[25%] md:min-w-[220px] md:max-w-[320px] md:shrink-0 h-full min-h-0 overflow-hidden border-l border-[#1e293b] bg-[#131d31]">
           <CartPanel {...cartPanelProps} />
         </div>
       </div>
@@ -1294,6 +1350,16 @@ export default function POSPage() {
       <CashDrawerMovementModal model={cashDrawer} />
       <ShiftOpenModal model={shift} />
       <ShiftCloseModal model={shift} />
+      {isRestaurant && showTabChoice && (
+        <TabChoiceModal
+          onChooseTable={() => { setShowTabChoice(false); setShowTablePicker(true); }}
+          onNewTab={handleNewTab}
+          onTakeaway={handleTakeawayChoice}
+          onOpenTab={handleOpenTab}
+          onClose={() => setShowTabChoice(false)}
+        />
+      )}
+
       {isRestaurant && showTablePicker && (
         <TablePickerModal
           tables={tables}
@@ -1341,6 +1407,19 @@ export default function POSPage() {
         />
       )}
 
+      {showOpenTabs && (
+        <OpenTabsModal
+          tabs={openTabs}
+          tables={tables}
+          onOpenTable={(table) => { setShowOpenTabs(false); void handleSelectOccupiedTable(table); }}
+          now={tabsNow}
+          payingOrderId={payingTabId}
+          onAddItems={handleAddToTab}
+          onPay={handlePayTab}
+          onClose={() => setShowOpenTabs(false)}
+        />
+      )}
+
       {paymentBill && (
         <PaymentModal
           bill={paymentBill}
@@ -1372,7 +1451,7 @@ export default function POSPage() {
       {showPrepaidCheckout && (
         <PrepaidCheckoutModal
           currency={currency}
-          onClose={() => setShowPrepaidCheckout(false)}
+          onClose={() => { setShowPrepaidCheckout(false); setPayNow(false); }}
           onConfirm={handlePrepaidCheckout}
         />
       )}

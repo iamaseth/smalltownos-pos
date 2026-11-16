@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate, recordOrderAudit } from '../db';
+import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate, recordOrderAudit, dayBoundsInTimezone, localDateInTimezone, tenantBusinessDayStartTime } from '../db';
+import { resolveRegionalSnapshot } from '../countries';
 import {
   calculateConfiguredChargeTaxes,
   calculateItemTax,
@@ -129,6 +130,17 @@ function syncCustomerTagCounts(db: any, customerId: string, items: { product_id:
 }
 
 /** Resolves and validates item add-ons against catalog to enforce authoritative pricing. */
+function getSellableProduct(db: ReturnType<typeof getDatabase>, productId: unknown): any {
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId) as any;
+  if (!product) {
+    throw Object.assign(new Error(`Product ${productId} not found`), { statusCode: 400 });
+  }
+  if (product.deleted_at || product.is_active === 0) {
+    throw Object.assign(new Error(`${product.name} is not available`), { statusCode: 400 });
+  }
+  return product;
+}
+
 function resolveItemAddons(
   db: ReturnType<typeof getDatabase>,
   productId: string,
@@ -201,6 +213,36 @@ function resolveItemAddons(
   return resolved;
 }
 
+function addDaysToDate(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** Resolves ?range=today|yesterday|week or ?business_date=YYYY-MM-DD to a UTC range in the tenant timezone and business day. */
+function resolveBusinessRange(query: Request['query']): [string, string] | null {
+  const range = typeof query.range === 'string' ? query.range : '';
+  const customDate = typeof query.business_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(query.business_date) ? query.business_date : null;
+  if (!customDate && !['today', 'yesterday', 'week'].includes(range)) return null;
+  let timezone: string;
+  try {
+    timezone = resolveRegionalSnapshot({
+      country: getSettingValue('country') ?? undefined,
+      currency: getSettingValue('currency') ?? undefined,
+      timezone: getSettingValue('timezone') ?? undefined,
+    }).timezone;
+  } catch {
+    timezone = getSettingValue('timezone') || 'UTC';
+  }
+  const startTime = tenantBusinessDayStartTime();
+  const today = localDateInTimezone(new Date(), timezone, startTime);
+  const [from, to] = customDate
+    ? [customDate, customDate]
+    : range === 'yesterday' ? [addDaysToDate(today, -1), addDaysToDate(today, -1)]
+      : range === 'week' ? [addDaysToDate(today, -6), today]
+        : [today, today];
+  return [dayBoundsInTimezone(from, timezone, startTime)[0], dayBoundsInTimezone(to, timezone, startTime)[1]];
+}
+
 router.get('/', orderReadRateLimit, requirePermission('orders.read'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -222,7 +264,14 @@ router.get('/', orderReadRateLimit, requirePermission('orders.read'), (req: Requ
       params.push(req.query.type);
     }
     // Filter by UTC day or date range across indexed created_at column.
-    if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
+    const businessRange = resolveBusinessRange(req.query);
+    if (businessRange) {
+      const includeOpen = req.query.include_open === '1' || req.query.include_open === 'true';
+      wheres.push(includeOpen
+        ? "((created_at >= ? AND created_at < ?) OR status IN ('pending', 'preparing', 'ready', 'served'))"
+        : '(created_at >= ? AND created_at < ?)');
+      params.push(businessRange[0], businessRange[1]);
+    } else if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
       const [s, e] = utcDayBounds(utcTodayDate());
       wheres.push('created_at >= ? AND created_at < ?');
       params.push(s, e);
@@ -453,7 +502,7 @@ router.get('/:id', orderReadRateLimit, requirePermission('orders.read'), (req: R
 router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
-    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id } = body;
+    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id, tab_name } = body;
     // Carries optional service charge without automatic calculation policy.
     const idempotencyKey = orderIdempotencyKey(req);
     const idempotencyUserId = String((req as any).user.userId);
@@ -496,11 +545,15 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
     if (online_platform !== undefined && online_platform !== null && typeof online_platform !== 'string') {
       return res.status(400).json({ error: 'online_platform must be a string' });
     }
+    if (tab_name !== undefined && tab_name !== null && typeof tab_name !== 'string') {
+      return res.status(400).json({ error: 'tab_name must be a string' });
+    }
     if (external_order_id !== undefined && external_order_id !== null && typeof external_order_id !== 'string') {
       return res.status(400).json({ error: 'external_order_id must be a string' });
     }
     const onlinePlatform = typeof online_platform === 'string' ? online_platform.trim().slice(0, 100) : null;
     const externalOrderId = typeof external_order_id === 'string' ? external_order_id.trim().slice(0, 100) : null;
+    const tabName = typeof tab_name === 'string' ? tab_name.trim().slice(0, 60) || null : null;
 
     const db = getDatabase();
 
@@ -570,13 +623,13 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       const orderResult = db.prepare(`
         INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
           packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
-          service_charge, service_charge_tax_category_id, online_platform, external_order_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          service_charge, service_charge_tax_category_id, online_platform, external_order_id, tab_name, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `).run(orderNumber, table_id || null, orderCustomerId, authenticatedUserId, type, guest_count || null,
         special_instructions || null, pkgCharge, delCharge,
         chargeContext.packaging_tax_category_id, chargeContext.delivery_tax_category_id,
         serviceCharge, chargeContext.service_charge_tax_category_id,
-        onlinePlatform || null, externalOrderId || null, now(), now());
+        onlinePlatform || null, externalOrderId || null, tabName, now(), now());
 
       const orderId = orderResult.lastInsertRowid;
 
@@ -595,10 +648,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       `);
 
       for (const item of items) {
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-        if (!product) {
-          throw new Error(`Product ${item.product_id} not found`);
-        }
+        const product = getSellableProduct(db, item.product_id);
 
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
@@ -838,10 +888,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
 
       const insertedItemIds: (number | bigint)[] = [];
       for (const item of items) {
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-        if (!product) {
-          throw new Error(`Product ${item.product_id} not found`);
-        }
+        const product = getSellableProduct(db, item.product_id);
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.
@@ -1047,23 +1094,37 @@ router.patch('/:id/status', orderWriteRateLimit, requirePermission('orders.statu
       `).get(req.params.id) !== undefined;
       const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
       const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
-      const requiresOverride = (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
+      const billRows = db.prepare('SELECT payment_status, paid_amount, balance FROM bills WHERE order_id = ?').all(req.params.id) as any[];
+      const hasCollectedFunds = billRows.some((bill) => Number(bill.paid_amount || 0) > 0 && bill.payment_status !== 'refunded');
+      const settledStatuses = ['paid', 'refunded', 'partially_refunded'];
+      const hasUnsettledBalance = billRows.length === 0
+        ? Number(currentOrder.total || 0) > 0
+        : billRows.some((bill) => !settledStatuses.includes(bill.payment_status) && Number(bill.balance || 0) > 0);
+      const cancelInProgress = (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
+      const cancelWithFunds = status === 'cancelled' && hasCollectedFunds;
+      const completeUnsettled = status === 'completed' && hasUnsettledBalance;
+      const requiresOverride = cancelInProgress || cancelWithFunds || completeUnsettled;
 
       let approvedByUserId: string | undefined;
       if (requiresOverride) {
         if (!override_pin) {
-          throw Object.assign(new Error('Manager PIN required to cancel order in progress'), { statusCode: 400 });
+          const message = completeUnsettled
+            ? 'Manager PIN required to complete an unpaid order'
+            : cancelWithFunds && !cancelInProgress
+              ? 'Manager PIN required to cancel an order with collected payment'
+              : 'Manager PIN required to cancel order in progress';
+          throw Object.assign(new Error(message), { statusCode: 400 });
         }
 
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-        // Rate-limit cancellation attempts per client.
-        const rateLimitKey = `pin:${clientIp}:order-cancel`;
+        // Rate-limit override attempts per client.
+        const rateLimitKey = `pin:${clientIp}:${status === 'completed' ? 'order-complete' : 'order-cancel'}`;
         if (!checkPinRateLimit(rateLimitKey)) {
           throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
         }
 
         const user = (db.prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL').all() as any[])
-          .find((candidate) => hasRole(candidate.role, ROLE_ACCESS.ownerManager) && hasPermission(candidate.id, 'orders.item.cancel') && verifyPin(candidate.pin_hash, override_pin));
+          .find((candidate) => hasRole(candidate.role, ROLE_ACCESS.ownerManager) && hasPermission(candidate.id, status === 'completed' ? 'orders.status.update' : 'orders.item.cancel') && verifyPin(candidate.pin_hash, override_pin));
 
         if (!user) {
           throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
@@ -1151,7 +1212,7 @@ router.patch('/:id/status', orderWriteRateLimit, requirePermission('orders.statu
         orderId: req.params.id as string,
         actorUserId: authUser.userId,
         action: 'status_changed',
-        details: { from: currentOrder.status, to: status, ...(approvedByUserId && { approved_by: approvedByUserId }) },
+        details: { from: currentOrder.status, to: status, ...(approvedByUserId && { approved_by: approvedByUserId }), ...(cancelWithFunds && { collected_funds: true }), ...(completeUnsettled && { unsettled_payment: true }) },
       });
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;

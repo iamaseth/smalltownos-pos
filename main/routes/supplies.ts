@@ -3,13 +3,17 @@ import { getDatabase } from '../db';
 import { requirePermission } from '../services/authorization';
 import {
   SupplyMovementType,
+  buildOrderList,
   createSupply,
   getSupply,
+  importSupplies,
   listSupplies,
   listSupplyMovements,
+  receiveDelivery,
   recordSupplyMovement,
   softDeleteSupply,
   updateSupply,
+  setSupplyVendors,
 } from '../services/supplies';
 
 const router = Router();
@@ -54,10 +58,82 @@ router.post('/', requirePermission('supplies.manage'), (req: Request, res: Respo
       baseUnit: body.base_unit,
       stockQuantity: body.stock_quantity,
       lowStockThreshold: body.low_stock_threshold,
+      unitCost: body.unit_cost,
+      packSize: body.pack_size,
+      packLabel: body.pack_label,
+      pourSize: body.pour_size,
+      orderUpTo: body.order_up_to,
+      vendorId: body.vendor_id,
+      groupName: body.group_name,
       isActive: body.is_active,
+      ingredientOnly: body.ingredient_only,
       actorUserId: actorId,
     });
     res.status(201).json({ supply });
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+router.post('/import', requirePermission('supplies.manage'), (req: Request, res: Response) => {
+  try {
+    const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    if (!actorId) return res.status(403).json({ error: 'Authentication required' });
+    const body = req.body || {};
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+    const result = importSupplies(getDatabase(), {
+      rows: rows.map((row: Record<string, unknown>) => ({
+        name: row?.name,
+        baseUnit: row?.base_unit,
+        packSize: row?.pack_size,
+        packLabel: row?.pack_label,
+        packPrice: row?.pack_price,
+        pourSize: row?.pour_size,
+        parLevel: row?.par_level,
+        orderUpTo: row?.order_up_to,
+        groupName: row?.group_name,
+        vendorSku: row?.vendor_sku,
+        vendorItemName: row?.vendor_item_name,
+        vendorNotes: row?.vendor_notes,
+      })),
+      vendorName: body.vendor_name,
+      dryRun: body.dry_run !== false,
+      actorUserId: actorId,
+    });
+    res.json(result);
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+router.post('/deliveries', requirePermission('supplies.manage'), (req: Request, res: Response) => {
+  try {
+    const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    if (!actorId) return res.status(403).json({ error: 'Authentication required' });
+    const body = req.body || {};
+    const lines = Array.isArray(body.lines) ? body.lines : [];
+    const result = receiveDelivery(getDatabase(), {
+      vendorId: body.vendor_id,
+      reference: body.reference,
+      actorUserId: actorId,
+      lines: lines.map((line: Record<string, unknown>) => ({
+        supplyId: String(line.supply_id),
+        packs: line.packs as number | undefined,
+        packPrice: line.pack_price as number | undefined,
+        quantity: line.quantity as number | undefined,
+        unit: line.unit as string | undefined,
+        totalCost: line.total_cost as number | undefined,
+      })),
+    });
+    res.status(201).json(result);
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+router.get('/order-list', requirePermission('supplies.manage'), (_req: Request, res: Response) => {
+  try {
+    res.json(buildOrderList(getDatabase()));
   } catch (error: unknown) {
     sendError(res, error);
   }
@@ -102,13 +178,41 @@ router.get('/:id', requirePermission('supplies.manage'), (req: Request, res: Res
   }
 });
 
+router.put('/:id/vendors', requirePermission('supplies.manage'), (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const entries = Array.isArray(body.vendors) ? body.vendors : [];
+    const vendors = setSupplyVendors(getDatabase(), String(req.params.id), entries.map((entry: Record<string, unknown>) => ({
+      vendorId: String(entry?.vendor_id ?? ''),
+      vendorItemName: entry?.vendor_item_name as string | null | undefined,
+      vendorSku: entry?.vendor_sku as string | null | undefined,
+      notes: entry?.notes as string | null | undefined,
+      packSize: entry?.pack_size as number | null | undefined,
+      packLabel: entry?.pack_label as string | null | undefined,
+      packPrice: entry?.pack_price as number | null | undefined,
+      isPreferred: entry?.is_preferred === true,
+    })));
+    res.json({ vendors });
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
 router.put('/:id', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const supply = updateSupply(getDatabase(), String(req.params.id), {
       name: body.name,
       isActive: body.is_active,
+      ingredientOnly: body.ingredient_only,
       lowStockThreshold: body.low_stock_threshold,
+      unitCost: body.unit_cost,
+      packSize: body.pack_size,
+      packLabel: body.pack_label,
+      pourSize: body.pour_size,
+      orderUpTo: body.order_up_to,
+      vendorId: body.vendor_id,
+      groupName: body.group_name,
     });
     res.json({ supply });
   } catch (error: unknown) {

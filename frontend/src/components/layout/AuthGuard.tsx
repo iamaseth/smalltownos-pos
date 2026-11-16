@@ -45,6 +45,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const printLanguageLoadErrors = useAuthStore((s) => s.printLanguageLoadErrors);
   const router = useRouter();
   const pathname = usePathname();
+  const normalizedPath = pathname && pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null); // null = still checking
 
   const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname?.startsWith(p + '/'));
@@ -112,10 +113,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     } else if (!currentTenant) {
       router.push('/auth/login?select_tenant=true');
     } else {
-      const pagePermission = PAGE_PERMISSIONS.find(([prefix]) => pathname === prefix || pathname?.startsWith(`${prefix}/`));
-      const canOpenStaff = pathname === '/staff'
+      const pagePermission = PAGE_PERMISSIONS.find(([prefix]) => normalizedPath === prefix || normalizedPath?.startsWith(`${prefix}/`));
+      const canOpenStaff = normalizedPath === '/staff'
         && (tenantCan(currentTenant, 'staff.view') || tenantCan(currentTenant, 'authorization.manage'));
-      const canOpenSettings = pathname === '/settings'
+      const canOpenSettings = normalizedPath === '/settings'
         && [
           'settings.view', 'settings.manage', 'tax-packs.view-test', 'tax-configuration.manage',
           'tax-packs.manage', 'printers.manage', 'print-templates.view', 'print-templates.manage',
@@ -123,12 +124,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           'database.manage', 'mobile-access.manage', 'kitchen.stations.manage', 'whatsapp.manage',
         ].some((permission) => tenantCan(currentTenant, permission as import('@shared/permissions').PermissionId));
       if ((pagePermission && !tenantCan(currentTenant, pagePermission[1]))
-        || (pathname === '/staff' && !canOpenStaff)
-        || (pathname === '/settings' && !canOpenSettings)) {
+        || (normalizedPath === '/staff' && !canOpenStaff)
+        || (normalizedPath === '/settings' && !canOpenSettings)) {
         router.replace(getLandingPage(currentTenant));
       }
     }
-  }, [loading, user, currentTenant, isPublicPath, isSetupPath, isStandalonePath, needsSetup, pathname, router]);
+  }, [loading, user, currentTenant, isPublicPath, isSetupPath, isStandalonePath, needsSetup, pathname, normalizedPath, router]);
 
   if (isStandalonePath || isSetupPath) {
     return <>{children}</>;

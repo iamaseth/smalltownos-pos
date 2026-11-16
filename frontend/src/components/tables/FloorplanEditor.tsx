@@ -50,7 +50,7 @@ const VIRTUAL_WIDTH = 1000;
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
 // Table geometry and dimensions based on seating capacity.
-function shapeFor(capacity: number, s = 1) {
+export function shapeFor(capacity: number, s = 1) {
   if (capacity <= 2) return { w: 78 * s, h: 78 * s, round: true };
   if (capacity <= 4) return { w: 96 * s, h: 96 * s, round: false };
   if (capacity <= 6) return { w: 138 * s, h: 82 * s, round: false };

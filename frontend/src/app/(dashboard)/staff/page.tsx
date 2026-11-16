@@ -331,9 +331,9 @@ export default function StaffPage() {
                     <input
                       type={showPin ? 'text' : 'password'} placeholder={editingStaff ? t('pinPlaceholderEdit') : t('pinPlaceholderAdd')}
                       value={form.pin}
-                      onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                      onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 4) })}
                       className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                      maxLength={6}
+                      maxLength={4}
                       pattern="[0-9]*"
                       inputMode="numeric"
                     />

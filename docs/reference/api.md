@@ -264,9 +264,9 @@ Router: `main/routes/orders.ts`. Full path: `/api/orders`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/` | `ROLE_ACCESS.sales` + order read limiter | query: `?status`, `?type`, `?today`, `?start_date`, `?end_date`, `?table_id`, `?before_id`, `?per_page` | `{ orders, table }`, newest page first. `?before_id` pages backwards. |
+| `GET` | `/` | `ROLE_ACCESS.sales` + order read limiter | query: `?status`, `?type`, `?today`, `?start_date`, `?end_date`, `?range`, `?business_date`, `?include_open`, `?table_id`, `?before_id`, `?per_page` | `{ orders, table }`, newest page first. `?before_id` pages backwards. `?range` (`today`, `yesterday`, `week`) and `?business_date` (`YYYY-MM-DD`) select whole business days in the store timezone using `business_day_start_time`, and take precedence over `?today`, `?start_date` and `?end_date`. With `?include_open=1` they also return orders still `pending`, `preparing`, `ready` or `served` from any date. |
 | `GET` | `/:id` | `ROLE_ACCESS.sales` + order read limiter | path: `id` | `{ ...order, items, table }`. |
-| `POST` | `/` | `ROLE_ACCESS.sales` + order write limiter | body: `items`, `table_id`, `customer_id`, `type`, `guest_count`, `special_instructions`, `packaging_charge`, `delivery_charge`, `service_charge`, `online_platform`, `external_order_id`; header: `Idempotency-Key` | `201` with the created order. Honours an `Idempotency-Key` header; reusing a key with a different body returns `409`. |
+| `POST` | `/` | `ROLE_ACCESS.sales` + order write limiter | body: `items`, `table_id`, `customer_id`, `type`, `guest_count`, `special_instructions`, `packaging_charge`, `delivery_charge`, `service_charge`, `online_platform`, `external_order_id`, `tab_name` (optional label, up to 60 characters, for table-less tabs); header: `Idempotency-Key` | `201` with the created order. Honours an `Idempotency-Key` header; reusing a key with a different body returns `409`. |
 | `POST` | `/:id/items` | `ROLE_ACCESS.sales` + order write limiter | path: `id`; body: `items`, `special_instructions`; header: `Idempotency-Key` | Appends items and returns the recomputed order. Honours `Idempotency-Key`. |
 | `PATCH` | `/:id/status` | `ROLE_ACCESS.orderStatus` + order write limiter | path: `id`; body: `status`, `reason`, `override_pin`, `free_table` | Order-level transition. Allowed targets: `pending` to `preparing`, `ready`, `served`, `completed`, `cancelled`; `preparing` to `ready`, `served`, `completed`, `cancelled`; `ready` to `served`, `completed`, `cancelled`; `served` to `completed`, `cancelled`. `completed` and `cancelled` are terminal. Repeating the current status is a no-op. |
 | `PATCH` | `/:id/customer` | `ROLE_ACCESS.ownerManager` + order write limiter | path: `id`; body: `customer_id` | - |
@@ -391,6 +391,7 @@ Router: `main/routes/customers.ts`. Full path: `/api/customers`.
 | `GET` | `/` | `ROLE_ACCESS.sales` + customer read limiter | query: `?search`, `?filter`, `?sort`, `?order`, `?per_page` | Paginated list; `?search`, `?filter`, `?sort`, `?order`, `?per_page`. |
 | `GET` | `/:id` | `ROLE_ACCESS.sales` + customer read limiter | path: `id` | - |
 | `GET` | `/:id/wallet` | `ROLE_ACCESS.sales` + customer read limiter | path: `id` | Wallet balance and loyalty state for the customer. |
+| `POST` | `/import` | `ROLE_ACCESS.sales` + customer write limiter | body: `customers` (1–500 of `{ name, phone?, email? }`) | Bulk-adds customers in one transaction. Skips rows without a name, a phone already in use, and a no-phone name that already exists; an invalid phone is added by name only. Returns `added`, `skippedDuplicates`, `skippedNoName`, `addedWithoutPhone`. |
 | `POST` | `/` | `ROLE_ACCESS.sales` + customer write limiter | body: `phone`, `name`, `email`, `address`, `notes`, `country_code` | - |
 | `PUT` | `/:id` | `ROLE_ACCESS.ownerManagerCashier` + customer write limiter | path: `id`; body: `phone`, `name`, `email`, `address`, `notes`, `country_code` | - |
 
@@ -649,6 +650,8 @@ Router: `main/routes/database-tools.ts`. Full path: `/api/db-tools`.
 | `GET` | `/currency-reset-impact` | `ROLE_ACCESS.owner` | none | Active currency plus the invoice, order, refund, customer, product, and add-on counts the destructive warning uses. |
 | `POST` | `/currency-reset` | `ROLE_ACCESS.owner` + Master PIN | body: `currency` | Also needs `current_currency` and `confirmation_phrase` of the form `CHANGE TO <CODE>`. Creates a recovery backup, recreates the local database, preserves the sanitized menu catalog with monetary fields zeroed, and returns the backup path. The active session becomes invalid. |
 | `POST` | `/initialize` | `ROLE_ACCESS.owner` + Master PIN | body: `confirmation_phrase` | Master-PIN gated database initialization. |
+| `GET` | `/clear-test-sales-impact` | `ROLE_ACCESS.owner` | none | Row counts per table that clearing test sales would delete. |
+| `POST` | `/clear-test-sales` | `ROLE_ACCESS.owner` + Master PIN | body: `confirmation_phrase` (`CLEAR TEST SALES`) | Takes a full backup, then deletes orders, bills, payments, refunds, cash sessions, cash drawer movements, held orders, and bill print and message logs in one transaction (rolled back if it would orphan any row). The menu, tables, staff, customers, loyalty records, and settings are kept and occupied tables are set to available. Stock quantities are not restored. Returns `backupPath` and per-table `deleted` counts. |
 
 ### Reports
 
@@ -720,7 +723,7 @@ The KDS server reads the same database as the main API. Its whole surface:
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/health` | none | none | `{ status, service, version, timestamp }` |
+| `GET` | `/api/health` | none | none | `{ status, db, service, version, timestamp }`. `503` when the database reports unhealthy. |
 | `GET` | `/api/kds/info` | none | none | `{ language, country, kds_default_view }` for the pre-login display. `404` when KDS is disabled, so the surface is not advertised to the LAN. |
 | `POST` | `/api/auth/login` | none, `authRateLimit` | body: `email`, `password` | `{ access_token, user: { id, name, email, role, category_ids, station_ids, station_assignments_configured } }`. 24-hour token. `403` for a role outside `kitchen`. |
 | `POST` | `/api/auth/logout` | bearer token, not role-gated | none | `{ message }`. Revokes the token. |
@@ -770,7 +773,7 @@ The seven routes that are not forwards:
 
 | Method | Path | Authorization | Response |
 | --- | --- | --- | --- |
-| `GET` | `/api/health` | none | `{ status, service, version, timestamp }` |
+| `GET` | `/api/health` | none | none | `{ status, db, service, version, timestamp }`. `503` when the database reports unhealthy. |
 | `GET` | `/api/server-app/info` | none | `{ language, country, currency, currency_symbol, currency_position, currency_fraction_digits, kds_enabled }`. `404` when the feature is disabled; `409` with `error: "regional_not_configured"` when the regional snapshot cannot be resolved. |
 | `POST` | `/api/auth/login` | none, `authRateLimit` | Body `email`, `password`, `remember_me`. `{ access_token, user: { id, name, email, role } }`; 24 hours, or 10 days with `remember_me`. `403` for a role outside `ROLE_ACCESS.serverApp`. |
 | `GET` | `/api/auth/me` | `ROLE_ACCESS.serverApp` | `{ user: { id, name, email, role } }` |

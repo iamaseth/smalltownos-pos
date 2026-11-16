@@ -1,39 +1,20 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Search, SlidersHorizontal, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Zap, LayoutGrid } from 'lucide-react';
+import { Plus, Search, Keyboard, Star, UtensilsCrossed, Martini, Wine, Beer, Coffee, Zap, LayoutGrid } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { nameToColor } from '@/lib/image-utils';
-import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import TagBadge from './DietaryBadge';
+import OnScreenKeyboard from './OnScreenKeyboard';
 import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
-
-const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; activeBg: string; activeText: string }> = {
-  red: { bg: 'bg-red-50 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', border: 'border-red-200 dark:border-red-800/40', activeBg: 'bg-red-500', activeText: 'text-white' },
-  orange: { bg: 'bg-orange-50 dark:bg-orange-950/40', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800/40', activeBg: 'bg-orange-500', activeText: 'text-white' },
-  amber: { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800/40', activeBg: 'bg-amber-500', activeText: 'text-white' },
-  yellow: { bg: 'bg-yellow-50 dark:bg-yellow-950/40', text: 'text-yellow-700 dark:text-yellow-300', border: 'border-yellow-200 dark:border-yellow-800/40', activeBg: 'bg-yellow-500', activeText: 'text-white' },
-  lime: { bg: 'bg-lime-50 dark:bg-lime-950/40', text: 'text-lime-700 dark:text-lime-300', border: 'border-lime-200 dark:border-lime-800/40', activeBg: 'bg-lime-500', activeText: 'text-white' },
-  green: { bg: 'bg-green-50 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800/40', activeBg: 'bg-green-500', activeText: 'text-white' },
-  emerald: { bg: 'bg-emerald-50 dark:bg-emerald-950/40', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800/40', activeBg: 'bg-emerald-500', activeText: 'text-white' },
-  teal: { bg: 'bg-teal-50 dark:bg-teal-950/40', text: 'text-teal-700 dark:text-teal-300', border: 'border-teal-200 dark:border-teal-800/40', activeBg: 'bg-teal-500', activeText: 'text-white' },
-  cyan: { bg: 'bg-cyan-50 dark:bg-cyan-950/40', text: 'text-cyan-700 dark:text-cyan-300', border: 'border-cyan-200 dark:border-cyan-800/40', activeBg: 'bg-cyan-500', activeText: 'text-white' },
-  sky: { bg: 'bg-sky-50 dark:bg-sky-950/40', text: 'text-sky-700 dark:text-sky-300', border: 'border-sky-200 dark:border-sky-800/40', activeBg: 'bg-sky-500', activeText: 'text-white' },
-  blue: { bg: 'bg-blue-50 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800/40', activeBg: 'bg-blue-500', activeText: 'text-white' },
-  indigo: { bg: 'bg-indigo-50 dark:bg-indigo-950/40', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800/40', activeBg: 'bg-indigo-500', activeText: 'text-white' },
-  violet: { bg: 'bg-violet-50 dark:bg-violet-950/40', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-200 dark:border-violet-800/40', activeBg: 'bg-violet-500', activeText: 'text-white' },
-  purple: { bg: 'bg-purple-50 dark:bg-purple-950/40', text: 'text-purple-700 dark:text-purple-300', border: 'border-purple-200 dark:border-purple-800/40', activeBg: 'bg-purple-500', activeText: 'text-white' },
-  fuchsia: { bg: 'bg-fuchsia-50 dark:bg-fuchsia-950/40', text: 'text-fuchsia-700 dark:text-fuchsia-300', border: 'border-fuchsia-200 dark:border-fuchsia-800/40', activeBg: 'bg-fuchsia-500', activeText: 'text-white' },
-  pink: { bg: 'bg-pink-50 dark:bg-pink-950/40', text: 'text-pink-700 dark:text-pink-300', border: 'border-pink-200 dark:border-pink-800/40', activeBg: 'bg-pink-500', activeText: 'text-white' },
-  rose: { bg: 'bg-rose-50 dark:bg-rose-950/40', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800/40', activeBg: 'bg-rose-500', activeText: 'text-white' },
-};
 
 // Fast, offline menu search. No product/database changes or network calls.
 const SEARCH_ALIASES: Record<string, string[]> = {
@@ -75,10 +56,16 @@ function menuSearchScore(name: string, rawQuery: string): number {
   return 0;
 }
 
-function getCategoryColorClasses(color: string | null | undefined) {
-  if (!color) return null;
-  return CATEGORY_COLORS[color.toLowerCase()] || null;
-}
+const FAVORITES_KEY = 'pos-favorite-products';
+const SUBCATEGORY_LIMIT = 8;
+
+const subscribeCoarsePointer = (callback: () => void) => {
+  const query = window.matchMedia('(pointer: coarse)');
+  query.addEventListener('change', callback);
+  return () => query.removeEventListener('change', callback);
+};
+const getCoarsePointer = () => window.matchMedia('(pointer: coarse)').matches;
+
 
 interface Props {
   categories: Category[];
@@ -89,14 +76,15 @@ interface Props {
   setSearch: (s: string) => void;
   currency: string;
   onProductClick: (product: Product) => void;
-  sidebarOpen?: boolean;
+  onQuickAdd: (product: Product) => void;
+  searchSlot?: HTMLElement | null;
   canArrange?: boolean;
   onOrderSaved?: () => Promise<void>;
 }
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, onProductClick, sidebarOpen = true, canArrange = false, onOrderSaved,
+  search, setSearch, onProductClick, onQuickAdd, canArrange = false, onOrderSaved, searchSlot = null,
 }: Props) {
   const cart = useCartStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -118,7 +106,12 @@ export default function ProductGrid({
 
   // UI-only grouping: preserve original categories, products, and database.
   const [openGroup, setOpenGroup] = useState<string | null>(null);
-  const [favorites] = useState<string[]>([]);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const toggleFavorite = (id: string) => setFavorites(prev => {
+    const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); } catch {}
+    return next;
+  });
   // Bundled illustrations load locally, including when Flo is offline.
   const groupLabels = ['Favorites', 'Food', 'Cocktails', 'Spirits', 'Beer & Wine', 'Non-Alcoholic'] as const;
   const groups = useMemo(() => {
@@ -175,6 +168,7 @@ export default function ProductGrid({
   };
   // VeloxPOS category-pill styling; retain FloPOS group IDs and filtering.
   const referenceCategories = [
+    { label: 'FAV', group: 'Favorites', filter: null, color: '#CA8A04', Icon: Star },
     { label: 'Beer', group: 'Beer & Wine', filter: /beer/i, color: '#F59E0B', Icon: Beer },
     { label: 'Wine', group: 'Beer & Wine', filter: /wine/i, color: '#DC2626', Icon: Wine },
     { label: 'Cocktails', group: 'Cocktails', filter: null, color: '#2563EB', Icon: Martini },
@@ -184,6 +178,24 @@ export default function ProductGrid({
   ] as const;
   const [referenceCategory, setReferenceCategory] = useState<string | null>(null);
   const [catalogView, setCatalogView] = useState<'photo' | 'compact'>('compact');
+  const isTouch = useSyncExternalStore(subscribeCoarsePointer, getCoarsePointer, () => false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [showAllSubcategories, setShowAllSubcategories] = useState(false);
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
+        if (Array.isArray(saved) && saved.length) {
+          setFavorites(saved.map(String));
+          setReferenceCategory('FAV');
+          setOpenGroup('Favorites');
+        }
+      } catch {}
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const handleTyping = (event: KeyboardEvent) => {
@@ -209,14 +221,15 @@ export default function ProductGrid({
     return () => document.removeEventListener('keydown', handleTyping);
   }, [search, setSearch]);
 
-  return (
-    <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      <div className="shrink-0 mb-2 px-3 pt-2">
-        <div className="relative mb-2">
+  const searchBlock = (
+    <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
           <input
             ref={searchInputRef}
             type="text"
+            inputMode={isTouch ? 'none' : undefined}
+            onFocus={() => { if (isTouch) setKeyboardOpen(true); }}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
@@ -232,11 +245,21 @@ export default function ProductGrid({
                 setSearch('');
               }
             }}
-            placeholder="Type to search selected category (or all products)…"
+            placeholder="Search products…"
             className="w-full ps-10 pe-10 py-2 bg-[#131d31] border border-[#1e293b] rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
           {search && <button type="button" aria-label="Clear product search" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-300 hover:text-white">Clear</button>}
         </div>
+        <button type="button" aria-label={keyboardOpen ? 'Hide on-screen keyboard' : 'Show on-screen keyboard'} aria-pressed={keyboardOpen}
+          onClick={() => setKeyboardOpen(v => !v)}
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] ${keyboardOpen ? 'bg-blue-600 text-white' : 'bg-[#131d31] text-slate-300 hover:bg-[#182234]'}`}><Keyboard size={20} /></button>
+    </div>
+  );
+
+  return (
+    <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <div className="shrink-0 mb-2 px-3 pt-2">
+        {!searchSlot && <div className="mb-2">{searchBlock}</div>}
         <div className="hidden">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menu</span>
           {showProductImages && <button type="button" onClick={() => setShowMenuPhotos(v => !v)}
@@ -244,7 +267,7 @@ export default function ProductGrid({
             {showMenuPhotos ? 'Compact cards' : 'Show photos'}
           </button>}
         </div>
-        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto pb-2 mb-2">
+        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto py-1 mb-1">
           {referenceCategories.map(({ label, group, filter, color, Icon }) => {
             const selected = referenceCategory === label;
             return <button key={label} type="button" aria-pressed={selected}
@@ -255,42 +278,65 @@ export default function ProductGrid({
                 setSelectedCategory(selected ? null : (filter ? (groups.get(group) ?? []).find(c => filter.test(c.name))?.id ?? null : null));
                 setArranging(false);
               }}
-              className={`group relative h-[74px] w-[74px] shrink-0 rounded-xl overflow-hidden border border-white/10 shadow-[inset_0_-3px_0_rgba(0,0,0,0.20),0_3px_0_rgba(0,0,0,0.18)] flex flex-col items-center justify-center p-1.5 transition-[filter,transform] active:scale-95 text-white ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17] brightness-110' : 'hover:brightness-110'}`}
+              className={`group relative h-10 shrink-0 rounded-xl overflow-hidden border border-white/10 shadow-[inset_0_-2px_0_rgba(0,0,0,0.20)] flex flex-row items-center justify-center gap-1.5 px-3.5 transition-[filter,transform] active:scale-95 text-white ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17] brightness-110' : 'hover:brightness-110'}`}
               style={{ backgroundColor: color }}>
-              {selected && <span className="absolute -top-1 right-2 px-2 py-0.5 rounded-full bg-blue-300 text-slate-900 font-extrabold text-[10px] uppercase">Active</span>}
-              <Icon size={selected ? 23 : 21} strokeWidth={2} className="mb-1 drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
-              <span className={`font-bold text-[11px] tracking-wide text-white drop-shadow ${selected ? 'text-xs font-black' : ''}`}>{label}</span>
+              <Icon size={18} strokeWidth={2} className="drop-shadow-[0_1px_1px_rgba(0,0,0,0.3)]" />
+              <span className={`font-bold text-xs tracking-wide text-white drop-shadow ${selected ? 'font-black' : ''}`}>{label}</span>
             </button>;
           })}
         </nav>
         {activeGroup && activeGroup !== 'Favorites' && (
-          <nav aria-label="Menu subcategories" className="flex gap-1.5 overflow-x-auto py-1">
-            <button type="button" onClick={() => setSelectedCategory(null)}
-              className={`shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-semibold ${!selectedCategory ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card'}`}>All {activeGroup}</button>
-            {[
+          (() => {
+            const subcategories = [
               ...(showVirtualBurgers ? [{ id: '__virtual_burgers__', name: 'Burgers' }] : []),
               ...children.map(cat => ({ id: cat.id, name: activeGroup === 'Cocktails' ? cat.name.replace(/\\s+Cocktails?$/i, '') : cat.name.replace(/^Spirits\s*[—–-]\s*/i, '') })),
-            ].map(cat => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)}
-              className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold ${selectedCategory === cat.id ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card hover:bg-muted'}`}>{cat.name}</button>)}
-          </nav>
+            ];
+            const selectedIndex = subcategories.findIndex(cat => cat.id === selectedCategory);
+            const collapsible = subcategories.length > SUBCATEGORY_LIMIT;
+            const expanded = showAllSubcategories || selectedIndex >= SUBCATEGORY_LIMIT;
+            const visible = collapsible && !expanded ? subcategories.slice(0, SUBCATEGORY_LIMIT) : subcategories;
+            const pill = (active: boolean) => `h-11 shrink-0 rounded-xl border px-4 text-sm font-semibold touch-manipulation ${active ? 'border-brand bg-brand/10 text-brand' : 'border-border bg-card hover:bg-muted'}`;
+            return (
+              <nav aria-label="Menu subcategories" className="flex flex-wrap gap-2 py-1">
+                <button type="button" onClick={() => setSelectedCategory(null)} className={pill(!selectedCategory)}>All {activeGroup}</button>
+                {visible.map(cat => <button key={cat.id} type="button" onClick={() => setSelectedCategory(cat.id)} className={pill(selectedCategory === cat.id)}>{cat.name}</button>)}
+                {collapsible && selectedIndex < SUBCATEGORY_LIMIT && (
+                  <button type="button" onClick={() => setShowAllSubcategories(v => !v)} className={pill(false)}>{expanded ? 'Less ▴' : `More (${subcategories.length - SUBCATEGORY_LIMIT}) ▾`}</button>
+                )}
+              </nav>
+            );
+          })()
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
-        {activeGroup === 'Favorites' && <h2 className="text-xl font-bold tracking-tight mb-3">Favorites</h2>}
+      <div className="flex min-h-0 flex-1">
+      <div ref={gridScrollRef} className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
+        {activeGroup === 'Favorites' && !search.trim() && displayed.length === 0 && (
+          <p className="py-10 text-center text-sm text-slate-400">No favorites yet. Tap the ☆ on any product to pin it here.</p>
+        )}
         
         {<>
           <div className="flex items-center justify-between mb-2 gap-2">
             <div className="flex items-center gap-3">
-              <h2 className="text-sm font-bold text-white tracking-tight">{referenceCategory || activeGroup || 'All Products'} · {selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : 'All'}</h2>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length} Items Shown</span>
+              <h2 className="text-sm font-bold text-white tracking-tight">{selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : referenceCategory || activeGroup || 'All Products'}</h2>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length}</span>
             </div>
+            <div className="flex items-center gap-2">
+            {canArrange && (arranging ? (
+              <>
+                <button type="button" disabled={saving} onClick={() => setArranging(false)} className="h-10 rounded-xl border border-[#1e293b] bg-[#131d31] px-3 text-xs font-semibold text-slate-300 hover:bg-[#182234]">Cancel</button>
+                <button type="button" disabled={saving} onClick={saveOrder} className="h-10 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save order'}</button>
+              </>
+            ) : (
+              <button type="button" onClick={() => { setIds(ordered.map(p => String(p.id))); setArranging(true); }} className="h-10 rounded-xl border border-[#1e293b] bg-[#131d31] px-3 text-xs font-semibold text-slate-300 hover:bg-[#182234]">Arrange</button>
+            ))}
             <div className="flex items-center bg-[#131d31] p-1 rounded-xl border border-[#1e293b] gap-1 shadow-sm">
               <button type="button" onClick={() => setCatalogView('photo')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'photo' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><LayoutGrid size={12} className="inline-block mr-1.5 align-[-2px]" />Photo View</button>
               <button type="button" onClick={() => setCatalogView('compact')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'compact' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><Zap size={12} className="inline-block mr-1.5 align-[-2px] text-amber-300 fill-amber-300" />Quick-Tap Grid</button>
             </div>
+            </div>
           </div>
-          <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
+          <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
           {displayed.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
             const categoryAccent = referenceCategories.find(c => c.label === referenceCategory)?.color
@@ -299,21 +345,23 @@ export default function ProductGrid({
             
 
             return (
-              <button
+              <div
                 key={product.id}
                 data-testid="pos-product-card"
-                type="button"
+                data-initial={product.name.trim().charAt(0).toUpperCase()}
                 draggable={arranging}
                 onDragStart={e => {setDragId(String(product.id));e.dataTransfer.effectAllowed='move';}}
                 onDragOver={e => {if(arranging)e.preventDefault();}}
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
-                onClick={() => {if(!arranging)onProductClick(product);}}
                 className={`group flex flex-col justify-between bg-[#182234] text-slate-100 rounded-xl border border-[#1e293b] ${catalogView === 'compact' ? 'border-l-4' : ''} hover:border-[#334155] shadow-sm hover:shadow-lg active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}
                 style={catalogView === 'compact' ? { borderLeftColor: categoryAccent } : undefined}
 
               >
-                <div className="p-3 min-h-[112px] flex flex-col flex-1 justify-between"><div className="mb-2 flex items-start justify-between gap-1">
+                <button type="button" aria-label={`Edit ${product.name}`}
+                  onClick={() => { if (!arranging) onProductClick(product); }}
+                  className="absolute inset-0 z-0 w-full h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl" />
+                <div className="pointer-events-none relative z-[1] p-2.5 min-h-[84px] flex flex-col flex-1 justify-between"><div className="mb-1 flex items-start justify-between gap-1 empty:hidden">
                   <div>
                     {!!product.track_inventory && product.stock_quantity <= 0 ? (
                       <span className="rounded-full border border-rose-800 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-rose-400">{t('outOfStock')}</span>
@@ -342,9 +390,9 @@ export default function ProductGrid({
                     </div>
 
                     {/* Image overlays the tile when available */}
-                    {(product.has_image || genericMenuPhoto(product.name)) && (
+                    {product.has_image && (
                       <img
-                        src={product.has_image ? `${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}` : genericMenuPhoto(product.name)!}
+                        src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? parseDbTimestamp(product.updated_at).getTime() : 0}`}
                         alt={product.name}
                         className="absolute inset-0 w-full h-full object-cover rounded-lg"
                         loading="lazy"
@@ -365,13 +413,34 @@ export default function ProductGrid({
                 <h3 className="font-bold text-[13px] text-slate-100 leading-snug line-clamp-2 min-h-[2.4em] break-words">{product.name}</h3>
                 <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#1e293b]/60">
                   <p className="font-bold text-xs text-blue-400">{fmt(Number(product.price))}</p>
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-600/20 text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition" aria-hidden="true"><Plus size={16} /></span>
+                  <div className="flex items-center gap-1">
+                  <button type="button" aria-label={favorites.includes(String(product.id)) ? `Remove ${product.name} from favorites` : `Add ${product.name} to favorites`}
+                    aria-pressed={favorites.includes(String(product.id))}
+                    onClick={(event) => { event.stopPropagation(); toggleFavorite(String(product.id)); }}
+                    className="pointer-events-auto relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-slate-500 hover:text-amber-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Star size={15} className={favorites.includes(String(product.id)) ? 'fill-amber-400 text-amber-400' : ''} /></button>
+                  <button type="button" aria-label={`Quick add ${product.name}`}
+                    disabled={arranging}
+                    onClick={(event) => { event.stopPropagation(); onQuickAdd(product); }}
+                    className="pointer-events-auto relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Plus size={16} /></button>
+                  </div>
                 </div></div>
-                            </button>
+                            </div>
             );
           })}
           </div></>}
       </div>
+      {!arranging && !search.trim() && displayed.length > 24 && (
+        <div aria-label="Jump to letter" className="flex w-9 shrink-0 flex-col justify-between py-1">
+          {Array.from(new Set(displayed.map(p => p.name.trim().charAt(0).toUpperCase()))).map(letter => (
+            <button key={letter} type="button"
+              onClick={() => gridScrollRef.current?.querySelector(`[data-initial="${letter}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
+              className="flex min-h-0 flex-1 items-center justify-center text-xs font-bold text-slate-400 hover:text-white active:text-blue-400 touch-manipulation">{letter}</button>
+          ))}
+        </div>
+      )}
+      </div>
+      {searchSlot && createPortal(searchBlock, searchSlot)}
+      {keyboardOpen && <OnScreenKeyboard value={search} onChange={setSearch} onClose={() => setKeyboardOpen(false)} />}
     </div>
   );
 }

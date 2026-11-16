@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
+import { nextSupplyProductNumber } from './lib/supply-product-number';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 import { ROLE_KEYS } from '../shared/role-permissions';
 import { getCurrencyFractionDigits, resolveRegionalSnapshot } from './countries';
@@ -1471,6 +1472,48 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
     (maintenanceSignal) => resetDatabaseWithBackupUnlocked(maintenanceSignal),
     signal,
   );
+}
+
+const TEST_SALES_TABLES_IN_DELETE_ORDER = [
+  'refund_idempotency', 'refunds', 'payment_transaction_ref_conflicts', 'payment_transaction_refs',
+  'payment_idempotency', 'order_idempotency', 'print_logs', 'whatsapp_messages', 'bill_items', 'bills',
+  'order_item_addons', 'order_items', 'order_audit_log', 'held_orders', 'orders',
+  'cash_drawer_movements', 'cash_sessions', 'cash_closures',
+] as const;
+
+export type TestSalesCounts = Record<string, number>;
+
+function existingTestSalesTables(dbInstance: Database.Database): string[] {
+  const present = new Set((dbInstance.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name));
+  return TEST_SALES_TABLES_IN_DELETE_ORDER.filter((table) => present.has(table));
+}
+
+export function getTestSalesCounts(dbInstance: Database.Database = getDatabase()): TestSalesCounts {
+  const counts: TestSalesCounts = {};
+  for (const table of existingTestSalesTables(dbInstance)) counts[table] = countTableRows(dbInstance, table);
+  return counts;
+}
+
+/** Deletes sales, payments and cash sessions after a full backup; menu, tables, staff, customers and settings stay. */
+export async function clearTestSalesWithBackup(signal?: AbortSignal): Promise<{ backupPath: string; deleted: TestSalesCounts }> {
+  return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
+    const { path: backupPath } = await createBackupUnlocked(undefined, maintenanceSignal);
+    throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+    const dbInstance = getDatabase();
+    const baselineViolations = getForeignKeyViolationKeys(dbInstance);
+    const deleted: TestSalesCounts = {};
+    const run = dbInstance.transaction(() => {
+      for (const table of existingTestSalesTables(dbInstance)) {
+        const where = table === 'whatsapp_messages' ? ' WHERE bill_id IS NOT NULL' : '';
+        deleted[table] = dbInstance.prepare(`DELETE FROM ${table}${where}`).run().changes;
+      }
+      dbInstance.prepare("UPDATE tables SET status = 'available' WHERE status = 'occupied'").run();
+      const introduced = [...getForeignKeyViolationKeys(dbInstance)].filter((key) => !baselineViolations.has(key));
+      if (introduced.length > 0) throw new Error(`Clearing test sales would leave orphaned rows (${introduced.length}); nothing was changed`);
+    });
+    run();
+    return { backupPath, deleted };
+  }, signal);
 }
 
 type CurrencyResetMenuSnapshot = {
@@ -5261,6 +5304,128 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         CREATE INDEX IF NOT EXISTS idx_authorization_audit_target
           ON authorization_audit_log(target_type, target_id, id);
       `);
+    },
+  },
+  {
+    version: 94,
+    name: 'add_order_tab_name',
+    up: () => {
+      if (!getColumns(db, 'orders').includes('tab_name')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN tab_name TEXT DEFAULT NULL`);
+      }
+    },
+  },
+  {
+    version: 95,
+    name: 'add_supply_costing_and_vendors',
+    up: () => {
+      const supplyColumns = getColumns(db, 'supplies');
+      const supplyAdditions: Array<[string, string]> = [
+        ['unit_cost', 'REAL DEFAULT NULL'],
+        ['pack_size', 'REAL DEFAULT NULL'],
+        ['pack_label', 'TEXT DEFAULT NULL'],
+        ['pour_size', 'REAL DEFAULT NULL'],
+        ['order_up_to', 'REAL DEFAULT NULL'],
+        ['vendor_id', 'TEXT DEFAULT NULL'],
+      ];
+      for (const [column, definition] of supplyAdditions) {
+        if (!supplyColumns.includes(column)) {
+          db.exec(`ALTER TABLE supplies ADD COLUMN ${column} ${definition}`);
+        }
+      }
+      if (!getColumns(db, 'supply_movements').includes('unit_cost')) {
+        db.exec(`ALTER TABLE supply_movements ADD COLUMN unit_cost REAL DEFAULT NULL`);
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS vendors (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          phone TEXT,
+          notes TEXT,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          deleted_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_vendors_name ON vendors(name COLLATE NOCASE);
+      `);
+    },
+  },
+  {
+    version: 96,
+    name: 'add_ingredient_groups',
+    up: () => {
+      if (!getColumns(db, 'supplies').includes('group_name')) {
+        db.exec(`ALTER TABLE supplies ADD COLUMN group_name TEXT DEFAULT NULL`);
+      }
+      if (!getColumns(db, 'recipe_items').includes('group_name')) {
+        db.exec(`ALTER TABLE recipe_items ADD COLUMN group_name TEXT DEFAULT NULL`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_supplies_group ON supplies(group_name COLLATE NOCASE)`);
+    },
+  },
+  {
+    version: 97,
+    name: 'add_supply_ingredient_only',
+    up: () => {
+      if (!getColumns(db, 'supplies').includes('ingredient_only')) {
+        db.exec(`ALTER TABLE supplies ADD COLUMN ingredient_only INTEGER NOT NULL DEFAULT 0`);
+      }
+    },
+  },
+  {
+    version: 98,
+    name: 'add_supply_product_number',
+    up: () => {
+      if (!getColumns(db, 'supplies').includes('product_number')) {
+        db.exec(`ALTER TABLE supplies ADD COLUMN product_number TEXT DEFAULT NULL`);
+      }
+      const missing = db.prepare(`SELECT id FROM supplies WHERE product_number IS NULL ORDER BY created_at, id`).all() as Array<{ id: string }>;
+      const assign = db.prepare(`UPDATE supplies SET product_number = ? WHERE id = ?`);
+      for (const { id } of missing) assign.run(nextSupplyProductNumber(db), id);
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_supplies_product_number ON supplies(product_number) WHERE product_number IS NOT NULL`);
+    },
+  },
+  {
+    version: 99,
+    name: 'add_supply_vendors',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS supply_vendors (
+          id TEXT PRIMARY KEY,
+          supply_id TEXT NOT NULL REFERENCES supplies(id),
+          vendor_id TEXT NOT NULL REFERENCES vendors(id),
+          vendor_item_name TEXT,
+          pack_size REAL,
+          pack_label TEXT,
+          unit_cost REAL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE (supply_id, vendor_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_supply_vendors_supply ON supply_vendors(supply_id);
+      `);
+      db.exec(`
+        INSERT OR IGNORE INTO supply_vendors (id, supply_id, vendor_id, pack_size, pack_label, unit_cost, created_at, updated_at)
+        SELECT 'sv_' || lower(hex(randomblob(8))), s.id, s.vendor_id, s.pack_size, s.pack_label, s.unit_cost, s.created_at, s.updated_at
+        FROM supplies s
+        WHERE s.vendor_id IS NOT NULL AND s.deleted_at IS NULL
+          AND EXISTS (SELECT 1 FROM vendors v WHERE v.id = s.vendor_id)
+      `);
+    },
+  },
+  {
+    version: 100,
+    name: 'add_vendor_codes_notes_and_contacts',
+    up: () => {
+      const supplyVendorColumns = getColumns(db, 'supply_vendors');
+      for (const column of ['vendor_sku', 'notes']) {
+        if (!supplyVendorColumns.includes(column)) db.exec(`ALTER TABLE supply_vendors ADD COLUMN ${column} TEXT DEFAULT NULL`);
+      }
+      const vendorColumns = getColumns(db, 'vendors');
+      for (const column of ['contact_name', 'email', 'address']) {
+        if (!vendorColumns.includes(column)) db.exec(`ALTER TABLE vendors ADD COLUMN ${column} TEXT DEFAULT NULL`);
+      }
     },
   },
 ];

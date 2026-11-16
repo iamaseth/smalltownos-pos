@@ -295,6 +295,56 @@ router.get('/:id/wallet', customerReadRateLimit, requirePermission('customers.vi
   }
 });
 
+const MAX_IMPORT_CUSTOMERS = 500;
+
+router.post('/import', customerWriteRateLimit, requirePermission('customers.create'), (req: Request, res: Response) => {
+  try {
+    const rows = req.body?.customers;
+    if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_IMPORT_CUSTOMERS) {
+      return res.status(400).json({ message: `Send between 1 and ${MAX_IMPORT_CUSTOMERS} customers per request` });
+    }
+
+    const db = getDatabase();
+    const tenantCountry = getSettingValue('country') || '';
+    const result = { added: 0, skippedDuplicates: 0, skippedNoName: 0, addedWithoutPhone: 0 };
+
+    const insert = db.prepare(`
+      INSERT INTO customers (id, phone, name, email, country_code, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const sameNameWithoutPhone = db.prepare(
+      "SELECT 1 FROM customers WHERE is_active = 1 AND (phone IS NULL OR phone = '') AND LOWER(name) = LOWER(?)"
+    );
+
+    db.transaction(() => {
+      for (const row of rows) {
+        const name = typeof row?.name === 'string' ? row.name.trim().slice(0, 120) : '';
+        if (!name) { result.skippedNoName++; continue; }
+        const rawPhone = typeof row?.phone === 'string' ? row.phone.trim() : '';
+        const email = typeof row?.email === 'string' && row.email.trim() ? row.email.trim().slice(0, 200) : null;
+        const parsed = rawPhone ? parsePhoneE164(rawPhone, tenantCountry) : null;
+
+        if (parsed) {
+          if (findCustomerByCanonicalOrLegacyPhone(db, parsed.e164, rawPhone)) { result.skippedDuplicates++; continue; }
+        } else if (sameNameWithoutPhone.get(name)) {
+          result.skippedDuplicates++;
+          continue;
+        }
+
+        const timestamp = now();
+        insert.run(`cust-${randomUUID()}`, parsed ? parsed.e164 : null, name, email, parsed ? parsed.countryCode : null, timestamp, timestamp);
+        result.added++;
+        if (!parsed) result.addedWithoutPhone++;
+      }
+    })();
+
+    res.json(result);
+  } catch (error: any) {
+    console.error('[Customer import error]', error);
+    res.status(500).json({ message: 'Failed to import customers' });
+  }
+});
+
 router.post('/', customerWriteRateLimit, requirePermission('customers.create'), (req: Request, res: Response) => {
   try {
     const { phone, name, email, address, notes, country_code } = req.body;

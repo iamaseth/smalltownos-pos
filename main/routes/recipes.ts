@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase } from '../db';
 import { requirePermission } from '../services/authorization';
-import { deleteRecipe, getRecipeByProduct, listRecipes, saveRecipe } from '../services/recipes';
+import { findPhotos, getAiHelperStatus, suggestRecipe } from '../services/ai-recipe-helper';
+import { deleteRecipe, getRecipeByProduct, importRecipes, listRecipes, saveRecipe } from '../services/recipes';
 
 const router = Router();
 
@@ -15,6 +16,45 @@ function sendError(res: Response, error: unknown): void {
 router.get('/', requirePermission('supplies.manage'), (_req: Request, res: Response) => {
   try {
     res.json({ recipes: listRecipes(getDatabase()) });
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+router.get('/ai/status', requirePermission('supplies.manage'), (_req: Request, res: Response) => {
+  res.json(getAiHelperStatus());
+});
+
+router.post('/ai/suggest', requirePermission('supplies.manage'), async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    res.json(await suggestRecipe(getDatabase(), { name: body.name, category: body.category }));
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+router.post('/ai/photos', requirePermission('supplies.manage'), async (req: Request, res: Response) => {
+  try {
+    res.json({ photos: await findPhotos({ query: (req.body || {}).query }) });
+  } catch (error: unknown) {
+    sendError(res, error);
+  }
+});
+
+router.post('/import', requirePermission('supplies.manage'), (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+    res.json(importRecipes(getDatabase(), {
+      rows: rows.map((row: Record<string, unknown>) => ({
+        productName: row?.product_name,
+        ingredientName: row?.ingredient_name,
+        quantity: row?.quantity,
+        unit: row?.unit,
+      })),
+      dryRun: body.dry_run !== false,
+    }));
   } catch (error: unknown) {
     sendError(res, error);
   }

@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff, Image as ImageIcon, Check } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -16,9 +16,12 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useAmountFormat } from '@/hooks/useAmountFormat';
 import CurrencyAmountInput from '@/components/ui/CurrencyAmountInput';
 import { useConfirm } from '@/hooks/use-confirm';
-import { nameToColor } from '@/lib/image-utils';
+import { nameToColor, compressImage } from '@/lib/image-utils';
+import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { tenantCan } from '@/lib/permissions';
+import RecipeTools from '@/components/products/RecipeTools';
+import MenuItemEditor, { type Recipe, type MenuSupply, type MenuProduct, type MenuCategory } from '@/components/products/MenuItemEditor';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type ProductsKey = keyof AppConfig['Messages']['products'];
@@ -70,6 +73,7 @@ export default function ProductsPage() {
   const t = useTranslations('products');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
+  const tInv = useTranslations('inventory');
 
   // Translate a raw tag string: known tags go through the `pos` namespace;
   // custom tags render a formatted name (reuses DietaryBadge's tagLabel).
@@ -79,7 +83,12 @@ export default function ProductsPage() {
   };
   const { currentTenant } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabType>('products');
+  const [productSearch, setProductSearch] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
+  const [stockBusy, setStockBusy] = useState(false);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [supplies, setSupplies] = useState<MenuSupply[]>([]);
+  const [editor, setEditor] = useState<{ productId: string } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -128,6 +137,30 @@ export default function ProductsPage() {
   const amountFormat = useAmountFormat();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = tenantCan(currentTenant, 'catalog.manage');
+  const canRecipe = tenantCan(currentTenant, 'supplies.manage');
+  const recipeByProduct = new Map(recipes.map((r) => [r.product_id, r]));
+
+  const loadRecipes = () => {
+    if (!canRecipe) return;
+    api.get('/recipes').then((res) => setRecipes((res.data.recipes as Recipe[]) || [])).catch(() => undefined);
+    api.get('/supplies').then((res) => setSupplies((res.data.supplies as MenuSupply[]) || [])).catch(() => undefined);
+  };
+
+  const handleConfirmRecipe = async (r: Recipe) => {
+    try {
+      await api.put(`/recipes/product/${r.product_id}`, {
+        yield_quantity: Number(r.yield_quantity),
+        is_active: true,
+        items: r.items.map((item) => (item.group_name
+          ? { group_name: item.group_name, quantity: Number(item.quantity), unit: item.unit }
+          : { supply_id: item.supply_id, quantity: Number(item.quantity), unit: item.unit })),
+      });
+      toast.success(tInv('recipeConfirmed'));
+      loadRecipes();
+    } catch {
+      toast.error(tInv('saveFailed'));
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -140,6 +173,7 @@ export default function ProductsPage() {
       setProducts((prodRes.data.products as Product[]) || []);
       setCategories((catRes.data.categories as Category[]) || []);
       if (agRes) setAddonGroups((agRes.data.addon_groups as AddonGroup[]) || []);
+      loadRecipes();
     } catch {
       toast.error(t('failedToLoad'));
     } finally {
@@ -173,6 +207,7 @@ export default function ProductsPage() {
       .catch((err: unknown) => {
         if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) setTaxCategories([]);
       });
+    loadRecipes();
     api.get('/settings/loyalty', { signal: controller.signal })
       .then((res) => {
         setLoyaltyEnabled(!!res.data.loyalty_enabled);
@@ -352,6 +387,46 @@ export default function ProductsPage() {
     }
   };
 
+  const handleToggleVisible = async (product: Product) => {
+    const next = !product.is_active;
+    try {
+      await api.put(`/products/${product.id}`, { is_active: next });
+      toast.success(next ? t('shownOnMenu') : t('hiddenFromMenu'));
+      fetchData();
+    } catch {
+      toast.error(t('failedToSave'));
+    }
+  };
+
+  const anyTracked = products.some((p) => p.track_inventory);
+  const stockPhotoCandidates = products.filter((p) => !p.has_image && genericMenuPhoto(p.name));
+
+  const handleSaveStockPhotos = async () => {
+    const targets = stockPhotoCandidates;
+    if (targets.length === 0 || stockBusy) return;
+    if (!await confirm(t('stockPhotosConfirm', { count: targets.length }), { confirmLabel: t('stockPhotosButton') })) return;
+    setStockBusy(true);
+    let saved = 0;
+    let failed = 0;
+    for (const product of targets) {
+      try {
+        const res = await fetch(genericMenuPhoto(product.name)!);
+        if (!res.ok) throw new Error('photo');
+        const blob = await res.blob();
+        const image = await compressImage(new File([blob], 'photo', { type: blob.type || 'image/jpeg' }));
+        if (!image) throw new Error('compress');
+        await api.put(`/products/${product.id}`, { image_url: image });
+        saved += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setStockBusy(false);
+    if (saved > 0) toast.success(t('stockPhotosDone', { count: saved }));
+    if (failed > 0) toast.error(t('stockPhotosFailed', { count: failed }));
+    fetchData();
+  };
+
   const handleDelete = async (id: string) => {
     if (!await confirm(t('deleteConfirm'), { destructive: true, confirmLabel: tCommon('delete') })) return;
     try {
@@ -495,6 +570,12 @@ export default function ProductsPage() {
   const updateAddonItem = (idx: number, field: string, value: string | number) => setAddonList((prev) => prev.map((a, i) => i === idx ? { ...a, [field]: value } : a));
   const removeAddonItem = (idx: number) => setAddonList((prev) => prev.filter((_, i) => i !== idx));
 
+  const visibleProducts = (() => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((p) => [p.name, p.sku, p.category?.name].some((v) => typeof v === 'string' && v.toLowerCase().includes(q)));
+  })();
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -525,16 +606,36 @@ export default function ProductsPage() {
 
       {activeTab === 'products' && (
         <>
-          <div className="flex justify-end gap-2 mb-4">
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <div className="relative flex-1 min-w-48">
+              <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text" value={productSearch} onChange={(e) => setProductSearch(e.target.value)}
+                placeholder={tCommon('search')}
+                className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+              />
+            </div>
             {isOwnerOrManager && taxCategories.length > 0 && (
               <Button variant="outline" onClick={() => { setBulkTaxCategoryId(''); setShowBulkTaxModal(true); }}>
                 {t('assignTaxCategory')}
               </Button>
             )}
+            {isOwnerOrManager && stockPhotoCandidates.length > 0 && (
+              <Button variant="outline" onClick={handleSaveStockPhotos} disabled={stockBusy}>
+                <ImageIcon size={16} className="me-1" /> {t('stockPhotosButton')} ({stockPhotoCandidates.length})
+              </Button>
+            )}
+            {canRecipe && (
+              <RecipeTools
+                recipes={recipes.filter((r) => !productSearch.trim() || (r.product_name || '').toLowerCase().includes(productSearch.trim().toLowerCase()))}
+                canImport={isOwnerOrManager}
+                onImported={loadRecipes}
+              />
+            )}
             <Button variant="outline" onClick={() => openCsvModal('products')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
-            <Button onClick={openCreate}>
+            <Button onClick={() => setEditor({ productId: 'new' })}>
               <Plus size={16} className="me-1" /> {t('addProduct')}
             </Button>
           </div>
@@ -548,15 +649,16 @@ export default function ProductsPage() {
               <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCategory')}</th>
               <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnAddons')}</th>
               <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnPrice')}</th>
+              {canRecipe && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{tInv('recipeColumn')}</th>}
               <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnTax')}</th>
               {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCashback')}</th>}
-              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStock')}</th>
+              {anyTracked && <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStock')}</th>}
               <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStatus')}</th>
               <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {products.map((product) => {
+            {visibleProducts.map((product) => {
               const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
               const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
               const matchedTaxCategory = taxCategories.find((tc) => tc.id === product.tax_category_id);
@@ -620,6 +722,21 @@ export default function ProductsPage() {
                   <p className="font-medium">{fmt(Number(product.price))}</p>
                   {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">{t('costLabel', { value: fmt(Number(product.cost_price)) })}</p>}
                 </td>
+                {canRecipe && (() => {
+                  const recipe = recipeByProduct.get(product.id);
+                  return (
+                    <td className="p-4 text-sm">
+                      {recipe ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className={recipe.is_active === 1 ? 'text-green-600 font-medium' : 'text-amber-600 font-medium'}>
+                            {recipe.is_active === 1 ? tInv('confirmedTag') : tInv('draft')}
+                          </span>
+                          {recipe.margin_percent !== null && <span className="text-xs text-muted-foreground">{Math.round(recipe.margin_percent * 10) / 10}%</span>}
+                        </div>
+                      ) : <span className="text-muted-foreground">{tInv('noRecipeTag')}</span>}
+                    </td>
+                  );
+                })()}
                 <td className="p-4 text-sm text-muted-foreground">
                   <div className="flex flex-col gap-0.5">
                     <span>{taxLabel}</span>
@@ -641,7 +758,7 @@ export default function ProductsPage() {
                     )}
                   </td>
                 )}
-                <td className="p-4 text-center">
+                {anyTracked && <td className="p-4 text-center">
                   {product.track_inventory ? (
                     <span className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-foreground'}`}>
                       {product.stock_quantity <= 0 ? tPos('outOfStock') : product.stock_quantity}
@@ -649,7 +766,7 @@ export default function ProductsPage() {
                   ) : (
                     <span className="text-gray-400 text-sm">—</span>
                   )}
-                </td>
+                </td>}
                 <td className="p-4 text-center">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     product.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'
@@ -664,7 +781,28 @@ export default function ProductsPage() {
                   <div className="flex gap-2 justify-end">
                     {isOwnerOrManager && (
                       <>
-                        <button onClick={() => openEdit(product)} className="p-1.5 text-gray-400 hover:text-brand">
+                        <button
+                          onClick={() => handleToggleVisible(product)}
+                          title={product.is_active ? t('hideFromMenu') : t('showOnMenu')}
+                          aria-label={product.is_active ? t('hideFromMenu') : t('showOnMenu')}
+                          className="p-1.5 text-gray-400 hover:text-brand"
+                        >
+                          {product.is_active ? <Eye size={16} /> : <EyeOff size={16} />}
+                        </button>
+                        {canRecipe && (() => {
+                          const recipe = recipeByProduct.get(product.id);
+                          return recipe && recipe.is_active !== 1 ? (
+                            <button
+                              onClick={() => handleConfirmRecipe(recipe)}
+                              title={tInv('confirmRecipe')}
+                              aria-label={tInv('confirmRecipe')}
+                              className="p-1.5 text-gray-400 hover:text-green-600"
+                            >
+                              <Check size={16} />
+                            </button>
+                          ) : null;
+                        })()}
+                        <button onClick={() => setEditor({ productId: product.id })} className="p-1.5 text-gray-400 hover:text-brand">
                           <Pencil size={16} />
                         </button>
                         <button onClick={() => handleDelete(product.id)} className="p-1.5 text-gray-400 hover:text-red-600">
@@ -972,11 +1110,11 @@ export default function ProductsPage() {
                 </div>
               )}
               <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2">
+                {(anyTracked || form.track_inventory) && <label className="flex items-center gap-2">
                   <input type="checkbox" checked={form.track_inventory} onChange={(e) => setForm({ ...form, track_inventory: e.target.checked })}
                     className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
                   <span className="text-sm text-foreground">{t('fieldTrackInventory')}</span>
-                </label>
+                </label>}
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
                     className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
@@ -1398,6 +1536,26 @@ export default function ProductsPage() {
             </div>
           </div>
         </div>
+      )}
+      {editor && (
+        <MenuItemEditor
+          key={editor.productId}
+          productId={editor.productId}
+          recipe={recipeByProduct.get(editor.productId) ?? null}
+          products={products as unknown as MenuProduct[]}
+          categories={categories as unknown as MenuCategory[]}
+          supplies={supplies}
+          taxCategories={taxCategories}
+          canEditProduct={isOwnerOrManager}
+          canEditRecipe={canRecipe}
+          onClose={() => setEditor(null)}
+          onSaved={() => { setEditor(null); fetchData(); }}
+          onOpenAdvanced={(id) => {
+            const target = products.find((p) => p.id === id);
+            setEditor(null);
+            if (target) openEdit(target);
+          }}
+        />
       )}
       {ConfirmDialog}
     </div>

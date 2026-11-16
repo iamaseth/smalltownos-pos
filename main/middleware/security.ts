@@ -363,8 +363,21 @@ export const corsOptions = {
     try {
       const parsedOrigin = new URL(origin);
       const hostname = parsedOrigin.hostname;
+      const configuredOrigins = new Set(
+        String(process.env.FLO_ALLOWED_ORIGINS || '')
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+      );
+      const railwayHostname = String(process.env.RAILWAY_PUBLIC_DOMAIN || '').trim();
 
-      if (hostname === 'localhost' || hostname.endsWith('.local') || isAllowedPrivateIp(hostname)) {
+      if (
+        hostname === 'localhost'
+        || hostname.endsWith('.local')
+        || isAllowedPrivateIp(hostname)
+        || (railwayHostname && hostname === railwayHostname)
+        || configuredOrigins.has(parsedOrigin.origin)
+      ) {
         return callback(null, true);
       }
       

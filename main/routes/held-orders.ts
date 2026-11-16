@@ -25,6 +25,11 @@ interface HeldOrderRow {
 
 const MAX_HELD_ORDER_ITEMS = 100;
 const MAX_IDENTIFIER_LENGTH = 128;
+const ACTIVE_ORDER_STATUS_SQL = "status NOT IN ('completed', 'cancelled')";
+
+function httpError(message: string, statusCode: number): Error {
+  return Object.assign(new Error(message), { statusCode });
+}
 
 function isRecord(value: unknown): value is Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -67,11 +72,16 @@ function validateHeldOrderInput(body: any, db: any): {
   customerId: string | number | null;
   guestCount: number;
   orderNotes: string;
+  replaceHeldOrderId: string | null;
 } {
   if (!isRecord(body)) {
     throw new Error('Request body must be an object');
   }
-  const { tableId, items, customerId, guestCount, orderNotes } = body;
+  const { tableId, items, customerId, guestCount, orderNotes, replaceHeldOrderId } = body;
+  if (replaceHeldOrderId !== undefined && replaceHeldOrderId !== null
+    && (typeof replaceHeldOrderId !== 'string' || replaceHeldOrderId.length === 0 || replaceHeldOrderId.length > MAX_IDENTIFIER_LENGTH)) {
+    throw new Error('replaceHeldOrderId must be a held-order id');
+  }
   if (typeof tableId !== 'string' || tableId.trim().length === 0 || tableId.length > MAX_IDENTIFIER_LENGTH) {
     throw new Error('tableId must be a non-empty string');
   }
@@ -95,6 +105,7 @@ function validateHeldOrderInput(body: any, db: any): {
     customerId: customerId ?? null,
     guestCount: guestCount ?? 1,
     orderNotes: orderNotes ?? '',
+    replaceHeldOrderId: replaceHeldOrderId ?? null,
   };
 }
 
@@ -148,11 +159,21 @@ router.post('/', heldOrderWriteRateLimit, requirePermission('held-orders.manage'
     } catch (error: any) {
       return res.status(400).json({ error: error.message });
     }
-    const { tableId, items, customerId, guestCount, orderNotes } = input;
+    const { tableId, items, customerId, guestCount, orderNotes, replaceHeldOrderId } = input;
     let heldOrderId = '';
     
     withTxn(() => {
+      const table = db.prepare('SELECT id, is_active FROM tables WHERE id = ?').get(tableId) as { id: string; is_active: number } | undefined;
+      if (!table || table.is_active === 0) {
+        throw httpError('Table not found', 404);
+      }
+      if (db.prepare(`SELECT 1 FROM orders WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL} LIMIT 1`).get(tableId)) {
+        throw httpError('This table has an open order. Add the items to that order instead of holding them.', 409);
+      }
       const existing = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId) as { id: string } | undefined;
+      if (existing && existing.id !== replaceHeldOrderId) {
+        throw httpError('This table already has a held order. Resume it before holding new items.', 409);
+      }
       heldOrderId = `ho-${randomUUID().slice(0, 8)}`;
       
       if (existing) {
@@ -174,6 +195,9 @@ router.post('/', heldOrderWriteRateLimit, requirePermission('held-orders.manage'
     // Return held order identity so clients can verify snapshot validity on deletion.
     res.json({ success: true, id: heldOrderId });
   } catch (error: any) {
+    if (typeof error?.statusCode === 'number') {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     console.error("[API] Hold order error:", error);
     res.status(500).json({ error: "Could not hold order" });
   }
