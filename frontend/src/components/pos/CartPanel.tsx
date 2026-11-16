@@ -156,7 +156,10 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDe
   const [moreOpen, setMoreOpen] = useState(false);
   const isDrawer = variant === 'drawer';
   const selectedTable = tables.find((table) => table.id === cart.tableId);
-  const total = cart.subtotal(); // Preserve the existing checkout calculation; do not invent 10% tax.
+  const total = cart.subtotal(); // New items only; preserve existing checkout calculation.
+  const savedItems = (existingOrder?.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
+  const savedSubtotal = savedItems.reduce((sum: number, item: OrderItem) => sum + (Number(item.total) || 0), 0);
+  const combinedSubtotal = savedSubtotal + total; // Informational only; tax and payments are calculated at checkout.
   const iconButton = 'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md border border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2]';
   return (
     <div className={isDrawer ? 'relative flex w-full flex-col bg-[#0f1729] text-[#e5e9f2]' : 'relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0f1729] text-[#e5e9f2]'}>
@@ -183,10 +186,12 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDe
         )}
       </div>
       <div className={isDrawer ? 'max-h-[40vh] overflow-y-auto px-[10px] py-[6px]' : 'min-h-0 flex-1 overflow-y-auto px-[10px] py-[6px]'}>
-        {existingOrder?.items?.filter((i: OrderItem) => i.status !== 'cancelled').map((item: OrderItem) => (
+        {existingOrder && <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#a9b9dd]">Already on tab · {savedItems.length} line items</div>}
+        {savedItems.map((item: OrderItem) => (
           <div key={item.id} className="mb-1 flex justify-between text-[12px] text-[#8f9bb8]"><span>{item.quantity}× {item.product_name}</span><span>{fmt(Number(item.total))}</span></div>
         ))}
-        {cart.items.length === 0 && <div className="py-10 text-center text-[13px] text-[#6b7694]">Cart is empty</div>}
+        {existingOrder && <div className="mt-3 border-t border-[#243049] pt-2 text-xs font-semibold uppercase tracking-wide text-[#a9b9dd]">New items to add</div>}
+        {cart.items.length === 0 && <div className="py-5 text-center text-[13px] text-[#6b7694]">{existingOrder ? 'No new items selected. Saved tab items are above.' : 'Cart is empty'}</div>}
         {cart.items.map(item => (
           <div key={item.id} className="mb-1 rounded-lg border border-[#243049] bg-[#141f38] px-[6px] py-[5px]">
             <div className="flex items-center gap-[6px]">
@@ -209,10 +214,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDe
         <span className="pointer-events-none absolute right-2 top-[6px] text-[11px] leading-[14px] text-[#6b7694]">{cart.orderNotes.length}/200</span>
       </div>
       <div className="mt-[6px] shrink-0 border-t border-[#243049] px-3 pb-3 pt-[6px]">
-        <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>Items</span><span>{cart.itemCount()}</span></div>
-        <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>Subtotal</span><span>{fmt(cart.subtotal())}</span></div>
+        {existingOrder && <div className="flex justify-between py-[1px] text-[12px] text-[#a9b9dd]"><span>Saved tab items (subtotal)</span><span>{fmt(savedSubtotal)}</span></div>}
+        <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>{existingOrder ? 'New items' : 'Items'}</span><span>{cart.itemCount()}</span></div>
+        <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>{existingOrder ? 'New items subtotal' : 'Subtotal'}</span><span>{fmt(cart.subtotal())}</span></div>
         <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>Tax</span><span>Calculated at checkout</span></div>
-        <div className="flex justify-between pb-2 pt-[6px] text-[18px] font-medium"><span>Total before tax</span><span>{fmt(total)}</span></div>
+        <div className="flex justify-between pb-2 pt-[6px] text-[18px] font-medium"><span>{existingOrder ? 'Combined subtotal before tax' : 'Total before tax'}</span><span>{fmt(existingOrder ? combinedSubtotal : total)}</span></div>
         {(() => {
           const empty = submitting || cart.items.length === 0;
           const primary = 'flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#2563eb] text-[14px] font-medium text-white disabled:opacity-40';
