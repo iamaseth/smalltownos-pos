@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff, Image as ImageIcon, Check } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, GripVertical, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff, Image as ImageIcon, Check } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -90,6 +90,8 @@ export default function ProductsPage() {
   const [supplies, setSupplies] = useState<MenuSupply[]>([]);
   const [editor, setEditor] = useState<{ productId: string } | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [draggedCategoryId, setDraggedCategoryId] = useState<string | null>(null);
+  const [categoryOrderSaving, setCategoryOrderSaving] = useState(false);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [globalCashbackPercent, setGlobalCashbackPercent] = useState(0);
@@ -217,6 +219,30 @@ export default function ProductsPage() {
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const moveCategory = async (sourceId: string, targetId: string) => {
+    if (sourceId === targetId || categoryOrderSaving || !isOwnerOrManager) return;
+    const current = [...categories];
+    const from = current.findIndex(c => c.id === sourceId);
+    const to = current.findIndex(c => c.id === targetId);
+    if (from < 0 || to < 0) return;
+    const next = [...current];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setCategories(next);
+    setCategoryOrderSaving(true);
+    try {
+      await api.put('/categories/reorder', { ids: next.map(c => c.id) });
+      setCategories(next.map((c, i) => ({ ...c, sort_order: i + 1 })));
+      toast.success('Category order saved');
+    } catch {
+      setCategories(current);
+      toast.error('Could not save category order');
+    } finally {
+      setCategoryOrderSaving(false);
+      setDraggedCategoryId(null);
+    }
+  };
 
   const openCsvModal = (type: 'categories' | 'products' | 'addons') => {
     setCsvType(type);
@@ -1148,7 +1174,8 @@ export default function ProductsPage() {
 
       {activeTab === 'categories' && (
         <>
-          <div className="flex justify-end gap-2 mb-4">
+          <div className="flex justify-end items-center gap-2 mb-4">
+            <span className="mr-auto text-sm text-muted-foreground">Drag the handles to arrange POS categories{categoryOrderSaving ? " · Saving…" : ""}</span>
             <Button variant="outline" onClick={() => openCsvModal('categories')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
@@ -1170,8 +1197,19 @@ export default function ProductsPage() {
                 {categories.map((cat) => {
                   const colorObj = CATEGORY_COLORS.find((c) => c.key === cat.color);
                   return (
-                    <tr key={cat.id} className="hover:bg-muted">
-                      <td className="p-4 font-medium text-foreground">{cat.name}</td>
+                    <tr key={cat.id} className={`hover:bg-muted ${draggedCategoryId === cat.id ? 'opacity-50' : ''}`}
+                      onDragOver={(event) => { if (isOwnerOrManager) event.preventDefault(); }}
+                      onDrop={(event) => { event.preventDefault(); if (draggedCategoryId) void moveCategory(draggedCategoryId, cat.id); }}
+                      onDragEnd={() => setDraggedCategoryId(null)}>
+                      <td className="p-4 font-medium text-foreground">
+                        <span className="inline-flex items-center gap-3">
+                          {isOwnerOrManager && <span draggable={!categoryOrderSaving}
+                            onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggedCategoryId(cat.id); }}
+                            title="Drag to reorder categories" aria-label={`Drag to reorder ${cat.name}`}
+                            className="cursor-grab active:cursor-grabbing text-muted-foreground touch-none"><GripVertical size={18} /></span>}
+                          {cat.name}
+                        </span>
+                      </td>
                       <td className="p-4">
                         {colorObj ? (
                           <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-medium ${colorObj.bg} ${colorObj.text}`}>{t(colorObj.labelKey)}</span>
