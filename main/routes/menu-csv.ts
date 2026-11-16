@@ -228,11 +228,11 @@ function isTruthy(v: string) {
 
 const TEMPLATES: Record<string, string> = {
   categories: [
-    'name,description,color,icon,sort_order',
-    'Beverages,Hot and cold drinks,blue,☕,1',
-    'Food,Snacks and meals,green,🍔,2',
-    'Desserts,Sweet treats,pink,🍰,3',
-    'Combos,Meal deals and bundles,amber,🎁,4',
+    'name,description,color,icon,sort_order,parent',
+    'Beverages,Hot and cold drinks,blue,☕,1,',
+    'Food,Snacks and meals,green,🍔,2,',
+    'Desserts,Sweet treats,pink,🍰,3,',
+    'Combos,Meal deals and bundles,amber,🎁,4,',
   ].join('\n'),
 
   products: [
@@ -357,40 +357,60 @@ router.post('/import/categories', requirePermission('catalog.import-export'), (r
   try {
     const { csv } = req.body as { csv: string };
     if (typeof csv !== 'string' || !csv) return res.status(400).json({ error: 'No CSV data provided' });
-
     const rows = toObjects(parseCSV(csv));
     if (!rows.length) return res.status(400).json({ error: 'CSV has no data rows' });
-
     const db = getDatabase();
-    let created = 0, updated = 0, reactivated = 0, skipped = 0, failed = 0;
-    const errors: string[] = [];
-
-    db.transaction(() => { for (let i = 0; i < rows.length; i++) {
+    const names = new Set<string>();
+    const parsed: { name: string; parent: string; description: string; color: string; icon: string; order: number }[] = [];
+    for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r.name) { failed++; errors.push(`Row ${i + 2}: missing name`); continue; }
-
-      const sortOrder = parseNumericField(r.sort_order, 'sort_order', { optional: true, defaultValue: 0, integer: true });
-      if (!sortOrder.ok) {
-        failed++;
-        errors.push(`Row ${i + 2} (${r.name}): ${sortOrder.error}`);
-        continue;
+      const name = (r.name || '').trim();
+      const parent = (r.parent || '').trim();
+      const key = name.toLowerCase();
+      if (!name || names.has(key) || key === parent.toLowerCase()) {
+        return res.status(400).json({ error: `Row ${i + 2}: invalid, duplicate, or self-parented category` });
       }
-
-      const exists = db
-        .prepare('SELECT id FROM categories WHERE name = ? AND deleted_at IS NULL')
-        .get(r.name);
-      if (exists) { skipped++; continue; }
-
-      const slug = r.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-      db.prepare(
-        `INSERT INTO categories (id, name, slug, description, color, icon, sort_order, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
-      ).run(randomUUID(), r.name, slug, r.description || null, r.color || null, r.icon || null,
-        sortOrder.value, now(), now());
-      created++;
-    } })();
-
-    res.json({ created, updated, reactivated, skipped, failed, errors });
+      names.add(key);
+      const order = parseNumericField(r.sort_order, 'sort_order', { optional: true, defaultValue: 0, integer: true });
+      if (!order.ok) return res.status(400).json({ error: `Row ${i + 2}: ${order.error}` });
+      parsed.push({ name, parent, description: r.description || '', color: r.color || '', icon: r.icon || '', order: order.value });
+    }
+    // Resolve parent names before writing anything, and reject cycles.
+    const existing = db.prepare('SELECT id, name, parent_id FROM categories WHERE deleted_at IS NULL').all() as { id: string; name: string; parent_id: string | null }[];
+    const ids = new Map(existing.map(c => [c.name.toLowerCase(), c.id]));
+    for (const r of parsed) if (!ids.has(r.name.toLowerCase())) ids.set(r.name.toLowerCase(), randomUUID());
+    for (const r of parsed) if (r.parent && !ids.has(r.parent.toLowerCase()))
+      return res.status(400).json({ error: `Parent category "${r.parent}" not found` });
+    const parentById = new Map(existing.map(c => [c.id, c.parent_id]));
+    for (const r of parsed) parentById.set(ids.get(r.name.toLowerCase())!, r.parent ? ids.get(r.parent.toLowerCase())! : null);
+    for (const id of parentById.keys()) {
+      const seen = new Set<string>();
+      let current: string | null | undefined = id;
+      while (current) {
+        if (seen.has(current)) return res.status(400).json({ error: 'Category hierarchy contains a cycle' });
+        seen.add(current);
+        current = parentById.get(current);
+      }
+    }
+    let created = 0, updated = 0;
+    db.transaction(() => {
+      for (const r of parsed) {
+        const id = ids.get(r.name.toLowerCase())!;
+        const exists = existing.some(c => c.id === id);
+        const parentId = r.parent ? ids.get(r.parent.toLowerCase())! : null;
+        if (exists) {
+          db.prepare('UPDATE categories SET parent_id=?, sort_order=?, description=?, color=?, icon=?, updated_at=? WHERE id=?')
+            .run(parentId, r.order, r.description || null, r.color || null, r.icon || null, now(), id);
+          updated++;
+        } else {
+          const slug = r.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+          db.prepare('INSERT INTO categories (id,name,slug,description,parent_id,color,icon,sort_order,is_active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,1,?,?)')
+            .run(id, r.name, slug, r.description || null, parentId, r.color || null, r.icon || null, r.order, now(), now());
+          created++;
+        }
+      }
+    })();
+    res.json({ created, updated, reactivated: 0, skipped: 0, failed: 0, errors: [] });
   } catch (err: any) {
     return csvImportErrorResponse(res, err);
   }
