@@ -121,6 +121,33 @@ router.get('/', requirePermission('catalog.view'), (req: Request, res: Response)
   }
 });
 
+// Persist the cashier's category arrangement in one atomic transaction.
+router.put('/reorder', categoryWriteRateLimit, requirePermission('catalog.manage'), (req: Request, res: Response) => {
+  try {
+    const ids: unknown = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 ||
+        !ids.every(id => typeof id === 'string' && id.length > 0) ||
+        new Set(ids).size !== ids.length) {
+      return res.status(400).json({ error: 'A unique list of category IDs is required' });
+    }
+    const db = getDatabase();
+    const existing = db.prepare('SELECT id FROM categories WHERE deleted_at IS NULL').all() as { id: string }[];
+    const expected = new Set(existing.map(cat => cat.id));
+    if (ids.length !== expected.size || ids.some(id => !expected.has(id))) {
+      return res.status(409).json({ error: 'Category list changed; refresh before reordering' });
+    }
+    const update = db.prepare('UPDATE categories SET sort_order = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL');
+    db.transaction(() => {
+      const timestamp = now();
+      ids.forEach((id, index) => update.run(index + 1, timestamp, id));
+    })();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[API] Category reorder failed:', error);
+    res.status(500).json({ error: 'Could not save category order' });
+  }
+});
+
 router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
