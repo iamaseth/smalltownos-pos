@@ -161,8 +161,7 @@ export default function ProductGrid({
         const saved = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
         if (Array.isArray(saved) && saved.length) {
           setFavorites(saved.map(String));
-          setReferenceCategory('FAV');
-          setOpenGroup('Favorites');
+          setFavoritesOnly(true);
         }
       } catch {}
     }, 0);
