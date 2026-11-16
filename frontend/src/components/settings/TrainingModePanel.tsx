@@ -11,6 +11,26 @@ export default function TrainingModePanel() {
     if (!api?.getTrainingStatus) return;
     void api.getTrainingStatus().then((result) => setDemo(result.demo)).catch(() => setError('Unable to read training status.'));
   }, []);
+  if (!window.electronAPI) {
+    const demoUrl = process.env.NEXT_PUBLIC_BACKSTREET_DEMO_URL;
+    return (
+      <section className="mb-6 rounded-xl border border-border bg-card p-5" aria-label="Training and Demo Mode">
+        <h2 className="text-lg font-semibold">Training & Demo Mode</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Practice orders must run on a separate Railway service and database. Live sales are never switched into training mode.</p>
+        {demoUrl ? (
+          <a href={demoUrl} target="_blank" rel="noopener noreferrer"
+            className="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">
+            Open isolated demo POS
+          </a>
+        ) : (
+          <p className="mt-3 text-sm font-semibold text-amber-600">
+            Demo environment not configured yet. Live POS remains active.
+          </p>
+        )}
+        <p className="mt-2 text-xs text-muted-foreground">Do not use real payment devices or printers for training.</p>
+      </section>
+    );
+  }
   if (demo === null && !error) return null;
   return (
     <section className="mb-6 rounded-xl border border-border bg-card p-5" aria-label="Training and Demo Mode">
