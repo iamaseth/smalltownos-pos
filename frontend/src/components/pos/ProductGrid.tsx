@@ -276,7 +276,7 @@ export default function ProductGrid({
                 setArranging(false);
               }}
               className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white transition-[filter,transform] active:scale-95 ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17]' : 'hover:brightness-110'}`}
-              style={{ backgroundColor: categoryColor(cat.color) }}>{cat.name}</button>;
+              style={{ backgroundColor: categoryColor(cat.color) }}><span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="text-base leading-none">{cat.icon || '▦'}</span>{cat.name}</span></button>;
           })}
         </nav>
         {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && (
