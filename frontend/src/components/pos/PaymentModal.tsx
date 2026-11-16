@@ -706,6 +706,11 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 }}
               />;
             })()}
+            {customMethods.some((method) => method.name.trim().toLowerCase() === 'aba (manual)') && (
+              <p className="rounded-lg border border-sky-800/40 bg-sky-950/20 p-3 text-xs text-foreground">
+                ABA (Manual): confirm the incoming payment in the bar's ABA bank app before selecting ABA (Manual) and recording the sale. No automatic bank confirmation is available.
+              </p>
+            )}
             {payments.map((payment, idx) => {
               const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
               const custom = customMethods.find((method) => method.id === payment.payment_method_id);
