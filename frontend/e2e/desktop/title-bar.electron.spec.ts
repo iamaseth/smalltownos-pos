@@ -162,11 +162,11 @@ test('real main-process application menu is intact and the title-bar row mirrors
     if (!application) return null;
     return {
       appName: app.getName(),
-      topLevel: application.items.map((item) => ({
+      topLevel: application.items.map((item: { label: string; type: string; submenu?: { items: Array<{ label: string }> } }) => ({
         label: item.label,
         type: item.type,
         hasSubmenu: Boolean(item.submenu),
-        submenuItems: item.submenu ? item.submenu.items.map((entry) => entry.label) : [],
+        submenuItems: item.submenu ? item.submenu.items.map((entry: { label: string }) => entry.label) : [],
       })),
     };
   });
@@ -176,13 +176,13 @@ test('real main-process application menu is intact and the title-bar row mirrors
   // and click handlers stay the native ones.
   expect(menu).not.toBeNull();
   const entries = menu!.topLevel;
-  const labels = entries.map((entry) => entry.label);
-  expect(entries.every((entry) => entry.hasSubmenu)).toBe(true);
-  expect(entries.find((entry) => entry.label === 'File')?.submenuItems).toContain('New Order');
+  const labels = entries.map((entry: { label: string }) => entry.label);
+  expect(entries.every((entry: { hasSubmenu: boolean }) => entry.hasSubmenu)).toBe(true);
+  expect(entries.find((entry: { label: string; submenuItems: string[] }) => entry.label === 'File')?.submenuItems).toContain('New Order');
 
   // macOS prepends the app-name menu and a dev build appends Developer; the
   // shared top-level surface must be identical on every platform.
-  expect(labels.filter((label) => label !== menu!.appName && label !== 'Developer')).toEqual([
+  expect(labels.filter((label: string) => label !== menu!.appName && label !== 'Developer')).toEqual([
     'File', 'Edit', 'Orders', 'Reports', 'Settings', 'Window', 'Help',
   ]);
 
