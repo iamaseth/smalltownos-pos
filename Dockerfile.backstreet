@@ -1,0 +1,21 @@
+# BackStreet Riverside: standalone Express API + static Flo POS frontend.
+# This file is intentionally separate from The Bay deployment.
+FROM node:22-bookworm-slim AS build
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts && npm rebuild better-sqlite3
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+RUN cd frontend && npm ci
+COPY . .
+RUN npm run build
+RUN cd frontend && NEXT_BUILD_MODE=desktop npm run build
+
+FROM node:22-bookworm-slim
+ENV NODE_ENV=production
+ENV FLO_DEV_USER_DATA=/data
+ENV PORT=8080
+WORKDIR /app
+COPY --from=build /app /app
+EXPOSE 8080
+CMD ["node", "dev-server.js"]
