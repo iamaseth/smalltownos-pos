@@ -65,19 +65,26 @@ def commons_candidates(item):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv-dir", type=Path, required=True)
+    ap.add_argument("--csv-dir", type=Path, help="Folder of exported staging CSV tabs")
+    ap.add_argument("--manifest", type=Path, help="JSON manifest exported from the staging spreadsheet")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--download", action="store_true")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
+    if not args.manifest and not args.csv_dir:
+        ap.error("Specify --manifest or --csv-dir")
     rows = []
-    for path in sorted(args.csv_dir.glob("*.csv")):
-        with path.open(encoding="utf-8-sig", newline="") as f:
-            for row in csv.DictReader(f):
-                name = (row.get("Item name") or "").strip()
-                if name:
-                    rows.append({"page":path.stem,"name":name,
-                        "existing":(row.get("Approved image URL") or "").strip()})
+    if args.manifest:
+        manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+        rows = [{"page":r["page"],"name":r["item"],"existing":r.get("existing","")} for r in manifest["rows"]]
+    else:
+        for path in sorted(args.csv_dir.glob("*.csv")):
+            with path.open(encoding="utf-8-sig", newline="") as f:
+                for row in csv.DictReader(f):
+                    name = (row.get("Item name") or "").strip()
+                    if name:
+                        rows.append({"page":path.stem,"name":name,
+                            "existing":(row.get("Approved image URL") or "").strip()})
     unique = {}
     for row in rows:
         unique.setdefault(key(row["name"]), row["name"])
