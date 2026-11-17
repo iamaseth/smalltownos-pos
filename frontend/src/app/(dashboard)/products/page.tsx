@@ -1333,67 +1333,7 @@ export default function ProductsPage() {
             {addonGroups.length === 0 && <p className="text-center text-muted-foreground py-12">{t('addonEmpty')}</p>}
           </div>
 
-          {showAddonModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
-                <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
-                  <h2 className="text-lg font-bold">{editingAddonGroup ? t('editAddonGroupTitle') : t('addAddonGroupTitle')}</h2>
-                  <button onClick={resetAddonForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
-                </div>
-                <div className="p-6 overflow-y-auto flex-1">
-                  <form onSubmit={handleAddonGroupSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
-                    <input type="text" value={addonForm.name} onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('categoryDescription')}</label>
-                    <input type="text" value={addonForm.description} onChange={(e) => setAddonForm({ ...addonForm, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">{t('addonMin')}</label>
-                      <input type="number" min="0" value={addonForm.min_selection} onChange={(e) => setAddonForm({ ...addonForm, min_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">{t('addonMax')}</label>
-                      <input type="number" min="0" value={addonForm.max_selection} onChange={(e) => setAddonForm({ ...addonForm, max_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={addonForm.is_required} onChange={(e) => setAddonForm({ ...addonForm, is_required: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                    <span className="text-sm text-foreground">{t('addonRequired')}</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={addonForm.allow_multiple_quantities} onChange={(e) => setAddonForm({ ...addonForm, allow_multiple_quantities: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                    <span className="text-sm text-foreground">{t('addonAllowMultipleQuantities')}</span>
-                  </label>
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <label className="block text-sm font-medium text-foreground">{t('addonAddons')}</label>
-                      <button type="button" onClick={addAddonItem} className="text-xs text-brand hover:underline">{t('addAddonInline')}</button>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                        <span>{t('nameLabel')}</span>
-                        <span>{t('columnPrice')}</span>
-                        <span aria-hidden="true" />
-                      </div>
-                      {addonList.map((addon, idx) => (
-                        <div key={idx} className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center">
-                          <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder={tCommon('namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                          <CurrencyAmountInput value={addon.price} format={amountFormat} onValueChange={(v) => updateAddonItem(idx, 'price', v === '' ? 0 : v)} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                          <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <Button type="submit" className="w-full">{editingAddonGroup ? tCommon('update') : tCommon('create')}</Button>
-                </form>
-                </div>
-              </div>
-            </div>
-          )}
+}
         </>
       )}
 
@@ -1612,6 +1552,67 @@ export default function ProductsPage() {
           }}
         />
       )}
+      {showAddonModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4">
+              <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+                <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
+                  <h2 className="text-lg font-bold">{editingAddonGroup ? t('editAddonGroupTitle') : t('addAddonGroupTitle')}</h2>
+                  <button onClick={resetAddonForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+                </div>
+                <div className="p-6 overflow-y-auto flex-1">
+                  <form onSubmit={handleAddonGroupSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
+                    <input type="text" value={addonForm.name} onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('categoryDescription')}</label>
+                    <input type="text" value={addonForm.description} onChange={(e) => setAddonForm({ ...addonForm, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">{t('addonMin')}</label>
+                      <input type="number" min="0" value={addonForm.min_selection} onChange={(e) => setAddonForm({ ...addonForm, min_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-1">{t('addonMax')}</label>
+                      <input type="number" min="0" value={addonForm.max_selection} onChange={(e) => setAddonForm({ ...addonForm, max_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={addonForm.is_required} onChange={(e) => setAddonForm({ ...addonForm, is_required: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                    <span className="text-sm text-foreground">{t('addonRequired')}</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={addonForm.allow_multiple_quantities} onChange={(e) => setAddonForm({ ...addonForm, allow_multiple_quantities: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                    <span className="text-sm text-foreground">{t('addonAllowMultipleQuantities')}</span>
+                  </label>
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="block text-sm font-medium text-foreground">{t('addonAddons')}</label>
+                      <button type="button" onClick={addAddonItem} className="text-xs text-brand hover:underline">{t('addAddonInline')}</button>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        <span>{t('nameLabel')}</span>
+                        <span>{t('columnPrice')}</span>
+                        <span aria-hidden="true" />
+                      </div>
+                      {addonList.map((addon, idx) => (
+                        <div key={idx} className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center">
+                          <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder={tCommon('namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                          <CurrencyAmountInput value={addon.price} format={amountFormat} onValueChange={(v) => updateAddonItem(idx, 'price', v === '' ? 0 : v)} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                          <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <Button type="submit" className="w-full">{editingAddonGroup ? tCommon('update') : tCommon('create')}</Button>
+                </form>
+                </div>
+              </div>
+            </div>
+          )
       {ConfirmDialog}
     </div>
   );
