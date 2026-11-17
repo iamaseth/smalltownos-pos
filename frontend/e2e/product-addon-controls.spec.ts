@@ -47,6 +47,7 @@ test('product editor assigns shared addon groups and POS popup shows their choic
     await setLanguage(page, 'en');
 
     await page.goto(`${BASE}/products`);
+    await page.getByPlaceholder('Search').fill(productName);
     const productRow = page.getByRole('row').filter({ hasText: productName });
     await expect(productRow).toBeVisible();
     await productRow.locator('button:has(svg.lucide-pencil)').click();
@@ -79,6 +80,7 @@ test('product editor assigns shared addon groups and POS popup shows their choic
     await page.getByRole('button', { name: 'Close' }).click();
 
     await page.goto(`${BASE}/products`);
+    await page.getByPlaceholder('Search').fill(productName);
     const savedRow = page.getByRole('row').filter({ hasText: productName });
     await savedRow.locator('button:has(svg.lucide-pencil)').click();
     const assignedCheckbox = page.locator('label').filter({ hasText: groupName }).first().locator('input[type="checkbox"]');
