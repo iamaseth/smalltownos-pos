@@ -35,9 +35,11 @@ assert.match(customers, /text-muted-foreground whitespace-nowrap.*formatDate/, '
 assert.match(customers, /text-end text-foreground whitespace-nowrap.*fmt\(b\.total\)/, 'ledger totals use semantic text color');
 
 const payment = source('frontend/src/components/pos/PaymentModal.tsx');
-assert.match(payment, /sm:max-w-4xl/, 'desktop payment modal stays wide');
-assert.match(payment, /lg:grid lg:grid-cols-2/, 'desktop payment content stays side by side');
-assert.match(payment, /max-h-\[75vh\] overflow-y-auto.*lg:grid lg:grid-cols-2/, 'desktop payment stays two-column with bounded overflow fallback');
+assert.match(payment, /sm:max-w-6xl/, 'desktop payment modal stays wide enough for the BackStreet cash keypad');
+assert.match(payment, /lg:grid lg:grid-cols-\[minmax\(0,1fr\)_320px\]/, 'desktop payment content stays side by side with the keypad column');
+assert.match(payment, /max-h-\[75vh\] overflow-y-auto.*lg:grid lg:grid-cols-\[minmax\(0,1fr\)_320px\]/, 'desktop payment stays two-column with bounded overflow fallback');
+assert.match(payment, /data-testid="payment-total-due"/, 'total due sits in the compact payment header');
+assert.match(payment, /More options/, 'rarely used split bill lives under More options');
 assert.doesNotMatch(payment, /lg:overflow-visible/, 'desktop payment does not clip controls outside its bounded container');
 
 const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');

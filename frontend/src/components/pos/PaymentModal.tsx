@@ -99,7 +99,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     idempotencyKeyRef.current = null;
   }, [bill.id]);
   const [justPaid, setJustPaid] = useState(false);
-  const [showSplitBill, setShowSplitBill] = useState(false);
+  const [showMoreOptions, setShowMoreOptions] = useState(false);
   const [keypadCurrency, setKeypadCurrency] = useState<'USD' | 'KHR'>('USD');
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
@@ -505,10 +505,20 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       <div className="bg-card w-full sm:max-w-6xl sm:max-h-[95vh] sm:flex sm:flex-col rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
-          <div>
+        <div className="flex items-center justify-between gap-4 px-5 pt-4 pb-3 border-b border-border">
+          <div className="min-w-0">
             <h2 className="text-lg font-bold text-foreground">{t('payment')}</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">{t('billNumber', { number: bill.bill_number })}</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+              {t('billNumber', { number: bill.bill_number })}
+              {cartCustomer && <> · <User size={11} className="inline -mt-0.5" /> {cartCustomer.name}</>}
+            </p>
+          </div>
+          <div className="ms-auto text-end" data-testid="payment-total-due">
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">{t('totalDue')}</p>
+            <p className="text-3xl font-bold leading-tight tracking-tight text-foreground">{currencyFmt(remaining)}</p>
+            {Number(bill.paid_amount) > 0 && (
+              <p className="text-xs text-muted-foreground">Already paid {currencyFmt(Number(bill.paid_amount))} of {currencyFmt(Number(bill.total))}</p>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -523,72 +533,6 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
           <div className="space-y-4">
           <div className="space-y-4">
-
-          {/* Amount + Customer Card */}
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl px-5 py-3 text-white">
-            <div className="flex items-center justify-between gap-4 mb-2">
-              <div>
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">{t('totalDue')}</p>
-                <p className="text-3xl font-bold mt-1 tracking-tight">{currencyFmt(remaining)}</p>
-                {Number(bill.paid_amount) > 0 && (
-                  <p className="mt-1 text-xs text-slate-300">Already paid {currencyFmt(Number(bill.paid_amount))} of {currencyFmt(Number(bill.total))}</p>
-                )}
-              </div>
-              {cartCustomer && (
-                <div className="text-end ms-4 shrink-0">
-                  <div className="w-8 h-8 rounded-full bg-card/10 flex items-center justify-center mb-1 ms-auto">
-                    <User size={16} className="text-white/70" />
-                  </div>
-                  <p className="text-sm font-semibold text-white leading-tight">{cartCustomer.name}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="border-t border-white/10 pt-3 space-y-1.5 text-xs">
-              <div className="flex justify-between text-slate-300">
-                <span>{t('subtotal')}</span>
-                <span>{currencyFmt(Number(bill.subtotal))}</span>
-              </div>
-              {Number(bill.discount_amount) > 0 && (
-                <div className="flex justify-between text-emerald-400 font-medium">
-                  <span>{t('discount')}</span>
-                  <span>− {currencyFmt(Number(bill.discount_amount))}</span>
-                </div>
-              )}
-              <TaxBreakdown taxAmount={Number(bill.tax_amount)} taxBreakdown={resolveTaxComponents(bill).map((component) => ({
-                ...component,
-                rate: component.rate ?? 0,
-              }))} />
-              {Number(bill.delivery_charge) > 0 && (
-                <div className="flex justify-between text-slate-300">
-                  <span>{t('delivery')}</span>
-                  <span>{currencyFmt(Number(bill.delivery_charge))}</span>
-                </div>
-              )}
-              {Number(bill.packaging_charge) > 0 && (
-                <div className="flex justify-between text-slate-300">
-                  <span>{t('packaging')}</span>
-                  <span>{currencyFmt(Number(bill.packaging_charge))}</span>
-                </div>
-              )}
-              {Number(bill.service_charge) > 0 && (
-                <div className="flex justify-between text-slate-300">
-                  <span>{tReceipt('serviceCharge')}</span>
-                  <span>{currencyFmt(Number(bill.service_charge))}</span>
-                </div>
-              )}
-              {Number(bill.round_off) !== 0 && (
-                <div className="flex justify-between text-slate-300">
-                  <span>{t('roundOff')}</span>
-                  <span>{Number(bill.round_off) > 0 ? '+' : ''}{currencyFmt(Number(bill.round_off))}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-white font-semibold border-t border-white/10 pt-1.5 mt-1">
-                <span>{t('total')}</span>
-                <span>{currencyFmt(Number(bill.total))}</span>
-              </div>
-            </div>
-          </div>
 
           {/* Loyalty Info Strip (staff reference) */}
           {loyaltySettings?.loyalty_enabled && effectiveCustomerId && (
@@ -695,36 +639,6 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
           <div className="space-y-4">
           <div className="space-y-2">
-            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-              Cash can be received in USD and KHR at the saved rate of {khrRate.toLocaleString('en-US')} KHR per USD. Dynamic KHQR is not configured.
-            </div>
-            <button type="button" onClick={() => setShowQrInstructions(v => !v)}
-              className="w-full rounded-xl border border-border px-4 py-3 text-left text-sm font-semibold hover:bg-muted"
-              aria-expanded={showQrInstructions}>
-              QR Payment (KHQR) — {showQrInstructions ? 'Hide instructions' : 'Details'}
-            </button>
-            {showQrInstructions && (
-              <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-2">
-                <p>Dynamic KHQR requires the bar&apos;s receiving bank account. No QR has been generated.</p>
-                <p>Until configured, verify the transfer in the bank app before recording it under a separately configured QR payment method.</p>
-                <p className="font-semibold">Never mark a QR payment as paid based only on a customer&apos;s screenshot.</p>
-              </div>
-            )}
-            {remainingMinor > 0 && <button type="button" onClick={() => setShowSplitBill(v => !v)} className="w-full rounded-lg border border-border px-3 py-2 text-left text-sm font-semibold hover:bg-muted" aria-expanded={showSplitBill}>Split Bill {showSplitBill ? '−' : '+'}</button>}
-            {showSplitBill && remainingMinor > 0 && (() => {
-              const shareMinor = Math.ceil(remainingMinor / people);
-              const shareDisplay = toDisplayUnit(shareMinor / minorFactor);
-              return <SplitEvenlyRow
-                people={people}
-                onPeopleChange={setPeople}
-                shareLabel={currencyFmt(shareMinor / minorFactor)}
-                onFill={() => {
-                  setKhrTendered('');
-                  setPaymentsTouched(true);
-                  setPayments((current) => current.map((p) => p.method === 'cash' && p.payment_method_id === undefined ? { ...p, amount: formatInput(shareDisplay) } : { ...p, amount: '' }));
-                }}
-              />;
-            })()}
             {customMethods.some((method) => method.name.trim().toLowerCase() === 'aba (manual)') && (
               <p className="rounded-lg border border-sky-800/40 bg-sky-950/20 p-3 text-xs text-foreground">
                 ABA (Manual): confirm the incoming payment in the bar&apos;s ABA bank app before selecting ABA (Manual) and recording the sale. No automatic bank confirmation is available.
@@ -849,6 +763,103 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               <p className="px-1 text-[11px] text-muted-foreground text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
           )}
+
+          {/* Rarely used tools stay out of the way until needed. */}
+          <div className="rounded-xl border border-border overflow-hidden">
+            <button type="button" onClick={() => setShowMoreOptions(v => !v)}
+              className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start"
+              aria-expanded={showMoreOptions}>
+              <span className="text-sm font-medium text-foreground">More options</span>
+              <span className="ms-auto me-2 text-xs text-muted-foreground">Split bill · Bill details · KHQR</span>
+              <ChevronDown size={16} className={`text-muted-foreground transition-transform ${showMoreOptions ? 'rotate-180' : ''}`} />
+            </button>
+            {showMoreOptions && (
+              <div className="border-t border-border p-3 space-y-3">
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Split bill</p>
+                  {remainingMinor > 0 && (() => {
+                    const shareMinor = Math.ceil(remainingMinor / people);
+                    const shareDisplay = toDisplayUnit(shareMinor / minorFactor);
+                    return <SplitEvenlyRow
+                      people={people}
+                      onPeopleChange={setPeople}
+                      shareLabel={currencyFmt(shareMinor / minorFactor)}
+                      onFill={() => {
+                        setKhrTendered('');
+                        setPaymentsTouched(true);
+                        setPayments((current) => current.map((p) => p.method === 'cash' && p.payment_method_id === undefined ? { ...p, amount: formatInput(shareDisplay) } : { ...p, amount: '' }));
+                      }}
+                    />;
+                  })()}
+                  {remainingMinor <= 0 && <p className="text-xs text-muted-foreground">Nothing left to split.</p>}
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bill details</p>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t('subtotal')}</span>
+                      <span>{currencyFmt(Number(bill.subtotal))}</span>
+                    </div>
+                    {Number(bill.discount_amount) > 0 && (
+                      <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                        <span>{t('discount')}</span>
+                        <span>− {currencyFmt(Number(bill.discount_amount))}</span>
+                      </div>
+                    )}
+                    <TaxBreakdown taxAmount={Number(bill.tax_amount)} taxBreakdown={resolveTaxComponents(bill).map((component) => ({
+                      ...component,
+                      rate: component.rate ?? 0,
+                    }))} />
+                    {Number(bill.delivery_charge) > 0 && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>{t('delivery')}</span>
+                        <span>{currencyFmt(Number(bill.delivery_charge))}</span>
+                      </div>
+                    )}
+                    {Number(bill.packaging_charge) > 0 && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>{t('packaging')}</span>
+                        <span>{currencyFmt(Number(bill.packaging_charge))}</span>
+                      </div>
+                    )}
+                    {Number(bill.service_charge) > 0 && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>{tReceipt('serviceCharge')}</span>
+                        <span>{currencyFmt(Number(bill.service_charge))}</span>
+                      </div>
+                    )}
+                    {Number(bill.round_off) !== 0 && (
+                      <div className="flex justify-between text-muted-foreground">
+                        <span>{t('roundOff')}</span>
+                        <span>{Number(bill.round_off) > 0 ? '+' : ''}{currencyFmt(Number(bill.round_off))}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-foreground font-semibold border-t border-border pt-1.5 mt-1">
+                      <span>{t('total')}</span>
+                      <span>{currencyFmt(Number(bill.total))}</span>
+                    </div>
+                  </div>
+
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">KHQR</p>
+                  <p className="text-xs text-muted-foreground">Cash can be received in USD and KHR at the saved rate of {khrRate.toLocaleString('en-US')} KHR per USD. Dynamic KHQR is not configured.</p>
+                  <button type="button" onClick={() => setShowQrInstructions(v => !v)}
+                    className="w-full rounded-xl border border-border px-4 py-3 text-left text-sm font-semibold hover:bg-muted"
+                    aria-expanded={showQrInstructions}>
+                    QR Payment (KHQR) — {showQrInstructions ? 'Hide instructions' : 'Details'}
+                  </button>
+                  {showQrInstructions && (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-2">
+                      <p>Dynamic KHQR requires the bar&apos;s receiving bank account. No QR has been generated.</p>
+                      <p>Until configured, verify the transfer in the bank app before recording it under a separately configured QR payment method.</p>
+                      <p className="font-semibold">Never mark a QR payment as paid based only on a customer&apos;s screenshot.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           </div>
           </div>
           <aside className="rounded-2xl border border-border bg-muted/20 p-3 self-start lg:sticky lg:top-0" aria-label="Cash amount keypad">
