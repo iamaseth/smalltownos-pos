@@ -5645,6 +5645,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         'Espresso', 'Hot Coffee with Milk', 'Iced Black Coffee',
       ]);
       moveProductsByNames(drinksId, teaId, ['Green Tea Pot', 'Hot Tea', 'Iced Tea', 'Tea Pot']);
+      moveProductsByNames(coffeeId, teaId, ['Green Tea Pot', 'Hot Tea', 'Iced Tea', 'Tea Pot']);
       const sodaSourceId = findCategoryId('Soda');
       moveProductsByNames(sodaSourceId, juicesId, ['Fresh Coconut', 'Watermelon Juice']);
       moveProductsByNames(sodaSourceId, drinksId, ['Red Bull']);
