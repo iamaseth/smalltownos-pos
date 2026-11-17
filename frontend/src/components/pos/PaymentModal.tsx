@@ -98,6 +98,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     idempotencyKeyRef.current = null;
   }, [bill.id]);
   const [justPaid, setJustPaid] = useState(false);
+  const [showSplitBill, setShowSplitBill] = useState(false);
+  const [keypadCurrency, setKeypadCurrency] = useState<'USD' | 'KHR'>('USD');
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
   const [payments, setPayments] = useState<Payment[]>(
@@ -221,6 +223,29 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const updatePaymentAmount = (idx: number, value: string) => {
     setPaymentsTouched(true);
     setPayments((current) => current.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
+  };
+
+  // The touch keypad edits the same controlled inputs as a physical keyboard.
+  // Never changes the payment totals or exchange-rate calculations.
+  const enterCashKey = (key: string) => {
+    const cashIndex = payments.findIndex((p) => p.method === 'cash' && p.payment_method_id === undefined);
+    if (cashIndex < 0) return;
+    const current = keypadCurrency === 'KHR' ? khrTendered : payments[cashIndex].amount;
+    let next = current;
+    if (key === 'Clear') next = '';
+    else if (key === 'Backspace') next = current.slice(0, -1);
+    else if (key === '.') {
+      if (keypadCurrency === 'KHR' || current.includes('.')) return;
+      next = (current || '0') + '.';
+    } else {
+      if (!/^\\d$/.test(key)) return;
+      if (keypadCurrency === 'USD' && current.includes('.') && current.split('.')[1].length >= 2) return;
+      next = current === '0' ? key : current + key;
+    }
+    if (keypadCurrency === 'KHR') {
+      setKhrTendered(next);
+      setPaymentsTouched(true);
+    } else updatePaymentAmount(cashIndex, next);
   };
 
   const allocateRemainingTo = (idx: number) => {
@@ -485,7 +510,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-card w-full sm:max-w-4xl sm:max-h-[95vh] sm:flex sm:flex-col rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-card w-full sm:max-w-6xl sm:max-h-[95vh] sm:flex sm:flex-col rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
@@ -502,16 +527,17 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           </button>
         </div>
 
-        <div className="px-5 py-4 max-h-[75vh] overflow-y-auto sm:min-h-0 lg:grid lg:grid-cols-2 lg:gap-5">
+        <div className="px-5 py-4 max-h-[75vh] overflow-y-auto sm:min-h-0 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5">
 
+          <div className="space-y-4">
           <div className="space-y-4">
 
           {/* Amount + Customer Card */}
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl px-5 py-4 text-white">
-            <div className="flex items-start justify-between mb-3">
+          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl px-5 py-3 text-white">
+            <div className="flex items-center justify-between gap-4 mb-2">
               <div>
                 <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">{t('totalDue')}</p>
-                <p className="text-4xl font-bold mt-1 tracking-tight">{currencyFmt(remaining)}</p>
+                <p className="text-3xl font-bold mt-1 tracking-tight">{currencyFmt(remaining)}</p>
                 {Number(bill.paid_amount) > 0 && (
                   <p className="mt-1 text-xs text-slate-300">Already paid {currencyFmt(Number(bill.paid_amount))} of {currencyFmt(Number(bill.total))}</p>
                 )}
@@ -692,7 +718,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 <p className="font-semibold">Never mark a QR payment as paid based only on a customer&apos;s screenshot.</p>
               </div>
             )}
-            {remainingMinor > 0 && (() => {
+            {remainingMinor > 0 && <button type="button" onClick={() => setShowSplitBill(v => !v)} className="w-full rounded-lg border border-border px-3 py-2 text-left text-sm font-semibold hover:bg-muted" aria-expanded={showSplitBill}>Split Bill {showSplitBill ? '−' : '+'}</button>}
+            {showSplitBill && remainingMinor > 0 && (() => {
               const shareMinor = Math.ceil(remainingMinor / people);
               const shareDisplay = toDisplayUnit(shareMinor / minorFactor);
               return <SplitEvenlyRow
@@ -726,14 +753,14 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                   <div className="grid grid-cols-2 gap-2">
                     <label className="block min-w-0 text-xs font-semibold text-muted-foreground">USD ($)
                       <input type="number" value={payment.amount} min="0" step="0.01" inputMode="decimal"
-                        onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
+                        onFocus={() => { setAmountTarget({ kind: 'payment', index: idx }); setKeypadCurrency('USD'); }}
                         onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                         placeholder="0.00"
                         className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-card px-3 py-3 text-lg font-semibold text-foreground" />
                     </label>
                     <label className="block min-w-0 text-xs font-semibold text-muted-foreground">KHR (៛)
                       <input type="number" value={khrTendered} min="0" step="1" inputMode="numeric"
-                        onFocus={() => setAmountTarget(null)}
+                        onFocus={() => { setAmountTarget(null); setKeypadCurrency('KHR'); }}
                         onChange={(e) => { setKhrTendered(e.target.value); setPaymentsTouched(true); }}
                         placeholder="0"
                         className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-card px-3 py-3 text-lg font-semibold text-foreground" />
@@ -831,6 +858,17 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             </div>
           )}
           </div>
+          </div>
+          <aside className="rounded-2xl border border-border bg-muted/20 p-3 self-start lg:sticky lg:top-0" aria-label="Cash amount keypad">
+            <p className="mb-3 text-sm font-semibold">Enter cash amount</p>
+            <div className="mb-3 grid grid-cols-2 gap-2">
+              {(['USD', 'KHR'] as const).map((unit) => <button key={unit} type="button" onClick={() => setKeypadCurrency(unit)} className={`rounded-lg border px-3 py-3 font-semibold ${keypadCurrency === unit ? 'border-brand bg-brand text-white' : 'border-border bg-card'}`}>{unit}</button>)}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {['7','8','9','4','5','6','1','2','3','0','.','Backspace'].map((key) => <button key={key} type="button" disabled={key === '.' && keypadCurrency === 'KHR'} onClick={() => enterCashKey(key)} aria-label={key} className="min-h-16 rounded-xl border border-border bg-card text-2xl font-semibold hover:bg-muted disabled:opacity-40">{key === 'Backspace' ? '⌫' : key}</button>)}
+            </div>
+            <button type="button" onClick={() => enterCashKey('Clear')} className="mt-2 w-full min-h-14 rounded-xl border border-border bg-card font-semibold hover:bg-muted">Clear</button>
+          </aside>
         </div>
 
         <div className="px-5 pb-5 border-t border-border pt-3 space-y-2">
