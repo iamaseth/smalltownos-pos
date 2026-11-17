@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { Plus, X, Sparkles, Camera, SlidersHorizontal } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
 import ImageUploader from '@/components/products/ImageUploader';
 import { compressImage } from '@/lib/image-utils';
@@ -145,6 +146,7 @@ export default function MenuItemEditor({
   const t = useTranslations('inventory');
   const tCommon = useTranslations('common');
   const fmtNum = useFormatNumber();
+  const fmtCurrency = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
 
   const isNew = productId === 'new';
@@ -590,7 +592,7 @@ export default function MenuItemEditor({
                         {(group.addons ?? []).filter((choice) => choice.is_active).map((choice) => (
                           <div key={choice.id} className="flex justify-between gap-2 text-xs text-muted-foreground">
                             <span className="truncate">{choice.name}</span>
-                            <span className="shrink-0">+ {fmtNum(Number(choice.price))}</span>
+                            <span className="shrink-0">+ {fmtCurrency(Number(choice.price))}</span>
                           </div>
                         ))}
                         {(group.addons ?? []).filter((choice) => choice.is_active).length === 0 && (
