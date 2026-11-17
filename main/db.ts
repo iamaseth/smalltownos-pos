@@ -5479,6 +5479,226 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+
+  {
+    version: 102,
+    name: 'apply_backstreet_menu_category_taxonomy',
+    up: () => {
+      const timestamp = now();
+      const findCategory = db.prepare('SELECT id FROM categories WHERE deleted_at IS NULL AND lower(trim(name)) = lower(trim(?)) ORDER BY sort_order, id LIMIT 1');
+      const insertCategory = db.prepare(`
+        INSERT INTO categories (id, name, description, image_url, sort_order, is_active, parent_id, slug, color, icon, created_at, updated_at)
+        VALUES (?, ?, NULL, NULL, ?, 1, ?, ?, ?, ?, ?, ?)
+      `);
+      const updateCategory = db.prepare('UPDATE categories SET name = ?, slug = ?, parent_id = ?, sort_order = ?, is_active = 1, updated_at = ? WHERE id = ? AND deleted_at IS NULL');
+      const ensureCategory = (name: string, parentId: string | null, sortOrder: number, color: string, icon: string, aliases: string[] = []): string => {
+        let existing = findCategory.get(name) as { id: string } | undefined;
+        if (!existing) {
+          for (const alias of aliases) {
+            existing = findCategory.get(alias) as { id: string } | undefined;
+            if (existing) break;
+          }
+        }
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        if (existing) {
+          updateCategory.run(name, slug, parentId, sortOrder, timestamp, existing.id);
+          return existing.id;
+        }
+        const id = generateShortId('categories');
+        insertCategory.run(id, name, sortOrder, parentId, slug, color, icon, timestamp, timestamp);
+        return id;
+      };
+      const findCategoryId = (name: string): string | null => (findCategory.get(name) as { id: string } | undefined)?.id ?? null;
+      const setCategoryParent = db.prepare('UPDATE categories SET parent_id = ?, sort_order = ?, is_active = 1, updated_at = ? WHERE id = ? AND deleted_at IS NULL');
+      const deactivateCategory = db.prepare('UPDATE categories SET is_active = 0, updated_at = ? WHERE id = ? AND deleted_at IS NULL');
+      const moveProducts = db.prepare('UPDATE products SET category_id = ?, updated_at = ? WHERE id = ? AND category_id = ? AND deleted_at IS NULL');
+      const moveProductsByNames = (sourceId: string | null, targetId: string, names: string[]) => {
+        if (!sourceId || sourceId === targetId || names.length === 0) return;
+        const rows = db.prepare('SELECT id, name FROM products WHERE category_id = ? AND deleted_at IS NULL').all(sourceId) as { id: string; name: string }[];
+        const wanted = new Set(names.map(name => name.trim().toLowerCase()));
+        for (const row of rows) {
+          if (wanted.has(row.name.trim().toLowerCase())) moveProducts.run(targetId, timestamp, row.id, sourceId);
+        }
+      };
+      const moveAllProducts = (sourceId: string | null, targetId: string) => {
+        if (!sourceId || sourceId === targetId) return;
+        const rows = db.prepare('SELECT id FROM products WHERE category_id = ? AND deleted_at IS NULL').all(sourceId) as { id: string }[];
+        for (const row of rows) moveProducts.run(targetId, timestamp, row.id, sourceId);
+      };
+
+      const foodId = ensureCategory('FOOD', null, 1, 'green', '🍽️', ['Food']);
+      const westernId = ensureCategory('WESTERN', null, 2, 'orange', '🍕', ['Western']);
+      const asianId = ensureCategory('ASIAN', null, 3, 'green', '🍚', ['Asian']);
+      const seafoodId = ensureCategory('SEAFOOD', null, 4, 'blue', '🐟', ['Seafood']);
+      const meatId = ensureCategory('MEAT', null, 5, 'red', '🍖', ['Seafood & Meat', 'Meat']);
+      const drinksId = ensureCategory('DRINKS', null, 6, 'teal', '🥤', ['Drinks']);
+      const beerId = ensureCategory('BEER', null, 7, 'blue', '🍺', ['Beer']);
+      const wineId = ensureCategory('WINE', null, 8, 'pink', '🍷', ['Wine']);
+      const spiritsId = ensureCategory('SPIRITS', null, 9, 'blue', '🥃', ['Spirits']);
+      const cocktailsId = ensureCategory('COCKTAILS', null, 10, 'pink', '🍹', ['Cocktails']);
+
+      const breakfastId = ensureCategory('Breakfast', foodId, 1, 'amber', '🍳');
+      const mainsId = ensureCategory('Mains', foodId, 2, 'blue', '🍽️');
+      const dessertsId = ensureCategory('Desserts', foodId, 3, 'pink', '🍰');
+      const snacksId = ensureCategory('Snacks', foodId, 4, 'amber', '🍟');
+      const saladId = ensureCategory('Salad', foodId, 5, 'green', '🥗');
+
+      const pizzaId = ensureCategory('Pizza', westernId, 1, 'red', '🍕');
+      const pastaId = ensureCategory('Pasta', westernId, 2, 'amber', '🍝');
+      const burgersId = ensureCategory('Burgers', westernId, 3, 'amber', '🍔', ['Burgers & Sandwiches', 'Burgers and Sandwiches']);
+      const fondueId = ensureCategory('Fondue', westernId, 4, 'green', '🫕', ['Fondues']);
+
+      const khmerId = ensureCategory('Khmer', asianId, 1, 'green', '🍚', ['Asian Food']);
+      const vegetarianId = ensureCategory('Vegetarian', asianId, 2, 'green', '🥬');
+      ensureCategory('Vietnamese', asianId, 3, 'red', '🍜');
+
+      const fishId = ensureCategory('Fish', seafoodId, 1, 'blue', '🐟');
+      const lobsterId = ensureCategory('Lobster', seafoodId, 2, 'green', '🦞', ['King Mekong Lobster', 'Lobster']);
+      const beefId = ensureCategory('Beef', meatId, 1, 'green', '🥩');
+      const chickenId = ensureCategory('Chicken', meatId, 2, 'green', '🍗', ['Chicken & Duck', 'Chicken and Duck']);
+      const duckId = ensureCategory('Duck', meatId, 3, 'green', '🦆');
+      const lambId = ensureCategory('Lamb', meatId, 4, 'green', '🍖');
+      const porkId = ensureCategory('Pork', meatId, 5, 'green', '🍖');
+
+      const sodaId = ensureCategory('Soda', drinksId, 1, 'blue', '🥤', ['Soft Drinks', 'Sodas']);
+      const juicesId = ensureCategory('Juices', drinksId, 2, 'orange', '🧃', ['Juice']);
+      const coffeeId = ensureCategory('Coffee', drinksId, 3, 'amber', '☕', ['Coffee & Tea']);
+      const teaId = ensureCategory('Tea', drinksId, 4, 'green', '🍵');
+      const beerCanId = ensureCategory('Can', beerId, 1, 'blue', '🥫');
+      const beerBottleId = ensureCategory('Bottle', beerId, 2, 'blue', '🍾');
+      const beerDraftId = ensureCategory('Draft', beerId, 3, 'blue', '🍺');
+      const beerCiderId = ensureCategory('Cider', beerId, 4, 'amber', '🍎');
+      const beerCraftId = ensureCategory('Craft', beerId, 5, 'purple', '🍻');
+      const wineRedId = ensureCategory('Red', wineId, 1, 'red', '🍷');
+      const wineWhiteId = ensureCategory('White', wineId, 2, 'yellow', '🥂');
+      ensureCategory('Sparkling', wineId, 3, 'pink', '🥂');
+      const spiritRumId = ensureCategory('Rum', spiritsId, 1, 'amber', '🥃');
+      const spiritVodkaId = ensureCategory('Vodka', spiritsId, 2, 'blue', '🥃');
+      const spiritGinId = ensureCategory('Gin', spiritsId, 3, 'green', '🥃');
+      const spiritTequilaId = ensureCategory('Tequila', spiritsId, 4, 'green', '🥃');
+      const spiritAperitifsId = ensureCategory('Aperitifs', spiritsId, 5, 'red', '🍸');
+      const spiritWhiskyId = ensureCategory('Whisky', spiritsId, 6, 'amber', '🥃');
+      const spiritLiquorsId = ensureCategory('Liquors', spiritsId, 7, 'purple', '🍸');
+      const spiritShootersId = ensureCategory('Shooters', spiritsId, 8, 'red', '🥃');
+
+      // Move legacy categories while preserving their rows and IDs.
+      for (const [name, parentId, order] of [
+        ['Breakfast', foodId, 1], ['Mains', foodId, 2], ['Desserts', foodId, 3], ['Snacks', foodId, 4], ['Salad', foodId, 5],
+        ['Pizza', westernId, 1], ['Pasta', westernId, 2], ['Burgers', westernId, 3], ['Fondue', westernId, 4],
+        ['Khmer', asianId, 1], ['Vegetarian', asianId, 2],
+        ['Fish', seafoodId, 1], ['Lobster', seafoodId, 2],
+        ['Beef', meatId, 1], ['Chicken', meatId, 2], ['Duck', meatId, 3], ['Lamb', meatId, 4], ['Pork', meatId, 5],
+        ['Soda', drinksId, 1], ['Juices', drinksId, 2], ['Coffee', drinksId, 3], ['Tea', drinksId, 4],
+        ['Can', beerId, 1], ['Bottle', beerId, 2], ['Draft', beerId, 3], ['Cider', beerId, 4], ['Craft', beerId, 5],
+        ['Red', wineId, 1], ['White', wineId, 2], ['Sparkling', wineId, 3],
+        ['Rum', spiritsId, 1], ['Vodka', spiritsId, 2], ['Gin', spiritsId, 3], ['Tequila', spiritsId, 4],
+        ['Aperitifs', spiritsId, 5], ['Whisky', spiritsId, 6], ['Liquors', spiritsId, 7], ['Shooters', spiritsId, 8],
+      ] as [string, string, number][]) {
+        const id = findCategoryId(name);
+        if (id) setCategoryParent.run(parentId, order, timestamp, id);
+      }
+
+      // Keep the existing combined Burgers & Sandwiches record, but route its sandwich items to WESTERN itself.
+      moveProductsByNames(burgersId, westernId, [
+        'B.L.T Sandwich', 'Cheese Sandwiches', 'Club Sandwich', 'Croquet-Monsieur',
+        'Ham Sandwiches', 'Hot Dog', 'Smoked Salmon Sandwiches', 'Tuna Sandwiches',
+      ]);
+      // The old combined Chicken & Duck record becomes Chicken; route the named duck item to Duck.
+      moveProductsByNames(chickenId, duckId, ['Pan Fried Duck with Honey & Vinegar']);
+
+      // Existing Asian Delights products carry cuisine information. Preserve unrequested Thai/Japanese items under ASIAN,
+      // and put the Khmer dishes under the requested Khmer filter. No products are discarded.
+      const asianDelightsId = findCategoryId('Asian Delights');
+      moveProductsByNames(asianDelightsId, asianId, [
+        'Ebi Tempura', 'Fresh Salmon', 'Tebasaki', 'Gai Pad Med Mamuang Him Ma Phan',
+        'Kaeng Karry Kai', 'Kaeng Kiew Wan Moo, Nua, Kai', 'Pad Kra Praow Moo, Nua, Kai',
+        'Pad Piew Wan Moo, Nua, Kai, Pla', 'Tom Yam Taley Mhor Fai', 'Yam Ta Lay', 'Yam Woon Sen',
+      ]);
+      moveProductsByNames(asianDelightsId, khmerId, [
+        'Beef Jerky', 'Crispy Sesame Beef', 'Fried Beef Spices', 'Fried Rice Khmer Style',
+        'Fried Spicy Frog', 'Lemongrass Soup with Fish', 'Loc Lac', 'Prawn Stir Fried with Baby Corn',
+        'Red Curry with Prawn', 'Sautéed Frog Legs', 'Seafood Amok', 'Spring Rolls',
+        'Squid Cooked in Oyster Sauce', 'Squid Stir Fried with Baby Corn',
+      ]);
+      moveAllProducts(asianDelightsId, asianId);
+      if (asianDelightsId) deactivateCategory.run(timestamp, asianDelightsId);
+      const oldThaiId = findCategoryId('Thai');
+      if (oldThaiId && oldThaiId !== khmerId) {
+        moveAllProducts(oldThaiId, asianId);
+        deactivateCategory.run(timestamp, oldThaiId);
+      }
+      const oldJapaneseId = findCategoryId('Japanese');
+      if (oldJapaneseId && oldJapaneseId !== khmerId) {
+        moveAllProducts(oldJapaneseId, asianId);
+        deactivateCategory.run(timestamp, oldJapaneseId);
+      }
+
+      // Drinks already assigned to the parent stay visible there; move only clear matches to requested children.
+      moveProductsByNames(drinksId, sodaId, ['7UP (Can)', 'Coca Cola (Can)', 'Diet Coke', 'Fanta Orange (Can)', 'Lemon Soda', 'Pepsi (Can)', 'Sprite (Can)']);
+      moveProductsByNames(drinksId, juicesId, [
+        'Apple Juice', 'Dark Grape Juice', 'Fresh Coconut Juice', 'Freshly Pressed Apple & Carrot Juice',
+        'Freshly Pressed Carrot Juice', 'Freshly Squeezed Orange', 'Lemon Juice', 'Mango Juice',
+        'Orange Juice', 'Soursop Juice', 'Tomato Juice',
+      ]);
+      moveProductsByNames(drinksId, coffeeId, [
+        'Black Coffee', 'Cafe con Gelato with Ice Cream', 'Cappuccino', 'Double Espresso',
+        'Espresso', 'Hot Coffee with Milk', 'Iced Black Coffee',
+      ]);
+      moveProductsByNames(drinksId, teaId, ['Green Tea Pot', 'Hot Tea', 'Iced Tea', 'Tea Pot']);
+      const sodaSourceId = findCategoryId('Soda');
+      moveProductsByNames(sodaSourceId, juicesId, ['Fresh Coconut', 'Watermelon Juice']);
+      moveProductsByNames(sodaSourceId, drinksId, ['Red Bull']);
+
+      // Categorize only products with clear package/style names; other existing beer items remain under BEER.
+      moveProductsByNames(beerId, beerDraftId, [
+        'Angkor Draft', 'Angkor Draft Jug (1.5L)', 'Cambodia Draft', 'Cambodia Draft Jug (1.5L)',
+      ]);
+      moveProductsByNames(beerId, beerBottleId, [
+        'ABC Bottle', 'Anchor Bottle', 'Angkor Bottle', 'Cambodia Bottle', 'Corona Bottle', 'Hanuman Bottle',
+        'Heineken Bottle', 'Hoegaarden Rosée Bottle', 'Singha Bottle', 'Tiger Bottle', 'Tiger Crystal Light Bottle',
+      ]);
+      moveProductsByNames(beerId, beerCiderId, ['Somersby Apple Cider']);
+      moveProductsByNames(beerId, beerCraftId, [
+        'Coconut Cream Ale (4.9%)', 'Gancore IPA (5.5%)', 'Lemongrass Kölsch (4.7%)',
+        'REDBUS Amber (5.5%)', 'SEVEN DAYS Witbier (4.7%)', 'Smiling Evil Pale Ale (6%)',
+        'The Dark Side (8%)', 'TUK TUK Cream Ale (4.9%)',
+      ]);
+
+      moveProductsByNames(wineId, wineRedId, ['Cabernet Sauvignon — Bottle', 'Cabernet Sauvignon — Glass']);
+      moveProductsByNames(wineId, wineWhiteId, [
+        'Astoria Treviso — White (Bottle)', 'Sauvignon Blanc — Bottle', 'Sauvignon Blanc — Glass',
+      ]);
+
+      moveProductsByNames(spiritsId, spiritRumId, [
+        'Bacardi Black', 'Bacardi White', 'Captain Morgan Black', 'Captain Morgan Spiced',
+        'Havana Club Anejo', 'Plantation 3 Star', 'Plantation Dark',
+      ]);
+      moveProductsByNames(spiritsId, spiritVodkaId, ['Absolut Blue', 'Absolut Vanilla', 'Belvedere', 'Kettle One', 'Stolichnaya', 'Zubrowka']);
+      moveProductsByNames(spiritsId, spiritGinId, ['Beefeater Gin', 'Hendrick’s', 'Roku']);
+      moveProductsByNames(spiritsId, spiritTequilaId, ['Jose Cuervo Gold', 'Jose Cuervo Silver', 'Patrón Silver']);
+      moveProductsByNames(spiritsId, spiritAperitifsId, ['Aperol', 'Campari', 'Martini Bianco', 'Martini Extra Dry', 'Martini Rosso', 'Pimm’s', 'Ricard']);
+      moveProductsByNames(spiritsId, spiritWhiskyId, [
+        'Ballantine’s', 'Chivas Regal 12 yr', 'Fireball', 'Glenfiddich 12 yr', 'Glenfiddich 15 yr',
+        'Jack Daniel’s', 'Jameson', 'Jim Beam White', 'Johnny Walker Black Label', 'Maker’s Mark',
+      ]);
+      moveProductsByNames(spiritsId, spiritLiquorsId, [
+        'Amaretto', 'Baileys', 'Frangelico', 'Grand Marnier', 'Jägermeister', 'Kahlua',
+        'Limoncello', 'Malibu', 'Midori', 'Sambuca',
+      ]);
+      moveProductsByNames(spiritsId, spiritShootersId, ['B-52', 'Jägerbomb']);
+
+      // Main headings sort in the user's requested order. All unmatched products remain under their main category.
+      for (const [name, order] of [
+        ['FOOD', 1], ['WESTERN', 2], ['ASIAN', 3], ['SEAFOOD', 4], ['MEAT', 5],
+        ['DRINKS', 6], ['BEER', 7], ['WINE', 8], ['SPIRITS', 9], ['COCKTAILS', 10],
+      ] as [string, number][]) {
+        const id = findCategoryId(name);
+        if (id) setCategoryParent.run(null, order, timestamp, id);
+      }
+
+      // The legacy category rows stay in the database; hide only the obsolete Asian catch-all after its products are reassigned.
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
