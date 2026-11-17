@@ -1596,6 +1596,7 @@ export default function ProductsPage() {
           categories={categories as unknown as MenuCategory[]}
           supplies={supplies}
           taxCategories={taxCategories}
+          addonGroups={addonGroups}
           canEditProduct={isOwnerOrManager}
           canEditRecipe={canRecipe}
           onClose={() => setEditor(null)}
@@ -1604,6 +1605,10 @@ export default function ProductsPage() {
             const target = products.find((p) => p.id === id);
             setEditor(null);
             if (target) openEdit(target);
+          }}
+          onEditAddonGroup={(id) => {
+            const group = addonGroups.find((candidate) => candidate.id === id);
+            if (group) openEditAddonGroup(group);
           }}
         />
       )}
