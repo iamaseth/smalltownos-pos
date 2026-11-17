@@ -1612,7 +1612,7 @@ export default function ProductsPage() {
                 </div>
               </div>
             </div>
-          )
+          )}
       {ConfirmDialog}
     </div>
   );
