@@ -36,9 +36,10 @@ self-contained.
 
 ## The migration registry
 
-`MIGRATIONS` is an exported, append-only array of `{ version, name, up }`. **There are 101 entries,
-numbered 1 through 101 with no gaps and no duplicates**, and the highest is `version: 101`. The
-latest entry organizes BackStreet Riverside's Food and Drinks categories without changing product rows.
+`MIGRATIONS` is an exported, append-only array of `{ version, name, up }`. **There are 102 entries,
+numbered 1 through 102 with no gaps and no duplicates**, and the highest is `version: 102`. The
+latest entry applies BackStreet Riverside's approved Food, Western, Asian, Seafood, Meat, and Drinks
+category hierarchy while preserving all product rows and keeping legacy category records in place.
 
 Two rules follow from the array being the registry:
 
