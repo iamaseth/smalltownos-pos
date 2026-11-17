@@ -18,6 +18,23 @@ export function applyBackStreetCashKey(
   return current === '0' ? key : current + key;
 }
 
+export const BACKSTREET_CASH_NOTES: Record<BackStreetCashCurrency, readonly number[]> = {
+  USD: [1, 5, 10, 20, 50, 100],
+  KHR: [1000, 2000, 5000, 10000, 20000, 50000],
+};
+
+export function addBackStreetCashNote(
+  current: string,
+  note: number,
+  currency: BackStreetCashCurrency,
+): string {
+  const base = Number(current);
+  const safeBase = Number.isFinite(base) && base > 0 ? base : 0;
+  if (currency === 'KHR') return String(Math.round(safeBase) + note);
+  const cents = Math.round(safeBase * 100) + note * 100;
+  return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
+}
+
 export function calculateBackStreetCash(
   dueUsd: number,
   usdTendered: number,

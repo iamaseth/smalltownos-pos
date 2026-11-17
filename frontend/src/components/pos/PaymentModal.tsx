@@ -29,7 +29,7 @@ import {
   type DiscountType,
 } from '@/lib/discount-settings';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
-import { applyBackStreetCashKey, khrToUsdMinor } from '@/lib/backstreet-cash';
+import { BACKSTREET_CASH_NOTES, addBackStreetCashNote, applyBackStreetCashKey, khrToUsdMinor } from '@/lib/backstreet-cash';
 
 interface Props {
   bill: Bill;
@@ -229,11 +229,14 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
   // The touch keypad edits the same controlled inputs as a physical keyboard.
   // Never changes the payment totals or exchange-rate calculations.
-  const enterCashKey = (key: string) => {
+  const enterCashKey = (key: string) => updateCashField((current) => applyBackStreetCashKey(current, key, keypadCurrency));
+  const addCashNote = (note: number) => updateCashField((current) => addBackStreetCashNote(current, note, keypadCurrency));
+
+  const updateCashField = (compute: (current: string) => string) => {
     const cashIndex = payments.findIndex((p) => p.method === 'cash' && p.payment_method_id === undefined);
     if (cashIndex < 0) return;
     const current = keypadCurrency === 'KHR' ? khrTendered : payments[cashIndex].amount;
-    const next = applyBackStreetCashKey(current, key, keypadCurrency);
+    const next = compute(current);
     if (keypadCurrency === 'KHR') {
       setKhrTendered(next);
       setPaymentsTouched(true);
@@ -863,14 +866,17 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           </div>
           </div>
           <aside className="rounded-2xl border border-border bg-muted/20 p-3 self-start lg:sticky lg:top-0" aria-label="Cash amount keypad">
-            <p className="mb-3 text-sm font-semibold">Enter cash amount</p>
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              {(['USD', 'KHR'] as const).map((unit) => <button key={unit} type="button" onClick={() => setKeypadCurrency(unit)} className={`rounded-lg border px-3 py-3 font-semibold ${keypadCurrency === unit ? 'border-brand bg-brand text-white' : 'border-border bg-card'}`}>{unit}</button>)}
+            <p className="mb-2 text-sm font-semibold">Enter cash amount</p>
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              {(['USD', 'KHR'] as const).map((unit) => <button key={unit} type="button" onClick={() => setKeypadCurrency(unit)} className={`rounded-lg border px-3 py-2.5 font-semibold ${keypadCurrency === unit ? 'border-brand bg-brand text-white' : 'border-border bg-card'}`}>{unit}</button>)}
+            </div>
+            <div className="mb-2 grid grid-cols-3 gap-2" aria-label={`Add ${keypadCurrency} note`}>
+              {BACKSTREET_CASH_NOTES[keypadCurrency].map((note) => <button key={`${keypadCurrency}-${note}`} type="button" onClick={() => addCashNote(note)} aria-label={`Add ${keypadCurrency === 'USD' ? `$${note}` : `${note.toLocaleString('en-US')} KHR`}`} className="min-h-10 rounded-xl border border-emerald-700/50 bg-emerald-950/20 text-base font-semibold text-emerald-700 hover:bg-emerald-900/30 dark:text-emerald-300">+{keypadCurrency === 'USD' ? `$${note}` : `${note.toLocaleString('en-US')}៛`}</button>)}
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {['7','8','9','4','5','6','1','2','3','0', ...(minorFactor > 1 ? ['.'] : []), 'Backspace'].map((key) => <button key={key} type="button" disabled={key === '.' && keypadCurrency === 'KHR'} onClick={() => enterCashKey(key)} aria-label={key} className="min-h-16 rounded-xl border border-border bg-card text-2xl font-semibold hover:bg-muted disabled:opacity-40">{key === 'Backspace' ? '⌫' : key}</button>)}
+              {['7','8','9','4','5','6','1','2','3','0', ...(minorFactor > 1 ? ['.'] : []), 'Backspace'].map((key) => <button key={key} type="button" disabled={key === '.' && keypadCurrency === 'KHR'} onClick={() => enterCashKey(key)} aria-label={key} className="min-h-12 rounded-xl border border-border bg-card text-2xl font-semibold hover:bg-muted disabled:opacity-40">{key === 'Backspace' ? '⌫' : key}</button>)}
             </div>
-            <button type="button" onClick={() => enterCashKey('Clear')} className="mt-2 w-full min-h-14 rounded-xl border border-border bg-card font-semibold hover:bg-muted">Clear</button>
+            <button type="button" onClick={() => enterCashKey('Clear')} className="mt-2 w-full min-h-12 rounded-xl border border-border bg-card font-semibold hover:bg-muted">Clear</button>
           </aside>
         </div>
 

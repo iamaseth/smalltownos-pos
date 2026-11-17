@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {
+  BACKSTREET_CASH_NOTES,
+  addBackStreetCashNote,
   applyBackStreetCashKey,
   calculateBackStreetCash,
 } from '../frontend/src/lib/backstreet-cash';
@@ -45,5 +47,16 @@ assert.equal(applyBackStreetCashKey('12000', 'Backspace', 'KHR'), '1200');
 assert.equal(applyBackStreetCashKey('12000', 'Clear', 'KHR'), '');
 assert.equal(applyBackStreetCashKey('2', '4', 'USD'), '24');
 assert.equal(applyBackStreetCashKey('4000', '7', 'KHR'), '40007');
+
+assert.equal(addBackStreetCashNote('', 5, 'USD'), '5');
+assert.equal(addBackStreetCashNote(addBackStreetCashNote('', 5, 'USD'), 5, 'USD'), '10');
+assert.equal(addBackStreetCashNote('2.5', 1, 'USD'), '3.50');
+assert.equal(addBackStreetCashNote('0.', 20, 'USD'), '20');
+assert.equal(addBackStreetCashNote('', 5000, 'KHR'), '5000');
+assert.equal(addBackStreetCashNote('5000', 5000, 'KHR'), '10000');
+assert.equal(addBackStreetCashNote('abc', 1000, 'KHR'), '1000');
+assert.deepEqual(BACKSTREET_CASH_NOTES.USD, [1, 5, 10, 20, 50, 100]);
+assert.deepEqual(BACKSTREET_CASH_NOTES.KHR, [1000, 2000, 5000, 10000, 20000, 50000]);
+assert.equal(calculateBackStreetCash(7.5, Number(addBackStreetCashNote('5', 5, 'USD')), 0, RATE).changeKhr, 10000);
 
 console.log('BackStreet mixed-cash math and touch-keypad regressions passed.');
