@@ -5428,6 +5428,57 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 101,
+    name: 'organize_backstreet_food_drinks_category_hierarchy',
+    up: () => {
+      const timestamp = now();
+      const findCategory = db.prepare('SELECT id FROM categories WHERE deleted_at IS NULL AND lower(trim(name)) = lower(trim(?)) ORDER BY sort_order, id LIMIT 1');
+      const insertCategory = db.prepare(`
+        INSERT INTO categories (id, name, description, image_url, sort_order, is_active, parent_id, slug, color, icon, created_at, updated_at)
+        VALUES (?, ?, NULL, NULL, ?, 1, ?, ?, ?, ?, ?, ?)
+      `);
+      const updateCategory = db.prepare('UPDATE categories SET parent_id = ?, sort_order = ?, is_active = 1, updated_at = ? WHERE id = ? AND deleted_at IS NULL');
+      const ensureCategory = (name: string, parentId: string | null, sortOrder: number, color: string, icon: string): string => {
+        const existing = findCategory.get(name) as { id: string } | undefined;
+        if (existing) {
+          updateCategory.run(parentId, sortOrder, timestamp, existing.id);
+          return existing.id;
+        }
+        const id = generateShortId('categories');
+        insertCategory.run(id, name, sortOrder, parentId, name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''), color, icon, timestamp, timestamp);
+        return id;
+      };
+      const foodId = ensureCategory('Food', null, 1, 'green', '🍽️');
+      const drinksId = ensureCategory('Drinks', null, 2, 'teal', '🥤');
+      const breakfastId = ensureCategory('Breakfast', foodId, 1, 'amber', '🍳');
+      const westernId = ensureCategory('Western', foodId, 2, 'orange', '🍕');
+      const asianId = ensureCategory('Asian', foodId, 3, 'green', '🍚');
+      const seafoodMeatId = ensureCategory('Seafood & Meat', foodId, 4, 'red', '🍽️');
+      const dessertsId = ensureCategory('Desserts', foodId, 5, 'pink', '🍰');
+      const targetIds = new Set([foodId, drinksId, breakfastId, westernId, asianId, seafoodMeatId, dessertsId]);
+      const moveNamedCategories = (names: string[], parentId: string) => {
+        const rowsForName = db.prepare('SELECT id FROM categories WHERE deleted_at IS NULL AND lower(trim(name)) = lower(trim(?))');
+        const move = db.prepare('UPDATE categories SET parent_id = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL');
+        for (const name of names) {
+          for (const row of rowsForName.all(name) as { id: string }[]) {
+            if (!targetIds.has(row.id)) move.run(parentId, timestamp, row.id);
+          }
+        }
+      };
+      moveNamedCategories(['Burgers & Sandwiches', 'Burgers and Sandwiches', 'Pizza', 'Pasta', 'Fondue', 'Fondues', 'Snacks', 'Salad'], westernId);
+      moveNamedCategories(['Asian Food', 'Asian Delights', 'Khmer', 'Thai', 'Japanese', 'Vegetarian'], asianId);
+      moveNamedCategories(['Mains', 'Seafood', 'Beef', 'Pork', 'Chicken', 'Duck', 'Chicken & Duck', 'Chicken and Duck', 'Fish', 'Lamb', 'Lobster', 'King Mekong Lobster'], seafoodMeatId);
+      const drinkCategoryNames = ['Soft Drinks', 'Coffee & Tea', 'Coffee', 'Tea', 'Cocktails', 'Beer', 'Spirits', 'Wine', 'Cider', 'Juices', 'Juice', 'Sodas', 'Water', 'Non-Alcoholic Drinks'];
+      const moveDrinkCategory = db.prepare('UPDATE categories SET parent_id = ?, updated_at = ? WHERE deleted_at IS NULL AND lower(trim(name)) = lower(trim(?)) AND (parent_id IS NULL OR parent_id = ?)');
+      for (const name of drinkCategoryNames) moveDrinkCategory.run(drinksId, timestamp, name, foodId);
+      const foodGroupIds = new Set([breakfastId, westernId, asianId, seafoodMeatId, dessertsId]);
+      const extraFoodChildren = db.prepare('SELECT id, name FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order, name').all(foodId) as { id: string; name: string }[];
+      for (const category of extraFoodChildren) {
+        if (!foodGroupIds.has(category.id)) moveNamedCategories([category.name], westernId);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

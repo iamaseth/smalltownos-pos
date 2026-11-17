@@ -36,9 +36,9 @@ self-contained.
 
 ## The migration registry
 
-`MIGRATIONS` is an exported, append-only array of `{ version, name, up }`. **There are 92 entries,
-numbered 1 through 92 with no gaps and no duplicates**, and the highest is `version: 92`. The
-highest entry is `add_table_reservation_customer`.
+`MIGRATIONS` is an exported, append-only array of `{ version, name, up }`. **There are 101 entries,
+numbered 1 through 101 with no gaps and no duplicates**, and the highest is `version: 101`. The
+latest entry organizes BackStreet Riverside's Food and Drinks categories without changing product rows.
 
 Two rules follow from the array being the registry:
 

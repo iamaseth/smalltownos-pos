@@ -115,7 +115,6 @@ export default function ProductGrid({
     return quantities;
   }, [cart.items]);
 
-  // BackStreet: render active database categories directly, not fixed Food/Drinks groups.
   const [favorites, setFavorites] = useState<string[]>([]);
   const toggleFavorite = (id: string) => setFavorites(prev => {
     const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
@@ -138,18 +137,57 @@ export default function ProductGrid({
     const color = (value || '').toLowerCase().trim();
     return palette[color] ?? (/^#[0-9a-f]{6}$/i.test(color) ? color : '#334155');
   };
+  const categoryById = useMemo(() => new Map(categories.map(category => [category.id, category])), [categories]);
+  const childIdsByParent = useMemo(() => {
+    const children = new Map<string, string[]>();
+    for (const category of categories) {
+      if (!category.parent_id) continue;
+      const ids = children.get(category.parent_id) || [];
+      ids.push(category.id);
+      children.set(category.parent_id, ids);
+    }
+    return children;
+  }, [categories]);
+  const categoryTreeIds = (parentId: string): Set<string> => {
+    const ids = new Set<string>([parentId]);
+    const pending = [parentId];
+    while (pending.length > 0) {
+      const current = pending.pop()!;
+      for (const childId of childIdsByParent.get(current) || []) {
+        if (ids.has(childId)) continue;
+        ids.add(childId);
+        pending.push(childId);
+      }
+    }
+    return ids;
+  };
+  const hasActiveCategoryPath = (categoryId: string | null): boolean => {
+    let currentId = categoryId;
+    const seen = new Set<string>();
+    while (currentId && !seen.has(currentId)) {
+      seen.add(currentId);
+      const current = categoryById.get(currentId);
+      if (!current) return true;
+      if (current.is_active === false) return false;
+      currentId = current.parent_id;
+    }
+    return true;
+  };
   const selectedMainCategory = visibleCategories.find(c => c.id === selectedCategory);
   const childCategories = categories.filter(c => c.is_active !== false && c.parent_id === selectedCategory)
     .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name));
   const spiritVirtualGroups = selectedMainCategory?.name.toLowerCase() === 'spirits' && childCategories.length === 0;
   const subcategoryNames = spiritVirtualGroups ? [...SPIRIT_GROUPS] : childCategories.map(c => c.name);
   const subcategoryId = childCategories.find(c => c.name === selectedSubcategory)?.id;
+  const selectedCategoryTree = selectedCategory ? categoryTreeIds(selectedCategory) : null;
+  const selectedSubcategoryTree = subcategoryId ? categoryTreeIds(subcategoryId) : null;
   const filtered = products.filter((p) => {
+    if (!hasActiveCategoryPath(p.category_id)) return false;
     const matchCat = favoritesOnly ? favorites.includes(String(p.id))
-      : selectedCategory ? (p.category_id === selectedCategory || childCategories.some(c => c.id === p.category_id)) : true;
+      : selectedCategory ? selectedCategoryTree?.has(String(p.category_id)) === true : true;
     const matchSub = !selectedSubcategory ? true
       : spiritVirtualGroups ? spiritGroup(p.name) === selectedSubcategory
-      : p.category_id === subcategoryId;
+      : selectedSubcategoryTree?.has(String(p.category_id)) === true;
     return matchCat && matchSub && menuSearchScore(p.name, search) > 0;
   });
   const ordered = [...filtered].sort((a,b) => {

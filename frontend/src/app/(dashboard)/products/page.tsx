@@ -101,7 +101,7 @@ export default function ProductsPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const { confirm, ConfirmDialog } = useConfirm();
   const [editingAddonGroup, setEditingAddonGroup] = useState<AddonGroup | null>(null);
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true });
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true, parent_id: '' });
   const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
   const [showAddonModal, setShowAddonModal] = useState(false);
 
@@ -465,21 +465,21 @@ export default function ProductsPage() {
   };
 
   const resetCategoryForm = () => {
-    setCategoryForm({ name: '', description: '', color: '', is_active: true });
+    setCategoryForm({ name: '', description: '', color: '', is_active: true, parent_id: '' });
     setEditingCategory(null);
     setShowForm(false);
   };
 
   const openEditCategory = (cat: Category) => {
     setEditingCategory(cat);
-    setCategoryForm({ name: cat.name, description: cat.description || '', color: cat.color || '', is_active: cat.is_active });
+    setCategoryForm({ name: cat.name, description: cat.description || '', color: cat.color || '', is_active: cat.is_active, parent_id: cat.parent_id || '' });
     setShowForm(true);
   };
 
   const handleCategorySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = { name: categoryForm.name, description: categoryForm.description || null, color: categoryForm.color || null, is_active: categoryForm.is_active };
+      const payload = { name: categoryForm.name, description: categoryForm.description || null, color: categoryForm.color || null, is_active: categoryForm.is_active, parent_id: categoryForm.parent_id || null };
       if (editingCategory) {
         await api.put(`/categories/${editingCategory.id}`, payload);
         toast.success(t('categoryUpdated'));
@@ -1207,7 +1207,7 @@ export default function ProductsPage() {
                             onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; setDraggedCategoryId(cat.id); }}
                             title="Drag to reorder categories" aria-label={`Drag to reorder ${cat.name}`}
                             className="cursor-grab active:cursor-grabbing text-muted-foreground touch-none"><GripVertical size={18} /></span>}
-                          {cat.name}
+                          {cat.parent_id && <span className="text-xs text-muted-foreground">{categories.find((parent) => parent.id === cat.parent_id)?.name} › </span>}{cat.name}
                         </span>
                       </td>
                       <td className="p-4">
@@ -1249,6 +1249,18 @@ export default function ProductsPage() {
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
                     <input type="text" value={categoryForm.name} onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">Parent category</label>
+                    <select value={categoryForm.parent_id} onChange={(e) => setCategoryForm({ ...categoryForm, parent_id: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none">
+                      <option value="">Top-level category</option>
+                      {categories.filter((cat) => cat.is_active && cat.id !== editingCategory?.id).map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.parent_id ? `↳ ${categories.find((parent) => parent.id === cat.parent_id)?.name || ''} / ` : ''}{cat.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">{t('categoryDescription')}</label>
