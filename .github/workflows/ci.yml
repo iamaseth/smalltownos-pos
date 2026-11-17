@@ -6,9 +6,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, ui/backstreet-payment-touch-keypad]
   pull_request:
-    branches: [main]
+    branches: [main, deploy/backstreet-v100]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
