@@ -5451,7 +5451,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       };
       const foodId = ensureCategory('Food', null, 1, 'green', '🍽️');
       const drinksId = ensureCategory('Drinks', null, 2, 'teal', '🥤');
-      const breakfastId = ensureCategory('Breakfast', foodId, 1, 'amber', '🍳');
+      ensureCategory('Breakfast', foodId, 1, 'amber', '🍳');
       const westernId = ensureCategory('Western', foodId, 2, 'orange', '🍕');
       const asianId = ensureCategory('Asian', foodId, 3, 'green', '🍚');
       const seafoodMeatId = ensureCategory('Seafood & Meat', foodId, 4, 'red', '🍽️');
@@ -5535,36 +5535,36 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       const beerId = ensureCategory('BEER', null, 7, 'blue', '🍺', ['Beer']);
       const wineId = ensureCategory('WINE', null, 8, 'pink', '🍷', ['Wine']);
       const spiritsId = ensureCategory('SPIRITS', null, 9, 'blue', '🥃', ['Spirits']);
-      const cocktailsId = ensureCategory('COCKTAILS', null, 10, 'pink', '🍹', ['Cocktails']);
+      ensureCategory('COCKTAILS', null, 10, 'pink', '🍹', ['Cocktails']);
 
       const breakfastId = ensureCategory('Breakfast', foodId, 1, 'amber', '🍳');
-      const mainsId = ensureCategory('Mains', foodId, 2, 'blue', '🍽️');
-      const dessertsId = ensureCategory('Desserts', foodId, 3, 'pink', '🍰');
-      const snacksId = ensureCategory('Snacks', foodId, 4, 'amber', '🍟');
-      const saladId = ensureCategory('Salad', foodId, 5, 'green', '🥗');
+      ensureCategory('Mains', foodId, 2, 'blue', '🍽️');
+      ensureCategory('Desserts', foodId, 3, 'pink', '🍰');
+      ensureCategory('Snacks', foodId, 4, 'amber', '🍟');
+      ensureCategory('Salad', foodId, 5, 'green', '🥗');
 
-      const pizzaId = ensureCategory('Pizza', westernId, 1, 'red', '🍕');
-      const pastaId = ensureCategory('Pasta', westernId, 2, 'amber', '🍝');
+      ensureCategory('Pizza', westernId, 1, 'red', '🍕');
+      ensureCategory('Pasta', westernId, 2, 'amber', '🍝');
       const burgersId = ensureCategory('Burgers', westernId, 3, 'amber', '🍔', ['Burgers & Sandwiches', 'Burgers and Sandwiches']);
-      const fondueId = ensureCategory('Fondue', westernId, 4, 'green', '🫕', ['Fondues']);
+      ensureCategory('Fondue', westernId, 4, 'green', '🫕', ['Fondues']);
 
       const khmerId = ensureCategory('Khmer', asianId, 1, 'green', '🍚', ['Asian Food']);
-      const vegetarianId = ensureCategory('Vegetarian', asianId, 2, 'green', '🥬');
+      ensureCategory('Vegetarian', asianId, 2, 'green', '🥬');
       ensureCategory('Vietnamese', asianId, 3, 'red', '🍜');
 
-      const fishId = ensureCategory('Fish', seafoodId, 1, 'blue', '🐟');
-      const lobsterId = ensureCategory('Lobster', seafoodId, 2, 'green', '🦞', ['King Mekong Lobster', 'Lobster']);
-      const beefId = ensureCategory('Beef', meatId, 1, 'green', '🥩');
+      ensureCategory('Fish', seafoodId, 1, 'blue', '🐟');
+      ensureCategory('Lobster', seafoodId, 2, 'green', '🦞', ['King Mekong Lobster', 'Lobster']);
+      ensureCategory('Beef', meatId, 1, 'green', '🥩');
       const chickenId = ensureCategory('Chicken', meatId, 2, 'green', '🍗', ['Chicken & Duck', 'Chicken and Duck']);
       const duckId = ensureCategory('Duck', meatId, 3, 'green', '🦆');
-      const lambId = ensureCategory('Lamb', meatId, 4, 'green', '🍖');
-      const porkId = ensureCategory('Pork', meatId, 5, 'green', '🍖');
+      ensureCategory('Lamb', meatId, 4, 'green', '🍖');
+      ensureCategory('Pork', meatId, 5, 'green', '🍖');
 
       const sodaId = ensureCategory('Soda', drinksId, 1, 'blue', '🥤', ['Soft Drinks', 'Sodas']);
       const juicesId = ensureCategory('Juices', drinksId, 2, 'orange', '🧃', ['Juice']);
       const coffeeId = ensureCategory('Coffee', drinksId, 3, 'amber', '☕', ['Coffee & Tea']);
       const teaId = ensureCategory('Tea', drinksId, 4, 'green', '🍵');
-      const beerCanId = ensureCategory('Can', beerId, 1, 'blue', '🥫');
+      ensureCategory('Can', beerId, 1, 'blue', '🥫');
       const beerBottleId = ensureCategory('Bottle', beerId, 2, 'blue', '🍾');
       const beerDraftId = ensureCategory('Draft', beerId, 3, 'blue', '🍺');
       const beerCiderId = ensureCategory('Cider', beerId, 4, 'amber', '🍎');
