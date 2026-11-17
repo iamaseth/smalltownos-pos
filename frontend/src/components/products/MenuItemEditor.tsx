@@ -128,7 +128,7 @@ export interface MenuItemEditorProps {
   categories: MenuCategory[];
   supplies: MenuSupply[];
   taxCategories: { id: string; label: string }[];
-  addonGroups: AddonGroup[];
+  addonGroups?: AddonGroup[];
   canEditProduct: boolean;
   canEditRecipe: boolean;
   onClose: () => void;
@@ -139,7 +139,7 @@ export interface MenuItemEditorProps {
 }
 
 export default function MenuItemEditor({
-  productId, recipe, products, categories, supplies, taxCategories, addonGroups,
+  productId, recipe, products, categories, supplies, taxCategories, addonGroups = [],
   canEditProduct, canEditRecipe, onClose, onSaved, onOpenAdvanced, onEditAddonGroup, prefill,
 }: MenuItemEditorProps) {
   const t = useTranslations('inventory');
