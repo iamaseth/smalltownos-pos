@@ -11,6 +11,7 @@ import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useConfirm } from '@/hooks/use-confirm';
 import ImageUploader from '@/components/products/ImageUploader';
 import { compressImage } from '@/lib/image-utils';
+import type { AddonGroup } from '@/lib/types';
 
 export const SUPPLY_UNITS = ['each', 'g', 'kg', 'ml', 'l'] as const;
 export type SupplyUnit = (typeof SUPPLY_UNITS)[number];
@@ -61,6 +62,7 @@ export interface MenuProduct {
   barcode?: string | null;
   description?: string | null;
   tax_category_id?: string | null;
+  addon_groups?: AddonGroup[];
 }
 
 export interface MenuCategory {
@@ -126,17 +128,19 @@ export interface MenuItemEditorProps {
   categories: MenuCategory[];
   supplies: MenuSupply[];
   taxCategories: { id: string; label: string }[];
+  addonGroups: AddonGroup[];
   canEditProduct: boolean;
   canEditRecipe: boolean;
   onClose: () => void;
   onSaved: () => void;
   onOpenAdvanced?: (productId: string) => void;
+  onEditAddonGroup?: (groupId: string) => void;
   prefill?: { name: string; supply_id: string; group_name?: string | null; quantity: number; unit: SupplyUnit };
 }
 
 export default function MenuItemEditor({
-  productId, recipe, products, categories, supplies, taxCategories,
-  canEditProduct, canEditRecipe, onClose, onSaved, onOpenAdvanced, prefill,
+  productId, recipe, products, categories, supplies, taxCategories, addonGroups,
+  canEditProduct, canEditRecipe, onClose, onSaved, onOpenAdvanced, onEditAddonGroup, prefill,
 }: MenuItemEditorProps) {
   const t = useTranslations('inventory');
   const tCommon = useTranslations('common');
@@ -153,6 +157,9 @@ export default function MenuItemEditor({
         ? [{ supply_id: prefill.supply_id, group_name: prefill.group_name ?? '', quantity: String(prefill.quantity), unit: prefill.unit }]
         : [],
   }));
+  const [selectedAddonGroupIds, setSelectedAddonGroupIds] = useState<string[]>(() =>
+    products.find((p) => p.id === productId)?.addon_groups?.map((group) => group.id) ?? [],
+  );
   const [aiBusy, setAiBusy] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -285,6 +292,7 @@ export default function MenuItemEditor({
           barcode: dish.barcode.trim() || null,
           description: dish.description.trim() || null,
           tax_category_id: dish.tax_category_id || null,
+          addon_group_ids: selectedAddonGroupIds,
           ...(dish.imageTouched ? { image_url: dish.image } : {}),
         });
         id = String(created.data.product.id);
@@ -300,6 +308,9 @@ export default function MenuItemEditor({
           if (dish.description.trim() !== (current.description ?? '')) patch.description = dish.description.trim() || null;
           if (dish.tax_category_id !== (current.tax_category_id ?? '')) patch.tax_category_id = dish.tax_category_id || null;
           if (dish.is_active !== (current.is_active === true || current.is_active === 1)) patch.is_active = dish.is_active;
+          const currentGroupIds = current.addon_groups?.map((group) => group.id) ?? [];
+          const sortIds = (ids: string[]) => [...new Set(ids)].sort().join(',');
+          if (sortIds(selectedAddonGroupIds) !== sortIds(currentGroupIds)) patch.addon_group_ids = selectedAddonGroupIds;
         }
         if (dish.imageTouched) patch.image_url = dish.image;
         if (Object.keys(patch).length > 0) await api.put(`/products/${productId}`, patch);
@@ -537,6 +548,60 @@ export default function MenuItemEditor({
                 </div>
               </div>
             )}
+            <section className="rounded-xl border border-border p-3 space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold">Product add-ons</h3>
+                <p className="text-xs text-muted-foreground">Choose shared groups for this product. Group choices and extra prices are shared across every assigned product.</p>
+              </div>
+              {addonGroups.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No shared addon groups are available.</p>
+              ) : (
+                <div className="max-h-36 overflow-y-auto space-y-1 rounded-lg border border-border p-2">
+                  {addonGroups.filter((group) => group.is_active).map((group) => (
+                    <label key={group.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={selectedAddonGroupIds.includes(group.id)}
+                        disabled={!canEditProduct}
+                        onChange={(event) => setSelectedAddonGroupIds((ids) => event.target.checked
+                          ? [...ids, group.id]
+                          : ids.filter((id) => id !== group.id))} />
+                      <span className="min-w-0 flex-1 truncate">{group.name}</span>
+                      <span className="text-xs text-muted-foreground">{group.addons?.length ?? 0} choices</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {selectedAddonGroupIds.length > 0 && (
+                <div className="space-y-2">
+                  {addonGroups.filter((group) => selectedAddonGroupIds.includes(group.id)).map((group) => (
+                    <div key={group.id} className="rounded-lg bg-muted p-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{group.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {group.is_required ? 'Required' : 'Optional'} · {group.min_selection}–{group.max_selection} selections
+                          </p>
+                        </div>
+                        {onEditAddonGroup && (
+                          <Button type="button" variant="outline" size="sm" disabled={!canEditProduct}
+                            onClick={() => onEditAddonGroup(group.id)}>Edit choices &amp; prices</Button>
+                        )}
+                      </div>
+                      <div className="mt-1 space-y-0.5">
+                        {(group.addons ?? []).filter((choice) => choice.is_active).map((choice) => (
+                          <div key={choice.id} className="flex justify-between gap-2 text-xs text-muted-foreground">
+                            <span className="truncate">{choice.name}</span>
+                            <span className="shrink-0">+ {fmtNum(Number(choice.price))}</span>
+                          </div>
+                        ))}
+                        {(group.addons ?? []).filter((choice) => choice.is_active).length === 0 && (
+                          <p className="text-xs text-muted-foreground">No active choices</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
             <Button type="submit" size="lg" className="mt-auto w-full text-base" disabled={!canSave}>{tCommon('save')}</Button>
           </div>
         </form>
