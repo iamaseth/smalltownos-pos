@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   Plus, Minus, Trash2, Pause, SquarePen,
-  Users, MoreHorizontal, Save, Printer, GitMerge, ArrowLeftRight, BadgePercent, ChevronDown, CreditCard,
+  Users, MoreHorizontal, Save, Printer, GitMerge, ArrowLeftRight, BadgePercent, CreditCard,
 } from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
@@ -15,12 +15,20 @@ import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
 
+export type OrderDestination = 'table' | 'tab' | 'togo';
+
 interface Props {
   tables: Table[];
   currency: string;
   submitting: boolean;
   onPlaceOrder: () => void;
-  onChooseDestination: () => void;
+  destination: OrderDestination | null;
+  showTableOption?: boolean;
+  onSelectTable: () => void;
+  onSelectTab: () => void;
+  onSelectToGo: () => void;
+  onClearCart?: () => void;
+  onPayExisting?: () => void;
   onShowTabs?: () => void;
   openTabCount?: number;
   onPayNow: () => void;
@@ -123,7 +131,7 @@ function ItemQuantityControl({
   );
 }
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDestination, onShowTabs, openTabCount = 0, onPayNow, onEditItem, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, destination, showTableOption = true, onSelectTable, onSelectTab, onSelectToGo, onClearCart, onPayExisting, onShowTabs, openTabCount = 0, onPayNow, onEditItem, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -164,26 +172,62 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDe
   return (
     <div className={isDrawer ? 'relative flex w-full flex-col bg-[#0f1729] text-[#e5e9f2]' : 'relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0f1729] text-[#e5e9f2]'}>
       {/* Exact reference hierarchy: header, scrollable rows, notes, fixed totals and actions. */}
-      <div className="relative flex shrink-0 items-center justify-between border-b border-[#243049] px-3 py-[10px]">
-        <div className="relative">
-          <button type="button" onClick={() => { setMoreOpen(false); onChooseDestination(); }}
-            className="flex items-center gap-1.5 rounded-lg border border-[#3d4f7c] bg-[#22325a] px-[10px] py-[5px] text-[13px] font-medium">
-            {cart.tabName ? `${cart.orderType === 'takeaway' ? 'Takeaway' : 'Tab'}: ${cart.tabName}` : cart.orderType === 'takeaway' ? 'Takeaway' : selectedTable?.name || 'Walk-in'} <ChevronDown size={14}/>
-          </button>
-        </div>
-        {onShowTabs && (
-          <button type="button" onClick={() => { setMoreOpen(false); onShowTabs(); }}
-            className="flex items-center gap-1.5 rounded-lg border border-[#3d4f7c] bg-[#22325a] px-[10px] py-[5px] text-[13px] font-medium">
-            Open ({openTabCount})
-          </button>
-        )}
-        {cart.orderType === 'dine_in' && cart.tableId && (
-          <div className="flex items-center gap-1 rounded-full bg-[#1a2540] px-1 py-[3px] text-[12px]">
-            <button type="button" className={iconButton} aria-label="Decrease pax" onClick={() => cart.setGuestCount(Math.max(1,cart.guestCount-1))}><Minus size={14}/></button>
-            <span className="min-w-[48px] text-center">{cart.guestCount} Pax</span>
-            <button type="button" className={iconButton} aria-label="Increase pax" onClick={() => cart.setGuestCount(Math.min(99,cart.guestCount+1))}><Plus size={14}/></button>
+      <div className="relative shrink-0 border-b border-[#243049] px-3 py-[10px]">
+        <div className="flex items-center gap-2">
+          <div role="group" aria-label="Order type" className="flex min-w-0 flex-1 overflow-hidden rounded-lg border border-[#3d4f7c]">
+            {([
+              ...(showTableOption ? [['table', 'Table', onSelectTable] as const] : []),
+              ['tab', 'Tab', onSelectTab] as const,
+              ['togo', 'To Go', onSelectToGo] as const,
+            ]).map(([key, label, onSelect], index) => {
+              const active = destination === key;
+              return (
+                <button key={key} type="button" aria-pressed={active} onClick={() => { setMoreOpen(false); onSelect(); }}
+                  title={label}
+                  className={`flex h-9 min-w-0 flex-1 items-center justify-center whitespace-nowrap px-1 text-[12px] font-bold uppercase ${index > 0 ? 'border-l border-[#3d4f7c]' : ''} ${active ? 'bg-[#2563eb] text-white' : 'bg-[#22325a] hover:bg-[#2b3d68]'}`}>
+                  {label}
+                </button>
+              );
+            })}
           </div>
-        )}
+          {onShowTabs && (
+            <button type="button" onClick={() => { setMoreOpen(false); onShowTabs(); }}
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[#3d4f7c] bg-[#22325a] px-[10px] text-[13px] font-medium">
+              Open ({openTabCount})
+            </button>
+          )}
+        </div>
+        <div className="mt-2 flex min-h-[28px] items-center justify-between gap-2 text-[13px]">
+          {destination === 'table' && (cart.tableId ? (
+            <>
+              <button type="button" onClick={onSelectTable} className="min-w-0 truncate text-left font-semibold text-white" title="Change table">
+                {selectedTable?.name || cart.tableId}{existingOrder ? ` · #${existingOrder.order_number}` : ''}
+              </button>
+              <div className="flex shrink-0 items-center gap-1 rounded-full bg-[#1a2540] px-1 py-[3px] text-[12px]">
+                <button type="button" className={iconButton} aria-label="Decrease pax" onClick={() => cart.setGuestCount(Math.max(1,cart.guestCount-1))}><Minus size={14}/></button>
+                <span className="min-w-[48px] text-center">{cart.guestCount} Pax</span>
+                <button type="button" className={iconButton} aria-label="Increase pax" onClick={() => cart.setGuestCount(Math.min(99,cart.guestCount+1))}><Plus size={14}/></button>
+              </div>
+            </>
+          ) : (
+            <button type="button" onClick={onSelectTable} className="text-[#f5b942] underline-offset-2 hover:underline">Tap to pick a table</button>
+          ))}
+          {destination === 'tab' && (cart.tabName ? (
+            <button type="button" onClick={onSelectTab} className="min-w-0 truncate text-left font-semibold text-white" title="Change tab">
+              Tab: {cart.tabName}{existingOrder ? ` · #${existingOrder.order_number}` : ''}
+            </button>
+          ) : (
+            <button type="button" onClick={onSelectTab} className="text-[#f5b942] underline-offset-2 hover:underline">Tap to name or choose a tab</button>
+          ))}
+          {destination === 'togo' && (existingOrder ? (
+            <span className="min-w-0 truncate font-semibold text-white">To Go{cart.tabName ? `: ${cart.tabName}` : ''} · #{existingOrder.order_number}</span>
+          ) : (
+            <input type="text" maxLength={60} value={cart.tabName} onChange={(e) => cart.setTabName(e.target.value)}
+              placeholder="Customer name (optional)" aria-label="To Go customer name"
+              className="h-7 w-full rounded-md border border-[#2f3d5c] bg-[#0f1729] px-2 text-[12px] outline-none placeholder:text-[#7f8bab] focus:border-[#3b73f0]"/>
+          ))}
+          {!destination && <span className="text-[#8f9bb8]">{showTableOption ? 'Choose Table, Tab or To Go' : 'Walk-in · or choose Tab / To Go'}</span>}
+        </div>
       </div>
       <div className={isDrawer ? 'max-h-[40vh] overflow-y-auto px-[10px] py-[6px]' : 'min-h-0 flex-1 overflow-y-auto px-[10px] py-[6px]'}>
         {existingOrder && <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#a9b9dd]">Already on tab · {savedItems.length} line items</div>}
@@ -226,12 +270,21 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDe
             return <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${primary} w-full`}><CreditCard size={15}/>{submitting ? t('placing') : 'Pay '+fmt(total)}</button>;
           }
           if (existingOrder) {
-            return <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${primary} w-full`}>{submitting ? t('placing') : `Add to order #${existingOrder.order_number}`}</button>;
+            return (
+              <div className="flex gap-[6px]">
+                {onPayExisting && (
+                  <button type="button" onClick={onPayExisting} disabled={submitting || cart.items.length > 0}
+                    title={cart.items.length > 0 ? 'Send the new items first' : undefined}
+                    className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#3d4f7c] bg-[#22325a] px-3 text-[14px] font-medium text-white disabled:opacity-40"><CreditCard size={15}/>Bill</button>
+                )}
+                <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${primary} min-w-0`}><span className="truncate">{submitting ? t('placing') : `Add to ${destination === 'table' && selectedTable ? selectedTable.name : cart.tabName || `#${existingOrder.order_number}`}`}</span></button>
+              </div>
+            );
           }
           return (
             <div className="flex gap-[6px]">
               <button type="button" onClick={onPlaceOrder} disabled={empty}
-                className="flex h-10 flex-1 items-center justify-center rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[14px] font-medium text-white disabled:opacity-40">{submitting ? t('placing') : cart.tableId ? 'Send order' : 'Add to tab'}</button>
+                className="flex h-10 flex-1 items-center justify-center rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[14px] font-medium text-white disabled:opacity-40">{submitting ? t('placing') : destination === 'togo' ? 'Send, pay later' : cart.tableId ? 'Send order' : 'Add to tab'}</button>
               <button type="button" onClick={onPayNow} disabled={empty} className={primary}><CreditCard size={15}/>Pay {fmt(total)}</button>
             </div>
           );
@@ -246,7 +299,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onChooseDe
       </div>
       {moreOpen && <div className="absolute bottom-[54px] right-3 z-40 w-[210px] rounded-[10px] border border-[#3d4f7c] bg-[#1a2540] p-1 shadow-xl">
         <button type="button" disabled title="Split bill workflow not connected" className="flex w-full items-center gap-2 rounded-md p-2 text-left text-[13px] opacity-50"><Users size={15}/>Split bill</button>
-        <button type="button" disabled={cart.items.length===0} onClick={() => { if(window.confirm('Clear cart?')) {cart.clearCart();setMoreOpen(false);} }}
+        <button type="button" disabled={cart.items.length===0} onClick={() => { if(window.confirm('Clear cart?')) {cart.clearCart();onClearCart?.();setMoreOpen(false);} }}
           className="flex w-full items-center gap-2 rounded-md p-2 text-left text-[13px] hover:bg-[#243049] disabled:opacity-40"><Trash2 size={15}/>Clear cart</button>
         <div className="my-1 border-t border-[#2f3d5c]"/>
         {([['Combine bills',GitMerge],['Move table',ArrowLeftRight],['Discount',BadgePercent]] as const).map(([label,Icon]) => (

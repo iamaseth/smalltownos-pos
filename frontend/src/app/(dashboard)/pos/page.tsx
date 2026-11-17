@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/drawer';
 
 import ProductGrid from '@/components/pos/ProductGrid';
-import CartPanel from '@/components/pos/CartPanel';
+import CartPanel, { type OrderDestination } from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
 import CustomerSearch from '@/components/pos/CustomerSearch';
 import TablePickerModal from '@/components/pos/TablePickerModal';
@@ -125,7 +125,7 @@ export default function POSPage() {
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [showTabChoice, setShowTabChoice] = useState(false);
-  const [placeAfterChoice, setPlaceAfterChoice] = useState(false);
+  const [pendingDestination, setPendingDestination] = useState<Exclude<OrderDestination, 'togo'> | null>(null);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
@@ -134,6 +134,13 @@ export default function POSPage() {
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [payNow, setPayNow] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const destination: OrderDestination | null = cart.tableId
+    ? 'table'
+    : cart.orderType === 'takeaway'
+      ? 'togo'
+      : cart.tabName || (pendingOrder && !pendingOrder.table_id)
+        ? 'tab'
+        : pendingDestination;
   const [openTabs, setOpenTabs] = useState<Order[]>([]);
   const [showOpenTabs, setShowOpenTabs] = useState(false);
   const [payingTabId, setPayingTabId] = useState<number | null>(null);
@@ -640,8 +647,10 @@ export default function POSPage() {
       setShowCustomerPrompt(true);
       return;
     }
-    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId && !cart.tabName) {
-      setShowTabChoice(true);
+    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId && !cart.tabName && !pendingOrder) {
+      if (destination === 'table') setShowTablePicker(true);
+      else if (destination === 'tab') setShowTabChoice(true);
+      else toast.error('Choose Table, Tab or To Go first');
       return;
     }
 
@@ -739,6 +748,7 @@ export default function POSPage() {
         }
       }
       cart.clearCart();
+      setPendingDestination(null);
       setMobileCartOpen(false);
       await refreshTables();
 
@@ -972,6 +982,9 @@ export default function POSPage() {
   const handleSelectAvailableTable = (tableId: string, customer?: { id: string; name: string; phone: string } | null) => {
     const cartCustomerWasInherited = cart.customerSource === 'reservation';
 
+    if (pendingOrder && String(pendingOrder.table_id) !== String(tableId)) setPendingOrder(null);
+    cart.setOrderType('dine_in');
+    setPendingDestination('table');
     cart.setTableId(tableId);
     if (customer && (!cart.customerId || cartCustomerWasInherited)) {
       cart.setReservationCustomer({ ...customer, email: null, visits_count: 0, total_spent: 0, last_visit_at: null, country_code: '' });
@@ -981,7 +994,20 @@ export default function POSPage() {
     setShowTablePicker(false);
   };
 
-  const handleSelectOccupiedTable = async (table: Table) => {
+  const fetchActiveTableOrder = async (table: Table): Promise<Order | null> => {
+    const known = table.current_order || table.activeOrder;
+    if (known) {
+      const { data } = await api.get(`/orders/${known.id}`);
+      if (data.order && !['completed', 'cancelled'].includes(data.order.status)) return data.order as Order;
+    }
+    const { data } = await api.get(`/tables/${table.id}`);
+    const active = data.table?.activeOrder || data.table?.current_order;
+    if (!active) return null;
+    const res = await api.get(`/orders/${active.id}`);
+    return (res.data.order as Order) || null;
+  };
+
+  const handleSelectOccupiedTable = async (table: Table, openDirectly = false) => {
     const activeOrder = table.current_order || table.activeOrder || null;
     const activeCustomerId = activeOrder?.customer_id;
     const activeCustomerName = activeOrder?.customer?.name || t('anotherCustomer');
@@ -1003,36 +1029,28 @@ export default function POSPage() {
     }
 
     setShowTablePicker(false);
+    if (openDirectly) {
+      try {
+        const order = await fetchActiveTableOrder(table);
+        if (order) {
+          handleAddItemsToOrder(table, order);
+          return;
+        }
+      } catch {
+        toast.error(t('loadOrderFailed'));
+        return;
+      }
+    }
     setCheckoutTable(table);
   };
 
-  const placeAfterDestination = () => {
-    setShowTabChoice(false);
-    setPlaceAfterChoice(true);
-  };
-
-  useEffect(() => {
-    if (!placeAfterChoice) return;
-    const timer = setTimeout(() => {
-      setPlaceAfterChoice(false);
-      void handlePlaceOrder();
-    }, 0);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placeAfterChoice]);
-
   const handleNewTab = (name: string) => {
+    setPendingOrder(null);
     cart.setTableId(null);
     cart.setOrderType('dine_in');
     cart.setTabName(name);
-    placeAfterDestination();
-  };
-
-  const handleTakeawayChoice = (name: string) => {
-    cart.setTableId(null);
-    cart.setOrderType('takeaway');
-    cart.setTabName(name);
-    placeAfterDestination();
+    setPendingDestination('tab');
+    setShowTabChoice(false);
   };
 
   const handleOpenTab = (order: Order) => {
@@ -1040,12 +1058,47 @@ export default function POSPage() {
     cart.setOrderType('dine_in');
     cart.setTabName(order.tab_name || '');
     setPendingOrder(order);
-    placeAfterDestination();
+    setPendingDestination('tab');
+    setShowTabChoice(false);
+  };
+
+  const leaveExistingOrder = () => {
+    if (pendingOrder) setPendingOrder(null);
+  };
+
+  const handleChooseTableMode = () => {
+    if (destination !== 'table') {
+      leaveExistingOrder();
+      cart.setOrderType('dine_in');
+      cart.setTabName('');
+    }
+    setPendingDestination('table');
+    setShowTablePicker(true);
+  };
+
+  const handleChooseTabMode = () => {
+    if (destination !== 'tab') {
+      leaveExistingOrder();
+      cart.setTableId(null);
+      cart.setOrderType('dine_in');
+      cart.setTabName('');
+    }
+    setPendingDestination('tab');
+    setShowTabChoice(true);
+  };
+
+  const handleChooseToGo = () => {
+    if (destination === 'togo') return;
+    leaveExistingOrder();
+    cart.setTableId(null);
+    cart.setTabName('');
+    cart.setOrderType('takeaway');
+    setPendingDestination(null);
   };
 
   const handleAddToTab = (order: Order) => {
     cart.setTableId(null);
-    cart.setOrderType('dine_in');
+    cart.setOrderType(order.type === 'takeaway' ? 'takeaway' : 'dine_in');
     cart.setTabName(order.tab_name || '');
     setPendingOrder(order);
     setShowOpenTabs(false);
@@ -1069,6 +1122,7 @@ export default function POSPage() {
     try {
       const held = await heldOrders.restoreOrder(tableId);
       if (held) {
+        setPendingOrder(null);
         cart.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes, held.id);
         cart.setOrderType('dine_in');
       } else {
@@ -1104,6 +1158,7 @@ export default function POSPage() {
     setCheckoutTable(null);
     cart.setTableId(table.id);
     cart.setOrderType('dine_in');
+    setPendingDestination('table');
     cart.setGuestCount(order.guest_count || 1);
     cart.setOrderNotes(order.special_instructions || '');
     setPendingOrder(order);
@@ -1165,6 +1220,13 @@ export default function POSPage() {
   const handlePaymentComplete = async () => {
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
+    if (bill && pendingOrder && Number(bill.order_id) === Number(pendingOrder.id)) {
+      setPendingOrder(null);
+      if (cart.items.length === 0) {
+        cart.setTableId(null);
+        cart.setTabName('');
+      }
+    }
     setCheckoutTable(null);
     refreshTables();
     void refreshOpenTabs();
@@ -1184,7 +1246,18 @@ export default function POSPage() {
     submitting,
     onPlaceOrder: handlePlaceOrder,
     onPayNow: handlePayNow,
-    onChooseDestination: () => setShowTabChoice(true),
+    destination,
+    showTableOption: tablesRequired,
+    onSelectTable: handleChooseTableMode,
+    onSelectTab: handleChooseTabMode,
+    onSelectToGo: handleChooseToGo,
+    onClearCart: () => setPendingOrder(null),
+    onPayExisting: () => {
+      if (!pendingOrder) return;
+      const table = pendingOrder.table_id ? tables.find((tb) => tb.id === pendingOrder.table_id) : null;
+      if (table) setCheckoutTable(table);
+      else void handlePayTab(pendingOrder);
+    },
     onShowTabs: () => { void refreshOpenTabs(); void refreshTables(); setShowOpenTabs(true); },
     openTabCount: openTabs.length + tables.filter((tb) => tb.status === 'occupied' && (tb.current_order || tb.activeOrder)).length,
     onEditItem: setEditingCartItem,
@@ -1352,9 +1425,8 @@ export default function POSPage() {
       <ShiftCloseModal model={shift} />
       {isRestaurant && showTabChoice && (
         <TabChoiceModal
-          onChooseTable={() => { setShowTabChoice(false); setShowTablePicker(true); }}
+          initialName={pendingOrder ? '' : cart.tabName}
           onNewTab={handleNewTab}
-          onTakeaway={handleTakeawayChoice}
           onOpenTab={handleOpenTab}
           onClose={() => setShowTabChoice(false)}
         />
@@ -1365,7 +1437,7 @@ export default function POSPage() {
           tables={tables}
           selectedTableId={cart.tableId}
           onSelectAvailable={handleSelectAvailableTable}
-          onSelectOccupied={handleSelectOccupiedTable}
+          onSelectOccupied={(table) => { void handleSelectOccupiedTable(table, true); }}
           onSelectHeld={handleSelectHeldTable}
           onPlaceOrder={handlePlaceOrder}
           onHoldTable={handleHoldTable}

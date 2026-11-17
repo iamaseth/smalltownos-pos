@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Armchair, Beer, ShoppingBag, UserPlus, X } from 'lucide-react';
+import { Beer, UserPlus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
@@ -11,15 +11,14 @@ import type { Customer, Order } from '@/lib/types';
 import OnScreenKeyboard from '@/components/pos/OnScreenKeyboard';
 
 interface Props {
-  onChooseTable: () => void;
+  initialName?: string;
   onNewTab: (name: string) => void;
-  onTakeaway: (name: string) => void;
   onOpenTab: (order: Order) => void;
   onClose: () => void;
 }
 
-export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, onOpenTab, onClose }: Props) {
-  const [name, setName] = useState('');
+export default function TabChoiceModal({ initialName = '', onNewTab, onOpenTab, onClose }: Props) {
+  const [name, setName] = useState(initialName);
   const [openTabs, setOpenTabs] = useState<Order[]>([]);
   const [keyboard, setKeyboard] = useState(false);
   const trimmed = name.trim();
@@ -70,31 +69,28 @@ export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, on
     let cancelled = false;
     api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
       .then(({ data }) => {
-        if (!cancelled) setOpenTabs(((data.orders || []) as Order[]).filter((o) => !o.table_id && o.tab_name));
+        if (!cancelled) setOpenTabs(((data.orders || []) as Order[]).filter((o) => !o.table_id && o.tab_name && o.type !== 'takeaway'));
       })
       .catch(() => { /* list is optional */ });
     return () => { cancelled = true; };
   }, []);
 
-  const big = 'flex h-20 flex-1 flex-col items-center justify-center gap-1 rounded-xl border-2 border-border text-sm font-semibold hover:bg-muted active:bg-muted';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-card p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-bold">Where does this order go?</h2>
+          <h2 className="text-lg font-bold">Tab — party or running account</h2>
           <button type="button" onClick={onClose} aria-label="Close" className="touch-target rounded-full text-muted-foreground active:bg-muted"><X size={20} /></button>
         </div>
 
-        <div className="flex gap-3">
-          <button type="button" onClick={onChooseTable} className={big}><Armchair size={22} />Table</button>
-          <button type="button" disabled={!trimmed} onClick={() => onNewTab(trimmed)} className={`${big} disabled:opacity-40`}><Beer size={22} />Bar tab</button>
-          <button type="button" onClick={() => onTakeaway(trimmed)} className={big}><ShoppingBag size={22} />Takeaway</button>
-        </div>
-
-        <label className="mt-4 block text-sm font-medium text-muted-foreground" htmlFor="tab-name">Name (type a name, then tap Bar tab or Takeaway)</label>
+        <label className="block text-sm font-medium text-muted-foreground" htmlFor="tab-name">Tab name</label>
         <input id="tab-name" type="text" maxLength={60} value={name} onChange={(e) => setName(e.target.value)}
-          onFocus={() => setKeyboard(true)} placeholder="e.g. Tom, blue shirt" autoComplete="off"
+          onFocus={() => setKeyboard(true)} placeholder="e.g. Birthday Party, John's Group" autoComplete="off"
           className="mt-1 h-12 w-full rounded-xl border border-border bg-background px-3 text-base outline-none focus:border-brand" />
+        <button type="button" disabled={!trimmed} onClick={() => onNewTab(trimmed)}
+          className="mt-3 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-brand text-base font-semibold text-white disabled:opacity-40">
+          <Beer size={20} />{trimmed ? `Start tab: ${trimmed}` : 'Type a name to start a tab'}
+        </button>
 
         {(customer || searchText.length >= 2) && (
           <div className="mt-3">
@@ -135,7 +131,7 @@ export default function TabChoiceModal({ onChooseTable, onNewTab, onTakeaway, on
 
         {openTabs.length > 0 && (
           <div className="mt-4">
-            <p className="mb-2 text-sm font-medium text-muted-foreground">Open bar tabs</p>
+            <p className="mb-2 text-sm font-medium text-muted-foreground">Or add to an open tab</p>
             <div className="grid grid-cols-2 gap-2">
               {openTabs.map((order) => (
                 <button key={order.id} type="button" onClick={() => onOpenTab(order)}
