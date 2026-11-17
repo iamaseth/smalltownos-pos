@@ -29,6 +29,7 @@ import {
   type DiscountType,
 } from '@/lib/discount-settings';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
+import { applyBackStreetCashKey, khrToUsdMinor } from '@/lib/backstreet-cash';
 
 interface Props {
   bill: Bill;
@@ -216,7 +217,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
   const khrAmount = Number(khrTendered) || 0;
   const khrUsd = khrAmount / khrRate;
-  const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt) + toMinorUnits(khrUsd);
+  const khrUsdMinor = khrToUsdMinor(khrAmount, khrRate, minorFactor);
+  const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt) + khrUsdMinor;
   const totalPayment = totalPaymentMinor / minorFactor;
   const remainingMinor = toMinorUnits(remaining);
 
@@ -231,17 +233,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     const cashIndex = payments.findIndex((p) => p.method === 'cash' && p.payment_method_id === undefined);
     if (cashIndex < 0) return;
     const current = keypadCurrency === 'KHR' ? khrTendered : payments[cashIndex].amount;
-    let next = current;
-    if (key === 'Clear') next = '';
-    else if (key === 'Backspace') next = current.slice(0, -1);
-    else if (key === '.') {
-      if (keypadCurrency === 'KHR' || current.includes('.')) return;
-      next = (current || '0') + '.';
-    } else {
-      if (!/^\d$/.test(key)) return;
-      if (keypadCurrency === 'USD' && current.includes('.') && current.split('.')[1].length >= 2) return;
-      next = current === '0' ? key : current + key;
-    }
+    const next = applyBackStreetCashKey(current, key, keypadCurrency);
     if (keypadCurrency === 'KHR') {
       setKhrTendered(next);
       setPaymentsTouched(true);
@@ -417,7 +409,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         }))
         .filter((p) => p.amount > 0 && !isNaN(p.amount));
       if (khrAmount > 0) {
-        const khrCashUsd = toMinorUnits(khrUsd) / minorFactor;
+        const khrCashUsd = khrUsdMinor / minorFactor;
         const existingCash = splitLines.find((line) => line.method === 'cash');
         if (existingCash) existingCash.amount += khrCashUsd;
         else splitLines.push({ method: 'cash', amount: khrCashUsd });
@@ -865,7 +857,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               {(['USD', 'KHR'] as const).map((unit) => <button key={unit} type="button" onClick={() => setKeypadCurrency(unit)} className={`rounded-lg border px-3 py-3 font-semibold ${keypadCurrency === unit ? 'border-brand bg-brand text-white' : 'border-border bg-card'}`}>{unit}</button>)}
             </div>
             <div className="grid grid-cols-3 gap-2">
-              {['7','8','9','4','5','6','1','2','3','0','.','Backspace'].map((key) => <button key={key} type="button" disabled={key === '.' && keypadCurrency === 'KHR'} onClick={() => enterCashKey(key)} aria-label={key} className="min-h-16 rounded-xl border border-border bg-card text-2xl font-semibold hover:bg-muted disabled:opacity-40">{key === 'Backspace' ? '⌫' : key}</button>)}
+              {['7','8','9','4','5','6','1','2','3','0', ...(minorFactor > 1 ? ['.'] : []), 'Backspace'].map((key) => <button key={key} type="button" disabled={key === '.' && keypadCurrency === 'KHR'} onClick={() => enterCashKey(key)} aria-label={key} className="min-h-16 rounded-xl border border-border bg-card text-2xl font-semibold hover:bg-muted disabled:opacity-40">{key === 'Backspace' ? '⌫' : key}</button>)}
             </div>
             <button type="button" onClick={() => enterCashKey('Clear')} className="mt-2 w-full min-h-14 rounded-xl border border-border bg-card font-semibold hover:bg-muted">Clear</button>
           </aside>

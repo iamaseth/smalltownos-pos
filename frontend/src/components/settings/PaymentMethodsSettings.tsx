@@ -124,7 +124,7 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         <p className="text-sm text-muted-foreground mb-5">{t('paymentMethodsHint')}</p>
         <div className="mb-5 rounded-lg border border-border p-3">
           <p className="text-sm font-semibold">ABA payments without bank integration</p>
-          <p className="mt-1 text-xs text-muted-foreground">Staff verify the transfer in the bar's ABA account, then record the sale as ABA (Manual). The POS receipt is the sale record, not proof of bank settlement.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Staff verify the transfer in the bar&apos;s ABA account, then record the sale as ABA (Manual). The POS receipt is the sale record, not proof of bank settlement.</p>
           {methods.some((method) => method.name.trim().toLowerCase() === 'aba (manual)' && method.is_active)
             ? <p className="mt-2 text-sm font-semibold text-emerald-600">ABA (Manual) enabled</p>
             : <Button className="mt-3" disabled={!isAdmin} onClick={() => void enableAbaManual()}>Enable ABA (Manual)</Button>}

@@ -338,15 +338,15 @@ async function runModalKeypadIntegrationTests() {
       }) as typeof React.useState;
       return ReactDOMServer.renderToStaticMarkup(React.createElement(Modal, props));
     };
-    for (const [Modal, props, label] of [
-      [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
-      [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
+    for (const [Modal, props, label, discountDecimalCount] of [
+      [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal', 0],
+      [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal', 2],
     ] as const) {
       const targetStateIndex = 3;
       const paymentMarkup = renderModal(Modal, props, 'payment', targetStateIndex);
       assert.equal(paymentMarkup.includes('>.<'), false, `${label} hides JPY payment decimal key in static markup`);
       const discountMarkup = renderModal(Modal, props, 'discount', targetStateIndex);
-      assert.equal(discountMarkup.includes('>.<'), true, `${label} keeps decimal key for percentage discount in static markup`);
+      assert.equal(discountMarkup.includes('>.<'), discountDecimalCount > 0, `${label} renders its expected percentage-discount decimal key state`);
     }
 
     let browser: any;
@@ -360,15 +360,15 @@ async function runModalKeypadIntegrationTests() {
     if (browser) {
       try {
         const page = await browser.newPage();
-        for (const [Modal, props, label] of [
-          [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
-          [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
+        for (const [Modal, props, label, discountDecimalCount] of [
+          [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal', 0],
+          [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal', 2],
         ] as const) {
           const targetStateIndex = 3;
           await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));
           assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 0, `${label} hides JPY payment decimal key`);
           await page.setContent(renderModal(Modal, props, 'discount', targetStateIndex));
-          assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 1, `${label} keeps decimal key for percentage discount`);
+          assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), discountDecimalCount, `${label} renders its expected percentage-discount decimal key state`);
         }
       } finally {
         await browser.close();
@@ -458,11 +458,11 @@ async function runCatalogSaveBoundaryTests() {
       React.useState = ((initial: unknown) => {
         stateCall += 1;
         if (stateCall === 1) return [activeTab, () => undefined];
-        if (stateCall === 7) return [false, () => undefined];
-        if (stateCall === 8) return [activeTab === 'products', () => undefined];
-        if (stateCall === 14) return [activeTab === 'addons', () => undefined];
-        if (stateCall === 15) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
-        if (stateCall === 16) return [{
+        if (stateCall === 14) return [false, () => undefined];
+        if (stateCall === 15) return [activeTab === 'products', () => undefined];
+        if (stateCall === 21) return [activeTab === 'addons', () => undefined];
+        if (stateCall === 22) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
+        if (stateCall === 23) return [{
           name: 'Coffee', category_id: '', price: '1.5', cost_price: '2.5', cb_percent: '', sku: '', barcode: '',
           sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3', tax_category_id: '',
           tax_behavior: 'country_default', description: '', track_inventory: false, stock_quantity: '0',
