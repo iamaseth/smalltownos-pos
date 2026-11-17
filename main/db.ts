@@ -5451,7 +5451,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       };
       const foodId = ensureCategory('Food', null, 1, 'green', '🍽️');
       const drinksId = ensureCategory('Drinks', null, 2, 'teal', '🥤');
-      ensureCategory('Breakfast', foodId, 1, 'amber', '🍳');
+      const breakfastId = ensureCategory('Breakfast', foodId, 1, 'amber', '🍳');
       const westernId = ensureCategory('Western', foodId, 2, 'orange', '🍕');
       const asianId = ensureCategory('Asian', foodId, 3, 'green', '🍚');
       const seafoodMeatId = ensureCategory('Seafood & Meat', foodId, 4, 'red', '🍽️');
