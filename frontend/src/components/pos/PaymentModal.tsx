@@ -238,7 +238,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       if (keypadCurrency === 'KHR' || current.includes('.')) return;
       next = (current || '0') + '.';
     } else {
-      if (!/^\\d$/.test(key)) return;
+      if (!/^\d$/.test(key)) return;
       if (keypadCurrency === 'USD' && current.includes('.') && current.split('.')[1].length >= 2) return;
       next = current === '0' ? key : current + key;
     }
