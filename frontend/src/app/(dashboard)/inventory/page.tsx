@@ -18,6 +18,7 @@ import MenuItemEditor, { SUPPLY_UNITS, type SupplyUnit, type Recipe, type Recipe
 interface Supply {
   id: string;
   name: string;
+  name_km?: string | null;
   base_unit: SupplyUnit;
   stock_quantity: number;
   low_stock_threshold: number | null;
@@ -97,7 +98,7 @@ interface DeliveryLine {
 }
 
 const emptySupplyForm = {
-  name: '', base_unit: 'each' as SupplyUnit, stock_quantity: '0', low_stock_threshold: '',
+  name: '', name_km: '', base_unit: 'each' as SupplyUnit, stock_quantity: '0', low_stock_threshold: '',
   unit_cost: '', pack_size: '', pack_label: '', pour_size: '', order_up_to: '', group_name: '', ingredient_only: false,
 };
 
@@ -128,8 +129,10 @@ const movementTypeIcons: Record<string, typeof ArrowUpCircle> = {
 };
 
 interface ImportPreview {
-  to_create: { name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null }[];
+  to_create: { row: number; name: string; name_km: string | null; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null }[];
   already_exist: string[];
+  existing?: { row: number; name: string; supply_name: string; matched_by: 'id' | 'name' | 'name_km' | 'file' }[];
+  possible_duplicates?: { row: number; name: string; name_km: string | null; matches: { supply_id: string | null; name: string; reason: 'same_khmer_name' | 'similar_name' }[] }[];
   errors: { row: number; name: string; error: string }[];
 }
 
@@ -180,6 +183,7 @@ export default function InventoryPage() {
   const [importVendor, setImportVendor] = useState('');
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importing, setImporting] = useState(false);
+  const [approvedRows, setApprovedRows] = useState<number[]>([]);
 
   const [movementSupply, setMovementSupply] = useState<Supply | null>(null);
   const [movementForm, setMovementForm] = useState({ movement_type: 'receive', quantity: '', unit: 'each' as SupplyUnit, reason: '' });
@@ -355,6 +359,7 @@ export default function InventoryPage() {
     setEditingSupply(s);
     setSupplyForm({
       name: s.name,
+      name_km: s.name_km ?? '',
       base_unit: s.base_unit,
       stock_quantity: String(s.stock_quantity),
       low_stock_threshold: s.low_stock_threshold === null ? '' : String(s.low_stock_threshold),
@@ -391,6 +396,7 @@ export default function InventoryPage() {
     try {
       const payload = {
         name: supplyForm.name,
+        name_km: supplyForm.name_km.trim() || null,
         base_unit: supplyForm.base_unit,
         stock_quantity: Number(supplyForm.stock_quantity),
         low_stock_threshold: optionalNumber(supplyForm.low_stock_threshold),
@@ -405,6 +411,7 @@ export default function InventoryPage() {
       if (editingSupply) {
         const saved = await api.put(`/supplies/${editingSupply.id}`, {
           name: payload.name,
+          name_km: payload.name_km,
           low_stock_threshold: payload.low_stock_threshold,
           unit_cost: payload.unit_cost,
           pack_size: payload.pack_size,
@@ -589,7 +596,9 @@ export default function InventoryPage() {
     rows,
     vendor_name: importVendor.trim() || undefined,
     dry_run: dryRun,
+    approved_rows: approvedRows,
   });
+  const importCount = (importPreview?.to_create.length ?? 0) + approvedRows.length;
 
   const handleImportFile = async (file: File | undefined) => {
     if (!file) return;
@@ -602,7 +611,8 @@ export default function InventoryPage() {
         return record;
       });
       setImportRows(rows);
-      const { data } = await api.post('/supplies/import', importPayload(rows, true));
+      setApprovedRows([]);
+      const { data } = await api.post('/supplies/import', { ...importPayload(rows, true), approved_rows: [] });
       setImportPreview(data);
     } catch (err: unknown) {
       setImportRows([]);
@@ -616,6 +626,7 @@ export default function InventoryPage() {
     try {
       const { data } = await api.post('/supplies/import', importPayload(importRows, false));
       toast.success(t('importDone', { count: data.to_create.length }));
+      setApprovedRows([]);
       setShowImport(false);
       refresh();
       api.get('/vendors').then(({ data: v }) => setVendors(v.vendors || [])).catch(() => undefined);
@@ -738,6 +749,7 @@ export default function InventoryPage() {
                           {s.is_low_stock === 1 && (
                             <Badge variant="destructive" className="ms-2">{t('lowStock')}</Badge>
                           )}
+                          {s.name_km && <span lang="km" className="block text-sm font-normal text-muted-foreground">{s.name_km}</span>}
                         </span>
                       </div>
                     </td>
@@ -861,6 +873,9 @@ export default function InventoryPage() {
               <input type="text" placeholder={t('supplyName')} value={supplyForm.name}
                 onChange={(e) => setSupplyForm({ ...supplyForm, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+              <input type="text" lang="km" placeholder={t('nameKm')} value={supplyForm.name_km}
+                onChange={(e) => setSupplyForm({ ...supplyForm, name_km: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
               {!editingSupply && (
                 <>
                   <select value={supplyForm.base_unit}
@@ -1016,35 +1031,71 @@ export default function InventoryPage() {
                 onChange={(e) => handleImportFile(e.target.files?.[0])}
                 className="w-full text-sm" />
               {importPreview && (
-                <div className="space-y-2 text-sm">
+                <div className="space-y-3 text-sm">
                   <p className="font-medium">{t('importNew', { count: importPreview.to_create.length })}</p>
-                  {importPreview.already_exist.length > 0 && (
-                    <p className="text-muted-foreground">{t('importSkipped', { count: importPreview.already_exist.length })}</p>
-                  )}
                   {importPreview.errors.length > 0 && (
-                    <div className="text-red-600">
+                    <div className="text-red-600 space-y-0.5">
                       <p className="font-medium">{t('importErrors', { count: importPreview.errors.length })}</p>
-                      {importPreview.errors.slice(0, 5).map((row) => (
-                        <p key={row.row}>{row.row}: {row.name || '-'} ({row.error})</p>
+                      {importPreview.errors.map((row) => (
+                        <p key={row.row}>{t('importRow', { row: row.row })}: {row.name || '-'} ({row.error})</p>
                       ))}
                     </div>
                   )}
-                  <ul className="max-h-48 overflow-y-auto border rounded-lg divide-y">
+                  {(importPreview.possible_duplicates?.length ?? 0) > 0 && (
+                    <div className="space-y-1">
+                      <p className="font-medium text-amber-600">{t('importReview', { count: importPreview.possible_duplicates?.length ?? 0 })}</p>
+                      <ul className="border rounded-lg divide-y">
+                        {importPreview.possible_duplicates?.map((dup) => (
+                          <li key={dup.row} className="px-3 py-2 flex items-start justify-between gap-3">
+                            <span className="min-w-0">
+                              <span className="font-medium">{dup.name}</span>
+                              {dup.name_km && <span lang="km" className="text-muted-foreground"> · {dup.name_km}</span>}
+                              {dup.matches.map((match) => (
+                                <span key={`${match.supply_id ?? 'file'}-${match.name}`} className="block text-muted-foreground">
+                                  {t('importLooksLike', { name: match.name })} ({match.reason === 'same_khmer_name' ? t('reasonSameKhmer') : t('reasonSimilar')}{match.supply_id ? '' : `, ${t('inThisFile')}`})
+                                </span>
+                              ))}
+                            </span>
+                            <label className="flex items-center gap-1.5 whitespace-nowrap">
+                              <input type="checkbox" checked={approvedRows.includes(dup.row)}
+                                onChange={(e) => setApprovedRows((rows) => e.target.checked ? [...rows, dup.row] : rows.filter((r) => r !== dup.row))} />
+                              {t('importAsNew')}
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {importPreview.already_exist.length > 0 && (
+                    <details className="text-muted-foreground">
+                      <summary className="cursor-pointer">{t('importSkipped', { count: importPreview.already_exist.length })}</summary>
+                      <ul className="mt-1 space-y-0.5">
+                        {(importPreview.existing ?? importPreview.already_exist.map((name, row) => ({ row, name, supply_name: name, matched_by: 'name' as const }))).map((row) => (
+                          <li key={`${row.row}-${row.name}`}>{row.name}{row.supply_name !== row.name ? ` → ${row.supply_name}` : ''}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                  <ul className="max-h-56 overflow-y-auto border rounded-lg divide-y">
                     {importPreview.to_create.map((item) => (
-                      <li key={item.name} className="px-3 py-1.5 flex justify-between gap-2">
-                        <span className="truncate">{item.name}</span>
+                      <li key={`${item.row}-${item.name}`} className="px-3 py-1.5 flex justify-between gap-2">
+                        <span className="truncate">
+                          {item.name}
+                          {item.name_km && <span lang="km" className="text-muted-foreground"> · {item.name_km}</span>}
+                        </span>
                         <span className="text-muted-foreground whitespace-nowrap">
                           {item.pack_size ? `${fmtNum(item.pack_size)} ${item.base_unit}` : item.base_unit}
                           {item.pack_price !== null ? ` · ${fmtNum(item.pack_price)}` : ''}
+                          {item.unit_cost !== null && item.pack_size ? ` · ${t('perUnitCost', { cost: String(Number(item.unit_cost.toPrecision(4))), unit: item.base_unit })}` : ''}
                         </span>
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
-              <Button className="w-full" disabled={importing || !importPreview || importPreview.errors.length > 0 || importPreview.to_create.length === 0}
+              <Button className="w-full" disabled={importing || !importPreview || importPreview.errors.length > 0 || importCount === 0}
                 onClick={handleImportConfirm}>
-                {t('importConfirm', { count: importPreview?.to_create.length ?? 0 })}
+                {t('importConfirm', { count: importCount })}
               </Button>
             </div>
           </div>
@@ -1084,7 +1135,7 @@ export default function InventoryPage() {
                       onChange={(e) => updateDeliveryLine(index, { supply_id: e.target.value })}
                       className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card" required>
                       <option value="">{t('supply')}</option>
-                      {supplies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {supplies.map((s) => <option key={s.id} value={s.id}>{s.name_km ? `${s.name} · ${s.name_km}` : s.name}</option>)}
                     </select>
                     <input type="number" step="any" min="0.00000001"
                       placeholder={byPack ? `${t('packs')} (${lineSupply?.pack_label || t('packLabel')})` : `${t('quantity')} (${lineSupply?.base_unit || ''})`}

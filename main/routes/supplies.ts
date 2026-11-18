@@ -55,6 +55,7 @@ router.post('/', requirePermission('supplies.manage'), (req: Request, res: Respo
     if (!actorId) return res.status(403).json({ error: 'Authentication required' });
     const supply = createSupply(getDatabase(), {
       name: body.name,
+      nameKm: body.name_km,
       baseUnit: body.base_unit,
       stockQuantity: body.stock_quantity,
       lowStockThreshold: body.low_stock_threshold,
@@ -83,7 +84,9 @@ router.post('/import', requirePermission('supplies.manage'), (req: Request, res:
     const rows = Array.isArray(body.rows) ? body.rows : [];
     const result = importSupplies(getDatabase(), {
       rows: rows.map((row: Record<string, unknown>) => ({
+        id: row?.id,
         name: row?.name,
+        nameKm: row?.name_km,
         baseUnit: row?.base_unit,
         packSize: row?.pack_size,
         packLabel: row?.pack_label,
@@ -99,6 +102,7 @@ router.post('/import', requirePermission('supplies.manage'), (req: Request, res:
       vendorName: body.vendor_name,
       dryRun: body.dry_run !== false,
       actorUserId: actorId,
+      approvedRows: Array.isArray(body.approved_rows) ? body.approved_rows : [],
     });
     res.json(result);
   } catch (error: unknown) {
@@ -203,6 +207,7 @@ router.put('/:id', requirePermission('supplies.manage'), (req: Request, res: Res
     const body = req.body || {};
     const supply = updateSupply(getDatabase(), String(req.params.id), {
       name: body.name,
+      nameKm: body.name_km,
       isActive: body.is_active,
       ingredientOnly: body.ingredient_only,
       lowStockThreshold: body.low_stock_threshold,

@@ -48,7 +48,9 @@ router.post('/import', requirePermission('supplies.manage'), (req: Request, res:
     const rows = Array.isArray(body.rows) ? body.rows : [];
     res.json(importRecipes(getDatabase(), {
       rows: rows.map((row: Record<string, unknown>) => ({
+        productId: row?.product_id,
         productName: row?.product_name,
+        ingredientId: row?.ingredient_id,
         ingredientName: row?.ingredient_name,
         quantity: row?.quantity,
         unit: row?.unit,

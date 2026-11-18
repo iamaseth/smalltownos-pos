@@ -6,6 +6,7 @@ import {
   SupplyUnit,
   assertSupplyUnit,
   convertQuantity,
+  parseImportUnit,
   roundQuantity,
 } from './units';
 
@@ -24,6 +25,7 @@ export class SupplyServiceError extends Error {
 export interface SupplyRecord {
   id: string;
   name: string;
+  name_km: string | null;
   base_unit: SupplyUnit;
   stock_quantity: number;
   low_stock_threshold: number | null;
@@ -101,6 +103,7 @@ export interface SupplyVendorInput {
 export interface CreateSupplyInput extends SupplyCostingInput {
   id?: string;
   name: string;
+  nameKm?: string | null;
   baseUnit: string;
   stockQuantity?: number;
   lowStockThreshold?: number | null;
@@ -152,6 +155,14 @@ function optionalNonNegative(value: unknown, field: string, mustBePositive = fal
     throw new SupplyServiceError(400, `${field} must be ${mustBePositive ? 'greater than zero' : 'non-negative'}`);
   }
   return roundQuantity(parsed);
+}
+
+function normalizeKhmerName(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const text = String(value).normalize('NFC').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  if (text.length > 200) throw new SupplyServiceError(400, 'name_km is too long');
+  return text;
 }
 
 function resolveCosting(
@@ -332,8 +343,9 @@ export function listSupplies(
   const params: (string | number)[] = [];
   if (!filters.includeInactive) conditions.push('is_active = 1');
   if (filters.search) {
-    conditions.push('(name LIKE ? OR product_number LIKE ?)');
-    params.push(`%${filters.search}%`, `%${filters.search}%`);
+    filters = { ...filters, search: filters.search.normalize('NFC') };
+    conditions.push('(name LIKE ? OR name_km LIKE ? OR product_number LIKE ?)');
+    params.push(`%${filters.search}%`, `%${filters.search}%`, `%${filters.search}%`);
   }
   let sql = `
     SELECT *,
@@ -374,6 +386,7 @@ export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSu
   const name = String(input.name || '').trim();
   if (!name) throw new SupplyServiceError(400, 'name is required');
   if (name.length > 200) throw new SupplyServiceError(400, 'name is too long');
+  const nameKm = normalizeKhmerName(input.nameKm);
   const baseUnit = assertSupplyUnit(input.baseUnit, 'base_unit');
   const stockQuantity = input.stockQuantity === undefined ? 0 : roundQuantity(normalizeQuantity(input.stockQuantity, 'stock_quantity'));
   if (input.lowStockThreshold !== undefined && input.lowStockThreshold !== null) {
@@ -394,13 +407,13 @@ export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSu
   withTxn(() => {
     db.prepare(`
       INSERT INTO supplies (
-        id, name, base_unit, stock_quantity, low_stock_threshold,
+        id, name, name_km, base_unit, stock_quantity, low_stock_threshold,
         unit_cost, pack_size, pack_label, pour_size, order_up_to, vendor_id, group_name,
         ingredient_only, product_number, is_active, created_at, updated_at
       )
-      VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id, name, baseUnit, lowStockThreshold,
+      id, name, nameKm ?? null, baseUnit, lowStockThreshold,
       costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id, costing.group_name,
       input.ingredientOnly ? 1 : 0, nextSupplyProductNumber(db), isActive, timestamp, timestamp,
     );
@@ -429,10 +442,11 @@ export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSu
 export function updateSupply(
   db: ReturnType<typeof getDatabase>,
   id: string,
-  input: { name?: string; isActive?: boolean; ingredientOnly?: boolean; lowStockThreshold?: number | null } & SupplyCostingInput,
+  input: { name?: string; nameKm?: string | null; isActive?: boolean; ingredientOnly?: boolean; lowStockThreshold?: number | null } & SupplyCostingInput,
 ): SupplyRecord {
   const supply = getSupply(db, id);
   const name = input.name === undefined ? supply.name : String(input.name).trim();
+  const nameKm = input.nameKm === undefined ? supply.name_km : normalizeKhmerName(input.nameKm);
   if (!name) throw new SupplyServiceError(400, 'name is required');
   if (name.length > 200) throw new SupplyServiceError(400, 'name is too long');
   let lowStockThreshold: number | null = supply.low_stock_threshold;
@@ -452,12 +466,12 @@ export function updateSupply(
   assertGroupUnit(db, costing.group_name, supply.base_unit, id);
   db.prepare(`
     UPDATE supplies SET
-      name = ?, low_stock_threshold = ?, is_active = ?, ingredient_only = ?,
+      name = ?, name_km = ?, low_stock_threshold = ?, is_active = ?, ingredient_only = ?,
       unit_cost = ?, pack_size = ?, pack_label = ?, pour_size = ?, order_up_to = ?, vendor_id = ?, group_name = ?,
       updated_at = ?
     WHERE id = ? AND deleted_at IS NULL
   `).run(
-    name, lowStockThreshold, isActive, input.ingredientOnly === undefined ? supply.ingredient_only : (input.ingredientOnly ? 1 : 0),
+    name, nameKm ?? null, lowStockThreshold, isActive, input.ingredientOnly === undefined ? supply.ingredient_only : (input.ingredientOnly ? 1 : 0),
     costing.unit_cost, costing.pack_size, costing.pack_label, costing.pour_size, costing.order_up_to, costing.vendor_id, costing.group_name,
     now(), id,
   );
@@ -752,7 +766,9 @@ export function receiveDelivery(
 }
 
 export interface ImportSupplyRow {
+  id?: unknown;
   name: unknown;
+  nameKm?: unknown;
   baseUnit: unknown;
   packSize?: unknown;
   packLabel?: unknown;
@@ -770,8 +786,10 @@ export interface ImportSuppliesResult {
   dry_run: boolean;
   vendor_id: string | null;
   vendor_created: boolean;
-  to_create: Array<{ name: string; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null; pour_size: number | null; par_level: number | null; order_up_to: number | null; group_name: string | null; vendor_sku: string | null; vendor_item_name: string | null; vendor_notes: string | null }>;
+  to_create: Array<{ row: number; name: string; name_km: string | null; base_unit: SupplyUnit; pack_size: number | null; pack_label: string | null; pack_price: number | null; unit_cost: number | null; pour_size: number | null; par_level: number | null; order_up_to: number | null; group_name: string | null; vendor_sku: string | null; vendor_item_name: string | null; vendor_notes: string | null }>;
   already_exist: string[];
+  existing: Array<{ row: number; name: string; supply_id: string; supply_name: string; matched_by: 'id' | 'name' | 'name_km' | 'file' }>;
+  possible_duplicates: Array<{ row: number; name: string; name_km: string | null; approved: boolean; matches: Array<{ supply_id: string | null; name: string; reason: 'same_khmer_name' | 'similar_name' }> }>;
   errors: Array<{ row: number; name: string; error: string }>;
 }
 
@@ -879,46 +897,100 @@ export function buildOrderList(db: ReturnType<typeof getDatabase>): { groups: Or
 }
 
 
+const PACK_LABEL_UNITS: Record<string, SupplyUnit> = {
+  g: 'g', gr: 'g', gram: 'g', grams: 'g', kg: 'kg', kgs: 'kg', kilo: 'kg', kilogram: 'kg', kilograms: 'kg',
+  ml: 'ml', l: 'l', ltr: 'l', litre: 'l', liter: 'l', litres: 'l', liters: 'l',
+};
+
+function packLabelInBaseUnit(label: string | null, baseUnit: SupplyUnit): number | null {
+  if (!label || baseUnit === 'each') return null;
+  const match = /^(\d+(?:\.\d+)?)\s*([a-z]+)\b/i.exec(label.trim());
+  if (!match) return null;
+  const unit = PACK_LABEL_UNITS[match[2].toLowerCase()];
+  if (!unit) return null;
+  try {
+    return convertQuantity(Number(match[1]), unit, baseUnit);
+  } catch {
+    return null;
+  }
+}
+
+function importNameKey(value: string): string {
+  return value.normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function looseNameKey(value: string): string {
+  return importNameKey(value)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => (word.length > 3 && word.endsWith('es') && !word.endsWith('ses') ? word.slice(0, -2) : word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word))
+    .join(' ');
+}
+
+function isSimilarName(a: string, b: string): boolean {
+  const left = looseNameKey(a);
+  const right = looseNameKey(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const [shorter, longer] = left.split(' ').length <= right.split(' ').length ? [left, right] : [right, left];
+  const shortWords = shorter.split(' ');
+  const longWords = longer.split(' ');
+  return longWords.length - shortWords.length === 1 && longWords.slice(1).join(' ') === shorter;
+}
+
 export function importSupplies(
   db: ReturnType<typeof getDatabase>,
-  input: { rows: ImportSupplyRow[]; vendorName?: string | null; dryRun: boolean; actorUserId: string },
+  input: { rows: ImportSupplyRow[]; vendorName?: string | null; dryRun: boolean; actorUserId: string; approvedRows?: number[] },
 ): ImportSuppliesResult {
   if (!Array.isArray(input.rows) || input.rows.length === 0) throw new SupplyServiceError(400, 'rows is required');
   if (input.rows.length > MAX_IMPORT_ROWS) throw new SupplyServiceError(400, `at most ${MAX_IMPORT_ROWS} rows per import`);
   const vendorName = input.vendorName === undefined || input.vendorName === null ? '' : String(input.vendorName).trim();
   if (vendorName.length > 200) throw new SupplyServiceError(400, 'vendor name is too long');
+  const approvedRows = new Set((input.approvedRows ?? []).map(Number).filter(Number.isInteger));
 
-  const existingNames = new Set(
-    (db.prepare('SELECT name FROM supplies WHERE deleted_at IS NULL').all() as Array<{ name: string }>)
-      .map((row) => row.name.toLowerCase()),
-  );
+  const existingSupplies = db.prepare('SELECT id, name, name_km FROM supplies WHERE deleted_at IS NULL').all() as Array<{ id: string; name: string; name_km: string | null }>;
+  const byId = new Map(existingSupplies.map((row) => [row.id, row]));
+  const byName = new Map(existingSupplies.map((row) => [importNameKey(row.name), row]));
+  const byKhmer = new Map(existingSupplies.filter((row) => row.name_km).map((row) => [importNameKey(row.name_km as string), row]));
   const groupUnits = new Map<string, SupplyUnit>();
   for (const row of db.prepare('SELECT group_name, base_unit FROM supplies WHERE deleted_at IS NULL AND group_name IS NOT NULL').all() as Array<{ group_name: string; base_unit: SupplyUnit }>) {
     groupUnits.set(row.group_name.toLowerCase(), row.base_unit);
   }
-  const seen = new Set<string>();
+  const seenNames = new Map<string, number>();
+  const seenKhmer = new Map<string, number>();
   const result: ImportSuppliesResult = {
     dry_run: input.dryRun,
     vendor_id: null,
     vendor_created: false,
     to_create: [],
     already_exist: [],
+    existing: [],
+    possible_duplicates: [],
     errors: [],
   };
+  const fileRows: Array<{ row: number; name: string }> = [];
 
   input.rows.forEach((row, index) => {
-    const name = String(row.name ?? '').trim();
+    const rowNumber = index + 1;
+    const name = String(row.name ?? '').normalize('NFC').replace(/\s+/g, ' ').trim();
     try {
       if (!name) throw new SupplyServiceError(400, 'name is required');
       if (name.length > 200) throw new SupplyServiceError(400, 'name is too long');
-      const baseUnit = assertSupplyUnit(String(row.baseUnit ?? '').trim().toLowerCase(), 'base_unit');
+      const nameKm = normalizeKhmerName(row.nameKm);
+      const suppliedId = String(row.id ?? '').trim();
+      const baseUnit = parseImportUnit(row.baseUnit, 'base_unit');
       const sizeText = row.packSize === undefined || row.packSize === null ? '' : String(row.packSize).trim();
       const packSize = sizeText === '' ? null : optionalNonNegative(Number(sizeText), 'pack_size', true) ?? null;
       const packLabel = String(row.packLabel ?? '').trim().slice(0, 60) || null;
-      const priceText = row.packPrice === undefined || row.packPrice === null ? '' : String(row.packPrice).trim();
+      const priceText = row.packPrice === undefined || row.packPrice === null ? '' : String(row.packPrice).trim().replace(/^\$/, '');
       const packPrice = priceText === '' ? null : optionalNonNegative(Number(priceText), 'pack_price') ?? null;
       if (packPrice !== null && packSize === null && baseUnit !== 'each') {
         throw new SupplyServiceError(400, 'pack_price needs a pack_size');
+      }
+      const labelSize = packLabelInBaseUnit(packLabel, baseUnit);
+      if (labelSize !== null && packSize !== null && Math.abs(labelSize - packSize) > Math.max(1e-6, labelSize * 0.001)) {
+        throw new SupplyServiceError(400, `pack_label "${packLabel}" is ${roundQuantity(labelSize)} ${baseUnit}, but pack_size is ${packSize}`);
       }
       const optionalLevel = (value: unknown, field: string): number | null => {
         const text = value === undefined || value === null ? '' : String(value).trim();
@@ -930,8 +1002,7 @@ export function importSupplies(
       const unitCost = packPrice === null ? null : (packSize === null ? packPrice : Number((packPrice / packSize).toFixed(8)));
       const groupName = String(row.groupName ?? '').trim().slice(0, 60) || null;
       if (groupName) {
-        const groupKey = groupName.toLowerCase();
-        const groupUnit = groupUnits.get(groupKey);
+        const groupUnit = groupUnits.get(groupName.toLowerCase());
         if (groupUnit && groupUnit !== baseUnit) {
           throw new SupplyServiceError(400, `group ${groupName} already uses ${groupUnit}; every item in a group must use the same unit`);
         }
@@ -939,16 +1010,54 @@ export function importSupplies(
       const vendorSku = String(row.vendorSku ?? '').trim().slice(0, 100) || null;
       const vendorItemName = String(row.vendorItemName ?? '').trim().slice(0, 200) || null;
       const vendorNotes = String(row.vendorNotes ?? '').trim().slice(0, 500) || null;
-      const key = name.toLowerCase();
-      if (existingNames.has(key) || seen.has(key)) {
+
+      const markExisting = (match: { id: string; name: string }, matchedBy: 'id' | 'name' | 'name_km') => {
         result.already_exist.push(name);
+        result.existing.push({ row: rowNumber, name, supply_id: match.id, supply_name: match.name, matched_by: matchedBy });
+      };
+      if (suppliedId) {
+        const match = byId.get(suppliedId);
+        if (!match) throw new SupplyServiceError(400, `no ingredient with id ${suppliedId}`);
+        markExisting(match, 'id');
         return;
       }
-      seen.add(key);
-      result.to_create.push({ name, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel, pack_price: packPrice, unit_cost: unitCost, pour_size: pourSize, par_level: parLevel, order_up_to: orderUpTo, group_name: groupName, vendor_sku: vendorSku, vendor_item_name: vendorItemName, vendor_notes: vendorNotes });
+      const key = importNameKey(name);
+      const khmerKey = nameKm ? importNameKey(nameKm) : '';
+      const nameMatch = byName.get(key);
+      if (nameMatch) { markExisting(nameMatch, 'name'); return; }
+      const khmerMatch = khmerKey ? byKhmer.get(khmerKey) : undefined;
+      const fileDuplicate = seenNames.get(key);
+      if (fileDuplicate !== undefined) {
+        result.already_exist.push(name);
+        result.existing.push({ row: rowNumber, name, supply_id: '', supply_name: `row ${fileDuplicate}`, matched_by: 'file' });
+        return;
+      }
+
+      const matches: ImportSuppliesResult['possible_duplicates'][number]['matches'] = [];
+      if (khmerMatch) matches.push({ supply_id: khmerMatch.id, name: khmerMatch.name, reason: 'same_khmer_name' });
+      const khmerFileRow = khmerKey ? seenKhmer.get(khmerKey) : undefined;
+      if (khmerFileRow !== undefined) matches.push({ supply_id: null, name: fileRows.find((r) => r.row === khmerFileRow)?.name ?? `row ${khmerFileRow}`, reason: 'same_khmer_name' });
+      for (const supply of existingSupplies) {
+        if (matches.some((m) => m.supply_id === supply.id)) continue;
+        if (isSimilarName(name, supply.name)) matches.push({ supply_id: supply.id, name: supply.name, reason: 'similar_name' });
+      }
+      for (const other of fileRows) {
+        if (matches.some((m) => m.supply_id === null && m.name === other.name)) continue;
+        if (isSimilarName(name, other.name)) matches.push({ supply_id: null, name: other.name, reason: 'similar_name' });
+      }
+
+      seenNames.set(key, rowNumber);
+      if (khmerKey && !seenKhmer.has(khmerKey)) seenKhmer.set(khmerKey, rowNumber);
+      fileRows.push({ row: rowNumber, name });
+      if (matches.length > 0) {
+        const approved = approvedRows.has(rowNumber);
+        result.possible_duplicates.push({ row: rowNumber, name, name_km: nameKm, approved, matches: matches.slice(0, 5) });
+        if (!approved) return;
+      }
+      result.to_create.push({ row: rowNumber, name, name_km: nameKm, base_unit: baseUnit, pack_size: packSize, pack_label: packLabel, pack_price: packPrice, unit_cost: unitCost, pour_size: pourSize, par_level: parLevel, order_up_to: orderUpTo, group_name: groupName, vendor_sku: vendorSku, vendor_item_name: vendorItemName, vendor_notes: vendorNotes });
       if (groupName) groupUnits.set(groupName.toLowerCase(), baseUnit);
     } catch (error: unknown) {
-      result.errors.push({ row: index + 1, name, error: error instanceof Error ? error.message : 'invalid row' });
+      result.errors.push({ row: rowNumber, name, error: error instanceof Error ? error.message : 'invalid row' });
     }
   });
 
@@ -972,6 +1081,7 @@ export function importSupplies(
     for (const item of result.to_create) {
       const created = createSupply(db, {
         name: item.name,
+        nameKm: item.name_km,
         baseUnit: item.base_unit,
         packSize: item.pack_size ?? undefined,
         packLabel: item.pack_label ?? undefined,

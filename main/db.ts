@@ -5701,6 +5701,16 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       // The legacy category rows stay in the database; hide only the obsolete Asian catch-all after its products are reassigned.
     },
   },
+  {
+    version: 103,
+    name: 'add_supply_khmer_name',
+    up: () => {
+      if (!getColumns(db, 'supplies').includes('name_km')) {
+        db.exec(`ALTER TABLE supplies ADD COLUMN name_km TEXT DEFAULT NULL`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_supplies_name_km ON supplies(name_km)`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

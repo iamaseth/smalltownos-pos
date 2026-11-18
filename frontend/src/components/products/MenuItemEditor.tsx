@@ -20,6 +20,7 @@ export type SupplyUnit = (typeof SUPPLY_UNITS)[number];
 export interface MenuSupply {
   id: string;
   name: string;
+  name_km?: string | null;
   base_unit: SupplyUnit;
   stock_quantity: number;
   unit_cost: number | null;
@@ -30,6 +31,7 @@ export interface RecipeItem {
   group_name: string | null;
   supply_id: string;
   supply_name: string;
+  supply_name_km?: string | null;
   base_unit: SupplyUnit;
   quantity: number;
   unit: SupplyUnit;
@@ -175,6 +177,11 @@ export default function MenuItemEditor({
     try { window.localStorage.setItem('recipeTargetFoodCostPct', value); } catch { /* optional convenience */ }
   };
 
+  const [ingredientFilter, setIngredientFilter] = useState('');
+  const filterKey = ingredientFilter.normalize('NFC').trim().toLowerCase();
+  const supplyLabel = (s: MenuSupply) => (s.name_km ? `${s.name} · ${s.name_km}` : s.name);
+  const supplyOptions = (selectedId: string) => supplies.filter((s) => !filterKey || s.id === selectedId
+    || s.name.toLowerCase().includes(filterKey) || (s.name_km ?? '').normalize('NFC').includes(filterKey));
   const groupNames = [...new Set(supplies.map((s) => s.group_name).filter((g): g is string => !!g))].sort((a, b) => a.localeCompare(b));
   const setDish = (patch: Partial<DishForm>) => setForm((prev) => ({ ...prev, dish: { ...prev.dish, ...patch } }));
 
@@ -429,6 +436,9 @@ export default function MenuItemEditor({
               <div className="flex-1 min-h-0 flex flex-col rounded-xl border border-border">
                 <div className="flex items-center justify-between px-3 py-2 border-b border-border">
                   <h3 className="text-sm font-semibold">{t('sectionIngredients')}</h3>
+                  <input type="search" value={ingredientFilter} onChange={(e) => setIngredientFilter(e.target.value)}
+                    placeholder={t('findIngredient')} aria-label={t('findIngredient')}
+                    className={`${compactField} ms-auto me-2 w-48`} />
                   <Button type="button" variant="outline" size="sm" onClick={addLine}>
                     <Plus size={14} /> {t('addComponent')}
                   </Button>
@@ -471,7 +481,7 @@ export default function MenuItemEditor({
                             </optgroup>
                           )}
                           <optgroup label={t('singleItems')}>
-                            {supplies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            {supplyOptions(item.supply_id).map((s) => <option key={s.id} value={s.id}>{supplyLabel(s)}</option>)}
                           </optgroup>
                         </select>
                         <input type="number" step="any" min="0.00000001" placeholder={t('quantity')} value={item.quantity}

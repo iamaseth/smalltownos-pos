@@ -44,6 +44,17 @@ export function assertSupplyUnit(value: unknown, field = 'unit'): SupplyUnit {
   return value;
 }
 
+const IMPORT_UNIT_ALIASES: Record<string, SupplyUnit> = {
+  piece: 'each', pieces: 'each', pc: 'each', pcs: 'each', ea: 'each', unit: 'each', units: 'each',
+  gram: 'g', grams: 'g', kilogram: 'kg', kilograms: 'kg', litre: 'l', liter: 'l', litres: 'l', liters: 'l',
+};
+
+/** Accept common spellings in CSV imports, then validate against the stored unit set. */
+export function parseImportUnit(value: unknown, field = 'unit'): SupplyUnit {
+  const text = String(value ?? '').trim().toLowerCase();
+  return assertSupplyUnit(IMPORT_UNIT_ALIASES[text] ?? text, field);
+}
+
 /** Round a quantity to the shared inventory precision. */
 export function roundQuantity(value: number): number {
   if (!Number.isFinite(value)) {

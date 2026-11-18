@@ -4,6 +4,7 @@ import { getDatabase, now, withTxn } from '../db';
 import {
   SupplyUnit,
   assertSupplyUnit,
+  parseImportUnit,
   convertQuantity,
   roundQuantity,
 } from './units';
@@ -24,6 +25,7 @@ export interface RecipeComponent {
   group_name: string | null;
   supply_id: string;
   supply_name: string;
+  supply_name_km: string | null;
   base_unit: SupplyUnit;
   quantity: number;
   unit: SupplyUnit;
@@ -91,6 +93,7 @@ function assertPositiveFinite(value: unknown, field: string): number {
 export interface GroupMember {
   id: string;
   name: string;
+  name_km: string | null;
   base_unit: SupplyUnit;
   unit_cost: number | null;
   stock_quantity: number;
@@ -100,7 +103,7 @@ export interface GroupMember {
 /** Items in a group in the order they are used: stock on hand first, oldest delivery first. */
 export function groupMembersInUseOrder(db: ReturnType<typeof getDatabase>, groupName: string): GroupMember[] {
   const rows = db.prepare(`
-    SELECT s.id, s.name, s.base_unit, s.unit_cost, s.stock_quantity, s.group_name,
+    SELECT s.id, s.name, s.name_km, s.base_unit, s.unit_cost, s.stock_quantity, s.group_name,
       COALESCE((SELECT MAX(m.created_at) FROM supply_movements m WHERE m.supply_id = s.id AND m.movement_type = 'receive'), s.created_at) AS last_in
     FROM supplies s
     WHERE s.deleted_at IS NULL AND s.is_active = 1 AND s.group_name = ? COLLATE NOCASE
@@ -118,6 +121,7 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
       ri.group_name,
       ri.supply_id,
       s.name AS supply_name,
+      s.name_km AS supply_name_km,
       s.base_unit,
       s.unit_cost,
       s.stock_quantity,
@@ -131,6 +135,7 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
     group_name: string | null;
     supply_id: string;
     supply_name: string;
+    supply_name_km: string | null;
     base_unit: SupplyUnit;
     unit_cost: number | null;
     stock_quantity: number;
@@ -140,7 +145,7 @@ function loadRecipeItems(db: ReturnType<typeof getDatabase>, recipeId: string): 
   return rows.map((row) => {
     const current = row.group_name ? groupMembersInUseOrder(db, row.group_name)[0] : undefined;
     const resolved = current
-      ? { ...row, supply_id: current.id, supply_name: current.name, base_unit: current.base_unit, unit_cost: current.unit_cost, stock_quantity: current.stock_quantity }
+      ? { ...row, supply_id: current.id, supply_name: current.name, supply_name_km: current.name_km, base_unit: current.base_unit, unit_cost: current.unit_cost, stock_quantity: current.stock_quantity }
       : row;
     const { stock_quantity: stockOnHand, ...component } = resolved;
     return {
@@ -394,7 +399,9 @@ export function applyRecipeSnapshot(
 }
 
 export interface ImportRecipeRow {
+  productId?: unknown;
   productName: unknown;
+  ingredientId?: unknown;
   ingredientName: unknown;
   quantity: unknown;
   unit: unknown;
@@ -424,10 +431,17 @@ export function importRecipes(
   for (const row of db.prepare('SELECT id, name FROM products').all() as Array<{ id: string; name: string }>) {
     const key = nameKey(row.name);
     products.set(key, [...(products.get(key) ?? []), row.id]);
+    products.set(`id:${row.id}`, [row.id]);
   }
   const supplies = new Map<string, { id: string; baseUnit: SupplyUnit }>();
-  for (const row of db.prepare('SELECT id, name, base_unit FROM supplies WHERE deleted_at IS NULL').all() as Array<{ id: string; name: string; base_unit: SupplyUnit }>) {
+  const supplyRows = db.prepare('SELECT id, name, name_km, base_unit FROM supplies WHERE deleted_at IS NULL').all() as Array<{ id: string; name: string; name_km: string | null; base_unit: SupplyUnit }>;
+  for (const row of supplyRows) {
+    supplies.set(nameKey(row.id), { id: row.id, baseUnit: row.base_unit });
     supplies.set(nameKey(row.name), { id: row.id, baseUnit: row.base_unit });
+  }
+  for (const row of supplyRows) {
+    const key = row.name_km ? nameKey(row.name_km) : '';
+    if (key && !supplies.has(key)) supplies.set(key, { id: row.id, baseUnit: row.base_unit });
   }
   const groups = new Map<string, { groupName: string; baseUnit: SupplyUnit }>();
   for (const row of db.prepare('SELECT group_name, base_unit FROM supplies WHERE deleted_at IS NULL AND is_active = 1 AND group_name IS NOT NULL').all() as Array<{ group_name: string; base_unit: SupplyUnit }>) {
@@ -439,17 +453,22 @@ export function importRecipes(
 
   const grouped = new Map<string, { name: string; lines: Array<{ ingredient: string; quantity: number; unit: string }>; problems: string[] }>();
   for (const row of input.rows) {
-    const productName = String(row.productName ?? '').trim();
+    const productId = String(row.productId ?? '').trim();
+    const productName = String(row.productName ?? '').trim() || productId;
     if (!productName) continue;
-    const key = nameKey(productName);
+    const key = productId ? `id:${productId}` : nameKey(productName);
     let entry = grouped.get(key);
     if (!entry) {
       entry = { name: productName, lines: [], problems: [] };
       grouped.set(key, entry);
     }
-    const ingredient = String(row.ingredientName ?? '').trim();
+    const ingredientId = String(row.ingredientId ?? '').trim();
+    const ingredient = ingredientId || String(row.ingredientName ?? '').trim();
+    if (ingredientId && !supplyRows.some((supply) => supply.id === ingredientId)) { entry.problems.push(`no ingredient with id ${ingredientId}`); continue; }
     const quantity = Number(String(row.quantity ?? '').trim());
-    const unit = String(row.unit ?? '').trim().toLowerCase();
+    const rawUnit = String(row.unit ?? '').trim().toLowerCase();
+    let unit = rawUnit;
+    try { unit = parseImportUnit(rawUnit); } catch { unit = rawUnit; }
     if (!ingredient) { entry.problems.push('ingredient name is missing'); continue; }
     if (!Number.isFinite(quantity) || quantity <= 0) { entry.problems.push(`quantity for ${ingredient} must be greater than zero`); continue; }
     entry.lines.push({ ingredient, quantity, unit });
