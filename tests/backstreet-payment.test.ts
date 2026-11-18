@@ -48,6 +48,10 @@ assert.equal(applyBackStreetCashKey('12000', 'Clear', 'KHR'), '');
 assert.equal(applyBackStreetCashKey('2', '4', 'USD'), '24');
 assert.equal(applyBackStreetCashKey('4000', '7', 'KHR'), '40007');
 
+assert.equal(applyBackStreetCashKey('5', '000', 'KHR'), '5000');
+assert.equal(applyBackStreetCashKey('', '000', 'KHR'), '');
+assert.equal(applyBackStreetCashKey('0', '000', 'KHR'), '0');
+assert.equal(applyBackStreetCashKey('5', '000', 'USD'), '5');
 assert.equal(addBackStreetCashNote('', 5, 'USD'), '5');
 assert.equal(addBackStreetCashNote(addBackStreetCashNote('', 5, 'USD'), 5, 'USD'), '10');
 assert.equal(addBackStreetCashNote('2.5', 1, 'USD'), '3.50');

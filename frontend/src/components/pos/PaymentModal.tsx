@@ -2,7 +2,7 @@
 
 import SplitEvenlyRow from '@/components/pos/SplitEvenlyRow';
 import { useState, useEffect, useRef } from 'react';
-import { X, Wallet, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send, ChevronDown } from 'lucide-react';
+import { X, Wallet, Sparkles, User, Percent, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -58,6 +58,8 @@ const BUILT_IN_PAYMENT_KEYS = {
   card: 'methodCard',
 } as const satisfies Record<'cash' | 'card', PosKey>;
 
+const ABA_SETUP_TENDER = -1;
+
 export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUpdate }: Props) {
   const remaining = Number(bill.balance);
   const cartCustomerId = useCartStore((s) => s.customerId);
@@ -99,7 +101,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     idempotencyKeyRef.current = null;
   }, [bill.id]);
   const [justPaid, setJustPaid] = useState(false);
-  const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [extraPanel, setExtraPanel] = useState<'split' | 'details' | null>(null);
+  const [tenderIndex, setTenderIndex] = useState<number | null>(null);
   const [keypadCurrency, setKeypadCurrency] = useState<'USD' | 'KHR'>('USD');
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
@@ -114,10 +117,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [walletAmount, setWalletAmount] = useState('');
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
   // QR is manual verification only until a receiving bank is configured.
-  const [showQrInstructions, setShowQrInstructions] = useState(false);
   const [khrTendered, setKhrTendered] = useState('');
   const [khrRate, setKhrRate] = useState(4100);
-  const [changeCurrency, setChangeCurrency] = useState<'USD' | 'KHR'>('KHR');
   const [people, setPeople] = useState(2);
   useEffect(() => {
     api.get('/settings/usd_khr_exchange_rate').then(({ data }) => {
@@ -216,7 +217,6 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
   const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
   const khrAmount = Number(khrTendered) || 0;
-  const khrUsd = khrAmount / khrRate;
   const khrUsdMinor = khrToUsdMinor(khrAmount, khrRate, minorFactor);
   const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt) + khrUsdMinor;
   const totalPayment = totalPaymentMinor / minorFactor;
@@ -227,20 +227,34 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     setPayments((current) => current.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
   };
 
-  // The touch keypad edits the same controlled inputs as a physical keyboard.
-  // Never changes the payment totals or exchange-rate calculations.
-  const enterCashKey = (key: string) => updateCashField((current) => applyBackStreetCashKey(current, key, keypadCurrency));
-  const addCashNote = (note: number) => updateCashField((current) => addBackStreetCashNote(current, note, keypadCurrency));
+  // The touch keypad and note buttons edit the same controlled inputs as a physical keyboard.
+  const cashIndex = payments.findIndex((p) => p.method === 'cash' && p.payment_method_id === undefined);
+  const abaIndex = payments.findIndex((p) => p.payment_method_id !== undefined
+    && customMethods.find((m) => m.id === p.payment_method_id)?.name.trim().toLowerCase() === 'aba (manual)');
 
-  const updateCashField = (compute: (current: string) => string) => {
-    const cashIndex = payments.findIndex((p) => p.method === 'cash' && p.payment_method_id === undefined);
+  const updateCashField = (compute: (current: string) => string, currency: 'USD' | 'KHR' = keypadCurrency) => {
     if (cashIndex < 0) return;
-    const current = keypadCurrency === 'KHR' ? khrTendered : payments[cashIndex].amount;
+    const current = currency === 'KHR' ? khrTendered : payments[cashIndex].amount;
     const next = compute(current);
-    if (keypadCurrency === 'KHR') {
+    if (currency === 'KHR') {
       setKhrTendered(next);
       setPaymentsTouched(true);
     } else updatePaymentAmount(cashIndex, next);
+  };
+
+  const enterCashKey = (key: string) => {
+    if (tenderIndex === ABA_SETUP_TENDER) return;
+    if (tenderIndex !== null) {
+      updatePaymentAmount(tenderIndex, applyBackStreetCashKey(payments[tenderIndex]?.amount || '', key, 'USD'));
+      return;
+    }
+    updateCashField((current) => applyBackStreetCashKey(current, key, keypadCurrency));
+  };
+
+  const addCashNote = (note: number, currency: 'USD' | 'KHR') => {
+    setTenderIndex(null);
+    setKeypadCurrency(currency);
+    updateCashField((current) => addBackStreetCashNote(current, note, currency), currency);
   };
 
   const allocateRemainingTo = (idx: number) => {
@@ -503,384 +517,456 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     }
   };
 
+  const cashTenderedUsd = (cashIndex >= 0 ? parseFloat(payments[cashIndex].amount) || 0 : 0) + khrUsdMinor / minorFactor;
+  const stillToPay = Math.max(0, remainingMinor - totalPaymentMinor) / minorFactor;
+  const toRielDisplay = (usd: number) => `${(Math.round((usd * khrRate) / 100) * 100).toLocaleString('en-US')}៛`;
+
+  const tenderLabel = (idx: number) => {
+    const payment = payments[idx];
+    const builtIn = PAYMENT_METHODS.find((method) => method.key === payment?.method && payment?.payment_method_id === undefined);
+    if (builtIn?.key === 'card') return '💳 ' + t(BUILT_IN_PAYMENT_KEYS[builtIn.key]);
+    if (builtIn) return t(BUILT_IN_PAYMENT_KEYS[builtIn.key]);
+    if (idx === abaIndex) return 'ABA / KHQR';
+    return customMethods.find((method) => method.id === payment?.payment_method_id)?.name || tCommon('unknown');
+  };
+
+  const restFor = (idx: number) => {
+    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt)
+      + khrUsdMinor / minorFactor;
+    return toDisplayUnit(Math.max(0, remaining - allocatedElsewhere));
+  };
+
+  const tenderButton = (idx: number | null, label: string, amount: number) => {
+    const selected = tenderIndex === idx;
+    const hasAmount = amount > 0;
+    return (
+      <button
+        key={idx === null ? 'cash' : `tender-${idx}`}
+        type="button"
+        role="tab"
+        aria-selected={selected}
+        onClick={() => {
+          setTenderIndex(idx);
+          if (idx !== null && idx !== ABA_SETUP_TENDER) setAmountTarget({ kind: 'payment', index: idx });
+        }}
+        className={`relative flex min-h-16 items-center justify-center gap-2 rounded-2xl border-2 px-3 text-xl font-extrabold transition-colors ${selected
+          ? 'border-white bg-white text-black'
+          : hasAmount ? 'border-green-500 bg-neutral-900 text-white' : 'border-neutral-600 bg-neutral-900 text-white hover:border-neutral-400'}`}
+      >
+        <span className="truncate">{label}</span>
+        {hasAmount && <span className={`text-sm font-bold ${selected ? 'text-black' : 'text-neutral-300'}`}>{currencyFmt(amount)}</span>}
+        {hasAmount && !selected && <span className="absolute end-2.5 top-2 h-2.5 w-2.5 rounded-full bg-green-500" aria-hidden />}
+      </button>
+    );
+  };
+
+  const secondaryChip = (open: boolean) => `inline-flex min-h-12 items-center gap-2 rounded-xl border-2 px-4 text-base font-bold ${open
+    ? 'border-white bg-white text-black'
+    : 'border-neutral-600 bg-neutral-900 text-white hover:border-neutral-400'}`;
+
+  const keypadTargetLabel = tenderIndex !== null && tenderIndex !== ABA_SETUP_TENDER
+    ? `${tenderLabel(tenderIndex)} ${inputCurrencyLabel}`
+    : keypadCurrency === 'KHR' ? 'KHR ៛' : 'USD $';
+  const extraKey = tenderIndex === null && keypadCurrency === 'KHR' ? '000' : minorFactor > 1 ? '.' : null;
+
+  const usedTenders = [
+    ...(cashTenderedUsd > 0 ? [`cash ${currencyFmt(cashTenderedUsd)}`] : []),
+    ...payments.flatMap((payment, idx) => idx !== cashIndex && (parseFloat(payment.amount) || 0) > 0
+      ? [`${tenderLabel(idx).replace(/^\p{Extended_Pictographic}\s*/u, '')} ${currencyFmt(parseFloat(payment.amount) || 0)}`] : []),
+  ];
+  const paySubLabel = change > 0
+    ? `· give change ${currencyFmt(change)}`
+    : usedTenders.length > 1 ? `· ${usedTenders.join(' + ')}` : '';
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-card w-full sm:max-w-6xl sm:max-h-[95vh] sm:flex sm:flex-col rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+      <div className="dark bg-neutral-950 text-white w-full sm:max-w-6xl sm:max-h-[95vh] sm:flex sm:flex-col rounded-t-3xl sm:rounded-2xl border-2 border-neutral-700 shadow-2xl overflow-hidden">
 
         {/* Header */}
-        <div className="flex items-center justify-between gap-4 px-5 pt-4 pb-3 border-b border-border">
+        <div className="flex items-center gap-4 border-b-2 border-neutral-800 bg-black px-5 py-3">
           <div className="min-w-0">
-            <h2 className="text-lg font-bold text-foreground">{t('payment')}</h2>
-            <p className="text-xs text-muted-foreground mt-0.5 truncate">
+            <h2 className="text-xl font-bold text-white">{t('payment')}</h2>
+            <p className="mt-0.5 truncate text-sm text-neutral-300">
               {t('billNumber', { number: bill.bill_number })}
-              {cartCustomer && <> · <User size={11} className="inline -mt-0.5" /> {cartCustomer.name}</>}
+              {cartCustomer && <> · <User size={12} className="inline -mt-0.5" /> {cartCustomer.name}</>}
             </p>
           </div>
           <div className="ms-auto text-end" data-testid="payment-total-due">
-            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">{t('totalDue')}</p>
-            <p className="text-3xl font-bold leading-tight tracking-tight text-foreground">{currencyFmt(remaining)}</p>
-            {Number(bill.paid_amount) > 0 && (
-              <p className="text-xs text-muted-foreground">Already paid {currencyFmt(Number(bill.paid_amount))} of {currencyFmt(Number(bill.total))}</p>
-            )}
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-yellow-400">{t('totalDue')}</p>
+            <p className="text-5xl font-extrabold leading-none tracking-tight text-white tabular-nums">{currencyFmt(remaining)}</p>
+            <p className="mt-1 text-sm font-semibold text-neutral-400">
+              {Number(bill.paid_amount) > 0
+                ? `Already paid ${currencyFmt(Number(bill.paid_amount))} of ${currencyFmt(Number(bill.total))}`
+                : `≈ ${toRielDisplay(remainingMinor / minorFactor)}`}
+            </p>
           </div>
           <button
             onClick={onClose}
-            className="touch-target rounded-full bg-muted hover:bg-muted active:bg-muted text-muted-foreground transition-colors"
+            className="touch-target h-13 w-13 rounded-xl border-2 border-neutral-600 bg-neutral-900 text-white hover:bg-neutral-800"
             aria-label={t('close')}
           >
-            <X size={16} />
+            <X size={22} />
           </button>
         </div>
 
         <div className="px-5 py-4 max-h-[75vh] overflow-y-auto sm:min-h-0 lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5">
 
-          <div className="space-y-4">
-          <div className="space-y-4">
-
-          {/* Loyalty Info Strip (staff reference) */}
-          {loyaltySettings?.loyalty_enabled && effectiveCustomerId && (
-            <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border border-border rounded-xl">
-              <Sparkles size={13} className="text-muted-foreground shrink-0" />
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-                <span className="text-foreground font-medium">{t('loyalty')}</span>
-                <span className="font-semibold text-foreground">
-                  {walletBalance !== null
-                    ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
-                    : '…'}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Discount */}
-          {!bill.split_group_id && discountMode !== 'none' && <div className="rounded-xl border border-border overflow-hidden">
-            <button type="button" onClick={() => setShowDiscount((open) => !open)} className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start">
-              <span className="text-sm font-medium text-foreground">
-                {Number(bill.discount_amount) > 0
-                  ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}`
-                  : t('applyDiscount')}
-              </span>
-              <ChevronDown size={16} className={`text-muted-foreground transition-transform ${showDiscount ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showDiscount && (
-              <div className="bg-purple-50 dark:bg-purple-950/40 border-t border-purple-200 dark:border-purple-800/40 p-3 space-y-2">
-                <div className="flex rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800/40">
-                  {isDiscountTypeAllowed(discountMode, 'percentage') && (
-                    <button
-                      onClick={() => { setDiscountType('percentage'); }}
-                      className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-                    >
-                      <Percent size={14} />
-                      {t('percentage')}
-                    </button>
-                  )}
-                  {isDiscountTypeAllowed(discountMode, 'amount') && (
-                    <button
-                      onClick={() => { setDiscountType('amount'); }}
-                      className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
-                    >
-                      {t('flatAmount')}
-                    </button>
-                  )}
-                </div>
-                <div className="relative">
-                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
-                    {discountType === 'percentage' ? '%' : inputCurrencyLabel}
+          <div className="space-y-3">
+            {/* Loyalty Info Strip (staff reference) */}
+            {loyaltySettings?.loyalty_enabled && effectiveCustomerId && (
+              <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border border-border rounded-xl">
+                <Sparkles size={13} className="text-muted-foreground shrink-0" />
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
+                  <span className="text-foreground font-medium">{t('loyalty')}</span>
+                  <span className="font-semibold text-foreground">
+                    {walletBalance !== null
+                      ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
+                      : '…'}
                   </span>
-                  <input
-                    type="number"
-                    value={discountValue}
-                    onFocus={() => setAmountTarget({ kind: 'discount' })}
-                    onChange={(e) => setDiscountValue(e.target.value)}
-                    placeholder={discountType === 'percentage' ? '0' : '0.00'}
-                    min="0"
-                    max={discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))}
-                    step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
-                    inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
-                    className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
-                  />
                 </div>
-                <input
-                  type="text"
-                  value={discountReason}
-                  onChange={(e) => setDiscountReason(e.target.value)}
-                  placeholder={t('discountReasonPlaceholder')}
-                  className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
-                />
-                {discountRequiresApproval && parseFloat(discountValue) > 0 && (
-                  <input
-                    type="password"
-                    value={discountPin}
-                    onChange={(e) => setDiscountPin(e.target.value)}
-                    placeholder={t('managerPin')}
-                    maxLength={6}
-                    className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
-                  />
-                )}
-                <Button
-                  onClick={() => handleApplyDiscount()}
-                  disabled={applyingDiscount || discountValue === '' || isNaN(parseFloat(discountValue))}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                >
-                  {applyingDiscount
-                    ? t('applyingDiscount')
-                    : Number(bill.discount_amount) > 0 ? t('updateDiscount') : t('applyDiscount')}
-                </Button>
-                {Number(bill.discount_amount) > 0 && (
-                  <Button variant="outline" className="w-full" onClick={async () => {
-                    if (await confirm(t('removeDiscountConfirm'), { destructive: true, confirmLabel: t('remove') })) void handleApplyDiscount(0);
-                  }}>
-                    {t('remove')}
-                  </Button>
-                )}
               </div>
             )}
-          </div>}
 
-          </div>
 
-          <div className="space-y-4">
-          <div className="space-y-2">
-            {customMethods.some((method) => method.name.trim().toLowerCase() === 'aba (manual)') && (
-              <p className="rounded-lg border border-sky-800/40 bg-sky-950/20 p-3 text-xs text-foreground">
-                ABA (Manual): confirm the incoming payment in the bar&apos;s ABA bank app before selecting ABA (Manual) and recording the sale. No automatic bank confirmation is available.
-              </p>
+            {/* Payment type */}
+            <div className="grid grid-cols-3 gap-2.5" role="tablist" aria-label="Payment type">
+              {tenderButton(null, '💵 Cash', cashTenderedUsd)}
+              {abaIndex >= 0
+                ? tenderButton(abaIndex, 'ABA / KHQR', parseFloat(payments[abaIndex].amount) || 0)
+                : tenderButton(ABA_SETUP_TENDER, 'ABA / KHQR', 0)}
+              {payments.map((payment, idx) => idx === cashIndex || idx === abaIndex ? null : tenderButton(idx, tenderLabel(idx), parseFloat(payment.amount) || 0))}
+            </div>
+
+            {tenderIndex === null && cashIndex >= 0 && (
+              <div className="rounded-2xl border-2 border-neutral-700 bg-neutral-900 p-4">
+                <div className="mb-2.5 flex items-center justify-between">
+                  <span className="text-sm font-bold uppercase tracking-[0.1em] text-neutral-300">Cash received</span>
+                  <span className="text-sm font-semibold text-neutral-400">1 USD = {khrRate.toLocaleString('en-US')}៛</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {(['USD', 'KHR'] as const).map((unit) => {
+                    const selected = keypadCurrency === unit;
+                    return <div key={unit} className="flex min-w-0 flex-col gap-2">
+                      <label className={`block min-w-0 rounded-xl border-2 bg-black px-3.5 py-2 ${selected ? 'border-yellow-400 ring-2 ring-inset ring-yellow-400' : 'border-neutral-600'}`}>
+                        <span className={`text-sm font-bold ${selected ? 'text-yellow-400' : 'text-neutral-400'}`}>{unit === 'USD' ? 'USD $' : 'KHR ៛'}</span>
+                        <input
+                          type="number"
+                          value={unit === 'USD' ? payments[cashIndex].amount : khrTendered}
+                          min="0"
+                          step={unit === 'USD' ? '0.01' : '1'}
+                          inputMode={unit === 'USD' ? 'decimal' : 'numeric'}
+                          onFocus={() => { setTenderIndex(null); setKeypadCurrency(unit); setAmountTarget(unit === 'USD' ? { kind: 'payment', index: cashIndex } : null); }}
+                          onChange={(e) => unit === 'USD' ? updatePaymentAmount(cashIndex, e.target.value) : (setKhrTendered(e.target.value), setPaymentsTouched(true))}
+                          placeholder={unit === 'USD' ? '0.00' : '0'}
+                          className="block w-full min-w-0 bg-transparent text-3xl font-extrabold text-white tabular-nums outline-none placeholder:text-neutral-600"
+                        />
+                      </label>
+                      <div className="grid grid-cols-3 gap-1.5" aria-label={`Add ${unit} note`}>
+                        {BACKSTREET_CASH_NOTES[unit].map((note) => (
+                          <button
+                            key={`${unit}-${note}`}
+                            type="button"
+                            onClick={() => addCashNote(note, unit)}
+                            aria-label={`Add ${unit === 'USD' ? `$${note}` : `${note.toLocaleString('en-US')} KHR`}`}
+                            className={`min-h-11 rounded-xl border-2 text-base font-extrabold ${unit === 'USD'
+                              ? 'border-green-600 bg-green-950 text-green-100 hover:bg-green-900'
+                              : 'border-yellow-600 bg-yellow-950 text-yellow-100 hover:bg-yellow-900'}`}
+                          >
+                            +{unit === 'USD' ? `$${note}` : note.toLocaleString('en-US')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>;
+                  })}
+                </div>
+              </div>
             )}
-            {payments.map((payment, idx) => {
-              const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
-              const custom = customMethods.find((method) => method.id === payment.payment_method_id);
-              const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : custom?.name || tCommon('unknown');
-              const Icon = builtIn?.icon;
-              const active = (parseFloat(payment.amount) || 0) > 0;
-              if (payment.method === 'cash' && payment.payment_method_id === undefined) {
-                return <div key="cash-both-currencies" className="rounded-xl border border-emerald-800/40 bg-emerald-950/20 p-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold">Cash received</span>
-                    <span className="text-xs text-muted-foreground">1 USD = {khrRate.toLocaleString('en-US')} KHR</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="block min-w-0 text-xs font-semibold text-muted-foreground">USD ($)
-                      <input type="number" value={payment.amount} min="0" step="0.01" inputMode="decimal"
-                        onFocus={() => { setAmountTarget({ kind: 'payment', index: idx }); setKeypadCurrency('USD'); }}
-                        onChange={(e) => updatePaymentAmount(idx, e.target.value)}
-                        placeholder="0.00"
-                        className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-card px-3 py-3 text-lg font-semibold text-foreground" />
-                    </label>
-                    <label className="block min-w-0 text-xs font-semibold text-muted-foreground">KHR (៛)
-                      <input type="number" value={khrTendered} min="0" step="1" inputMode="numeric"
-                        onFocus={() => { setAmountTarget(null); setKeypadCurrency('KHR'); }}
-                        onChange={(e) => { setKhrTendered(e.target.value); setPaymentsTouched(true); }}
-                        placeholder="0"
-                        className="mt-1 block w-full min-w-0 rounded-lg border border-border bg-card px-3 py-3 text-lg font-semibold text-foreground" />
-                    </label>
-                  </div>
-                  <p className="text-xs text-muted-foreground">KHR equivalent: {currencyFmt(khrUsd)} · Both cash amounts count toward payment.</p>
-                </div>;
-              }
-              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex min-h-12">
-                <button type="button" title={label} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
-                  {Icon && <Icon size={15} />}
-                  <span className="truncate">{label}</span>
-                </button>
-                <div className="flex flex-1 items-center border border-s-0 border-border rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
-                  <span className="ps-3 text-muted-foreground text-xs">{inputCurrencyLabel}</span>
-                  <input type="number" value={payment.amount} onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
-                    onChange={(e) => updatePaymentAmount(idx, e.target.value)} placeholder="0.00" inputMode="decimal"
-                    className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl"
-                    step={inputCurrencyStep} min="0" />
-                </div>
-              </div>;
-            })}
-          </div>
 
-          {/* Change Returned */}
-          {hasCash && (
-            <div className={`rounded-xl px-4 py-3 flex items-center justify-between border-2 transition-all duration-200 ${
-              change > 0
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/40'
-                : 'bg-muted border-border'
-            }`}>
-              <div className="flex items-center gap-2.5">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                  change > 0 ? 'bg-emerald-100 dark:bg-emerald-950/60' : 'bg-gray-200 dark:bg-muted'
-                }`}>
-                  {change > 0
-                    ? <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />
-                    : <ArrowLeftRight size={13} className="text-muted-foreground" />
-                  }
-                </div>
-                <span className={`text-sm font-semibold ${
-                  change > 0 ? 'text-emerald-800 dark:text-emerald-300' : 'text-muted-foreground'
-                }`}>
-                  {t('changeReturned')}
-                </span>
+            {tenderIndex === ABA_SETUP_TENDER && (
+              <div className="rounded-2xl border-2 border-yellow-500 bg-neutral-900 p-4 text-white">
+                <p className="text-lg font-bold">ABA is not switched on yet</p>
+                <p className="mt-1 text-base text-neutral-300">An owner can enable it in Settings → Payment Methods → <b>Enable ABA (Manual)</b>. It then appears here as a payment type.</p>
+                <p className="mt-3 rounded-lg bg-yellow-400 px-3 py-2 text-sm font-bold text-black">Never mark a QR payment as paid from a customer&apos;s screenshot. Check the bar&apos;s ABA app.</p>
               </div>
-              <span className={`text-xl font-bold tabular-nums ${
-                change > 0 ? 'text-emerald-600' : 'text-gray-300'
-              }`}>
-                {changeCurrency === 'KHR' ? `${Math.round(change * khrRate / 100) * 100} ៛` : currencyFmt(change)}
-              </span>
-            </div>
-          )}
+            )}
 
-          {hasCash && <div className="flex items-center justify-end gap-2 text-xs"><span>Return change in:</span><button type="button" onClick={() => setChangeCurrency('USD')} className={`rounded px-3 py-2 border ${changeCurrency === 'USD' ? 'border-emerald-500 text-emerald-400' : 'border-border'}`}>USD</button><button type="button" onClick={() => setChangeCurrency('KHR')} className={`rounded px-3 py-2 border ${changeCurrency === 'KHR' ? 'border-emerald-500 text-emerald-400' : 'border-border'}`}>KHR</button></div>}
-
-          {/* Loyalty Wallet Section */}
-          {loyaltySettings?.loyalty_enabled && effectiveCustomerId && walletBalance !== null && (
-            <div className="space-y-1">
-              <div className="flex min-h-12">
-                <button type="button" disabled={walletBalance <= 0} onClick={() => {
-                  const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
-                  const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
-                  const dueStored = Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere));
-                  const dueDisplay = toDisplayUnit(dueStored);
-                  setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
-                  setAmountTarget({ kind: 'wallet' });
-                }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/40 disabled:bg-muted disabled:text-muted-foreground disabled:border-border'}`}>
-                  <Wallet size={15} /><span className="truncate">{t('loyaltyWallet')}</span>
-                </button>
-                <div className="flex flex-1 items-center border border-s-0 border-purple-200 dark:border-purple-800/40 rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-purple-400">
-                  <span className="ps-3 text-muted-foreground text-xs">{inputCurrencyLabel}</span>
-                  <input
-                    type="number"
-                    value={walletAmount}
-                    onFocus={() => setAmountTarget({ kind: 'wallet' })}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      const maxWalletCurrencyStored = Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE));
-                      const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
-                      const clamped = parseFloat(v) > maxDisplay ? String(maxDisplay) : v;
-                      setWalletAmount(clamped);
-                    }}
-                    placeholder="0.00"
-                    disabled={walletBalance <= 0}
-                    inputMode="decimal"
-                    className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl disabled:bg-muted"
-                    step={inputCurrencyStep}
-                    min="0"
-                    max={toDisplayUnit(Math.min(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE)), remaining))}
-                  />
+            {tenderIndex !== null && tenderIndex !== ABA_SETUP_TENDER && payments[tenderIndex] && (
+              <div className="rounded-2xl border-2 border-neutral-700 bg-neutral-900 p-4">
+                <div className="mb-2.5 flex items-center justify-between">
+                  <span className="text-sm font-bold uppercase tracking-[0.1em] text-neutral-300">{tenderLabel(tenderIndex)}</span>
+                  {tenderIndex === abaIndex && <span className="text-sm font-semibold text-neutral-400">Manual confirmation</span>}
                 </div>
-              </div>
-              <p className="px-1 text-[11px] text-muted-foreground text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
-            </div>
-          )}
-
-          {/* Rarely used tools stay out of the way until needed. */}
-          <div className="rounded-xl border border-border overflow-hidden">
-            <button type="button" onClick={() => setShowMoreOptions(v => !v)}
-              className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start"
-              aria-expanded={showMoreOptions}>
-              <span className="text-sm font-medium text-foreground">More options</span>
-              <span className="ms-auto me-2 text-xs text-muted-foreground">Split bill · Bill details · KHQR</span>
-              <ChevronDown size={16} className={`text-muted-foreground transition-transform ${showMoreOptions ? 'rotate-180' : ''}`} />
-            </button>
-            {showMoreOptions && (
-              <div className="border-t border-border p-3 space-y-3">
-                <div>
-                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Split bill</p>
-                  {remainingMinor > 0 && (() => {
-                    const shareMinor = Math.ceil(remainingMinor / people);
-                    const shareDisplay = toDisplayUnit(shareMinor / minorFactor);
-                    return <SplitEvenlyRow
-                      people={people}
-                      onPeopleChange={setPeople}
-                      shareLabel={currencyFmt(shareMinor / minorFactor)}
-                      onFill={() => {
-                        setKhrTendered('');
-                        setPaymentsTouched(true);
-                        setPayments((current) => current.map((p) => p.method === 'cash' && p.payment_method_id === undefined ? { ...p, amount: formatInput(shareDisplay) } : { ...p, amount: '' }));
-                      }}
-                    />;
-                  })()}
-                  {remainingMinor <= 0 && <p className="text-xs text-muted-foreground">Nothing left to split.</p>}
-                </div>
-                <div>
-                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bill details</p>
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>{t('subtotal')}</span>
-                      <span>{currencyFmt(Number(bill.subtotal))}</span>
-                    </div>
-                    {Number(bill.discount_amount) > 0 && (
-                      <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
-                        <span>{t('discount')}</span>
-                        <span>− {currencyFmt(Number(bill.discount_amount))}</span>
-                      </div>
-                    )}
-                    <TaxBreakdown taxAmount={Number(bill.tax_amount)} taxBreakdown={resolveTaxComponents(bill).map((component) => ({
-                      ...component,
-                      rate: component.rate ?? 0,
-                    }))} />
-                    {Number(bill.delivery_charge) > 0 && (
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>{t('delivery')}</span>
-                        <span>{currencyFmt(Number(bill.delivery_charge))}</span>
-                      </div>
-                    )}
-                    {Number(bill.packaging_charge) > 0 && (
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>{t('packaging')}</span>
-                        <span>{currencyFmt(Number(bill.packaging_charge))}</span>
-                      </div>
-                    )}
-                    {Number(bill.service_charge) > 0 && (
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>{tReceipt('serviceCharge')}</span>
-                        <span>{currencyFmt(Number(bill.service_charge))}</span>
-                      </div>
-                    )}
-                    {Number(bill.round_off) !== 0 && (
-                      <div className="flex justify-between text-muted-foreground">
-                        <span>{t('roundOff')}</span>
-                        <span>{Number(bill.round_off) > 0 ? '+' : ''}{currencyFmt(Number(bill.round_off))}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-foreground font-semibold border-t border-border pt-1.5 mt-1">
-                      <span>{t('total')}</span>
-                      <span>{currencyFmt(Number(bill.total))}</span>
-                    </div>
-                  </div>
-
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">KHQR</p>
-                  <p className="text-xs text-muted-foreground">Cash can be received in USD and KHR at the saved rate of {khrRate.toLocaleString('en-US')} KHR per USD. Dynamic KHQR is not configured.</p>
-                  <button type="button" onClick={() => setShowQrInstructions(v => !v)}
-                    className="w-full rounded-xl border border-border px-4 py-3 text-left text-sm font-semibold hover:bg-muted"
-                    aria-expanded={showQrInstructions}>
-                    QR Payment (KHQR) — {showQrInstructions ? 'Hide instructions' : 'Details'}
-                  </button>
-                  {showQrInstructions && (
-                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-2">
-                      <p>Dynamic KHQR requires the bar&apos;s receiving bank account. No QR has been generated.</p>
-                      <p>Until configured, verify the transfer in the bank app before recording it under a separately configured QR payment method.</p>
-                      <p className="font-semibold">Never mark a QR payment as paid based only on a customer&apos;s screenshot.</p>
-                    </div>
+                <div className="flex items-stretch gap-3">
+                  <label className="block min-w-0 flex-1 rounded-xl border-2 border-yellow-400 bg-black px-3.5 py-2 ring-2 ring-inset ring-yellow-400">
+                    <span className="text-sm font-bold text-yellow-400">Amount {inputCurrencyLabel}</span>
+                    <input
+                      type="number"
+                      value={payments[tenderIndex].amount}
+                      onFocus={() => setAmountTarget({ kind: 'payment', index: tenderIndex })}
+                      onChange={(e) => updatePaymentAmount(tenderIndex, e.target.value)}
+                      placeholder="0.00"
+                      inputMode="decimal"
+                      step={inputCurrencyStep}
+                      min="0"
+                      className="block w-full min-w-0 bg-transparent text-3xl font-extrabold text-white tabular-nums outline-none placeholder:text-neutral-600"
+                    />
+                  </label>
+                  {restFor(tenderIndex) > 0 && (
+                    <button type="button" onClick={() => allocateRemainingTo(tenderIndex)} className="rounded-xl border-2 border-white bg-black px-4 text-lg font-extrabold text-white hover:bg-neutral-800">
+                      Rest {currencyFmt(restFor(tenderIndex))}
+                    </button>
                   )}
                 </div>
+                {tenderIndex === abaIndex && (
+                  <p className="mt-3 rounded-lg bg-yellow-400 px-3 py-2 text-base font-bold text-black">Check the payment arrived in the ABA app before pressing Pay.</p>
+                )}
+              </div>
+            )}
+
+            {/* Summary */}
+            <div className="grid grid-cols-3 overflow-hidden rounded-2xl border-2 border-neutral-700" data-testid="payment-summary">
+              <div className="bg-neutral-950 px-4 py-2.5">
+                <p className="text-xs font-bold uppercase tracking-[0.08em] text-neutral-400">Received</p>
+                <p className="text-3xl font-extrabold text-white tabular-nums">{currencyFmt(totalPayment)}</p>
+              </div>
+              <div className="border-s-2 border-neutral-700 bg-neutral-950 px-4 py-2.5">
+                <p className="text-xs font-bold uppercase tracking-[0.08em] text-neutral-400">Still to pay</p>
+                <p className={`text-3xl font-extrabold tabular-nums ${stillToPay > 0 ? 'text-red-400' : 'text-white'}`}>{currencyFmt(stillToPay)}</p>
+              </div>
+              <div className="border-s-2 border-neutral-700 bg-green-950 px-4 py-2.5">
+                <p className="text-xs font-bold uppercase tracking-[0.08em] text-green-300">{t('changeReturned')}</p>
+                <p className="text-3xl font-extrabold text-green-400 tabular-nums">
+                  {currencyFmt(change)}
+                  {change > 0 && <span className="ms-2 text-base font-semibold text-green-200">= {toRielDisplay(change)}</span>}
+                </p>
+              </div>
+            </div>
+
+            {/* Loyalty Wallet Section */}
+            {loyaltySettings?.loyalty_enabled && effectiveCustomerId && walletBalance !== null && (
+              <div className="space-y-1">
+                <div className="flex min-h-12">
+                  <button type="button" disabled={walletBalance <= 0} onClick={() => {
+                    const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
+                    const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
+                    const dueStored = Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere));
+                    const dueDisplay = toDisplayUnit(dueStored);
+                    setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
+                    setAmountTarget({ kind: 'wallet' });
+                  }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/40 disabled:bg-muted disabled:text-muted-foreground disabled:border-border'}`}>
+                    <Wallet size={15} /><span className="truncate">{t('loyaltyWallet')}</span>
+                  </button>
+                  <div className="flex flex-1 items-center border border-s-0 border-purple-200 dark:border-purple-800/40 rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-purple-400">
+                    <span className="ps-3 text-muted-foreground text-xs">{inputCurrencyLabel}</span>
+                    <input
+                      type="number"
+                      value={walletAmount}
+                      onFocus={() => setAmountTarget({ kind: 'wallet' })}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const maxWalletCurrencyStored = Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE));
+                        const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
+                        const clamped = parseFloat(v) > maxDisplay ? String(maxDisplay) : v;
+                        setWalletAmount(clamped);
+                      }}
+                      placeholder="0.00"
+                      disabled={walletBalance <= 0}
+                      inputMode="decimal"
+                      className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl disabled:bg-muted"
+                      step={inputCurrencyStep}
+                      min="0"
+                      max={toDisplayUnit(Math.min(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE)), remaining))}
+                    />
+                  </div>
+                </div>
+                <p className="px-1 text-[11px] text-muted-foreground text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
+              </div>
+            )}
+
+
+            {/* Less common actions */}
+            <div className="flex flex-wrap gap-2.5">
+              {!bill.split_group_id && discountMode !== 'none' && (
+                <button type="button" onClick={() => setShowDiscount((open) => !open)} aria-expanded={showDiscount} className={secondaryChip(showDiscount)}>
+                  <Percent size={16} />
+                  {Number(bill.discount_amount) > 0 ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}` : t('discount')}
+                </button>
+              )}
+              <button type="button" onClick={() => setExtraPanel((open) => open === 'split' ? null : 'split')} aria-expanded={extraPanel === 'split'} className={secondaryChip(extraPanel === 'split')}>Split bill</button>
+              <button type="button" onClick={() => setExtraPanel((open) => open === 'details' ? null : 'details')} aria-expanded={extraPanel === 'details'} className={secondaryChip(extraPanel === 'details')}>Bill details</button>
+            </div>
+
+            {!bill.split_group_id && discountMode !== 'none' && (
+              <div className="overflow-hidden rounded-xl">
+                {showDiscount && (
+                  <div className="bg-purple-50 dark:bg-purple-950/40 border-t border-purple-200 dark:border-purple-800/40 p-3 space-y-2">
+                    <div className="flex rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800/40">
+                      {isDiscountTypeAllowed(discountMode, 'percentage') && (
+                        <button
+                          onClick={() => { setDiscountType('percentage'); }}
+                          className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        >
+                          <Percent size={14} />
+                          {t('percentage')}
+                        </button>
+                      )}
+                      {isDiscountTypeAllowed(discountMode, 'amount') && (
+                        <button
+                          onClick={() => { setDiscountType('amount'); }}
+                          className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                        >
+                          {t('flatAmount')}
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative">
+                      <span className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
+                        {discountType === 'percentage' ? '%' : inputCurrencyLabel}
+                      </span>
+                      <input
+                        type="number"
+                        value={discountValue}
+                        onFocus={() => setAmountTarget({ kind: 'discount' })}
+                        onChange={(e) => setDiscountValue(e.target.value)}
+                        placeholder={discountType === 'percentage' ? '0' : '0.00'}
+                        min="0"
+                        max={discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))}
+                        step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
+                        inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
+                        className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                      />
+                    </div>
+                    <input
+                      type="text"
+                      value={discountReason}
+                      onChange={(e) => setDiscountReason(e.target.value)}
+                      placeholder={t('discountReasonPlaceholder')}
+                      className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                    />
+                    {discountRequiresApproval && parseFloat(discountValue) > 0 && (
+                      <input
+                        type="password"
+                        value={discountPin}
+                        onChange={(e) => setDiscountPin(e.target.value)}
+                        placeholder={t('managerPin')}
+                        maxLength={6}
+                        className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                      />
+                    )}
+                    <Button
+                      onClick={() => handleApplyDiscount()}
+                      disabled={applyingDiscount || discountValue === '' || isNaN(parseFloat(discountValue))}
+                      className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                    >
+                      {applyingDiscount
+                        ? t('applyingDiscount')
+                        : Number(bill.discount_amount) > 0 ? t('updateDiscount') : t('applyDiscount')}
+                    </Button>
+                    {Number(bill.discount_amount) > 0 && (
+                      <Button variant="outline" className="w-full" onClick={async () => {
+                        if (await confirm(t('removeDiscountConfirm'), { destructive: true, confirmLabel: t('remove') })) void handleApplyDiscount(0);
+                      }}>
+                        {t('remove')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {extraPanel === 'split' && (
+              <div className="rounded-xl border-2 border-neutral-700 bg-neutral-900 p-3">
+                {remainingMinor > 0 && (() => {
+                  const shareMinor = Math.ceil(remainingMinor / people);
+                  const shareDisplay = toDisplayUnit(shareMinor / minorFactor);
+                  return <SplitEvenlyRow
+                    people={people}
+                    onPeopleChange={setPeople}
+                    shareLabel={currencyFmt(shareMinor / minorFactor)}
+                    onFill={() => {
+                      setKhrTendered('');
+                      setPaymentsTouched(true);
+                      setPayments((current) => current.map((p) => p.method === 'cash' && p.payment_method_id === undefined ? { ...p, amount: formatInput(shareDisplay) } : { ...p, amount: '' }));
+                    }}
+                  />;
+                })()}
+                {remainingMinor <= 0 && <p className="text-sm text-neutral-400">Nothing left to split.</p>}
+              </div>
+            )}
+
+            {extraPanel === 'details' && (
+              <div className="rounded-xl border-2 border-neutral-700 bg-neutral-900 p-3">
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>{t('subtotal')}</span>
+                    <span>{currencyFmt(Number(bill.subtotal))}</span>
+                  </div>
+                  {Number(bill.discount_amount) > 0 && (
+                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                      <span>{t('discount')}</span>
+                      <span>− {currencyFmt(Number(bill.discount_amount))}</span>
+                    </div>
+                  )}
+                  <TaxBreakdown taxAmount={Number(bill.tax_amount)} taxBreakdown={resolveTaxComponents(bill).map((component) => ({
+                    ...component,
+                    rate: component.rate ?? 0,
+                  }))} />
+                  {Number(bill.delivery_charge) > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t('delivery')}</span>
+                      <span>{currencyFmt(Number(bill.delivery_charge))}</span>
+                    </div>
+                  )}
+                  {Number(bill.packaging_charge) > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t('packaging')}</span>
+                      <span>{currencyFmt(Number(bill.packaging_charge))}</span>
+                    </div>
+                  )}
+                  {Number(bill.service_charge) > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{tReceipt('serviceCharge')}</span>
+                      <span>{currencyFmt(Number(bill.service_charge))}</span>
+                    </div>
+                  )}
+                  {Number(bill.round_off) !== 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>{t('roundOff')}</span>
+                      <span>{Number(bill.round_off) > 0 ? '+' : ''}{currencyFmt(Number(bill.round_off))}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-foreground font-semibold border-t border-border pt-1.5 mt-1">
+                    <span>{t('total')}</span>
+                    <span>{currencyFmt(Number(bill.total))}</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
-          </div>
-          </div>
-          <aside className="rounded-2xl border border-border bg-muted/20 p-3 self-start lg:sticky lg:top-0" aria-label="Cash amount keypad">
-            <p className="mb-2 text-sm font-semibold">Enter cash amount</p>
-            <div className="mb-2 grid grid-cols-2 gap-2">
-              {(['USD', 'KHR'] as const).map((unit) => <button key={unit} type="button" onClick={() => setKeypadCurrency(unit)} className={`rounded-lg border px-3 py-2.5 font-semibold ${keypadCurrency === unit ? 'border-brand bg-brand text-white' : 'border-border bg-card'}`}>{unit}</button>)}
-            </div>
-            <div className="mb-2 grid grid-cols-3 gap-2" aria-label={`Add ${keypadCurrency} note`}>
-              {BACKSTREET_CASH_NOTES[keypadCurrency].map((note) => <button key={`${keypadCurrency}-${note}`} type="button" onClick={() => addCashNote(note)} aria-label={`Add ${keypadCurrency === 'USD' ? `$${note}` : `${note.toLocaleString('en-US')} KHR`}`} className="min-h-10 rounded-xl border border-emerald-700/50 bg-emerald-950/20 text-base font-semibold text-emerald-700 hover:bg-emerald-900/30 dark:text-emerald-300">+{keypadCurrency === 'USD' ? `$${note}` : `${note.toLocaleString('en-US')}៛`}</button>)}
-            </div>
+
+          <aside className="mt-4 flex flex-col gap-2 rounded-2xl border-2 border-neutral-700 bg-neutral-900 p-3 self-start lg:mt-0 lg:sticky lg:top-0" aria-label="Cash amount keypad">
+            <p className={`flex min-h-11 items-center justify-center rounded-xl px-2 text-base font-semibold ${tenderIndex === ABA_SETUP_TENDER ? 'bg-neutral-800 text-neutral-400' : 'bg-yellow-400 text-black'}`} data-testid="keypad-target">
+              {tenderIndex === ABA_SETUP_TENDER ? 'Keypad off' : <>Typing into&nbsp;<b>{keypadTargetLabel}</b></>}
+            </p>
             <div className="grid grid-cols-3 gap-2">
-              {['7','8','9','4','5','6','1','2','3','0', ...(minorFactor > 1 ? ['.'] : []), 'Backspace'].map((key) => <button key={key} type="button" disabled={key === '.' && keypadCurrency === 'KHR'} onClick={() => enterCashKey(key)} aria-label={key} className="min-h-12 rounded-xl border border-border bg-card text-2xl font-semibold hover:bg-muted disabled:opacity-40">{key === 'Backspace' ? '⌫' : key}</button>)}
+              {['7', '8', '9', '4', '5', '6', '1', '2', '3', '0', ...(extraKey ? [extraKey] : []), 'Backspace'].map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={tenderIndex === ABA_SETUP_TENDER}
+                  onClick={() => enterCashKey(key)}
+                  aria-label={key}
+                  className="min-h-[4.25rem] rounded-xl border-2 border-neutral-700 bg-neutral-800 text-3xl font-extrabold text-white hover:bg-neutral-700 disabled:opacity-40"
+                >
+                  {key === 'Backspace' ? '⌫' : key}
+                </button>
+              ))}
             </div>
-            <button type="button" onClick={() => enterCashKey('Clear')} className="mt-2 w-full min-h-12 rounded-xl border border-border bg-card font-semibold hover:bg-muted">Clear</button>
+            <button type="button" disabled={tenderIndex === ABA_SETUP_TENDER} onClick={() => enterCashKey('Clear')} className="min-h-14 w-full rounded-xl border-2 border-neutral-700 bg-neutral-800 text-lg font-bold text-white hover:bg-neutral-700 disabled:opacity-40">Clear</button>
           </aside>
         </div>
 
-        <div className="px-5 pb-5 border-t border-border pt-3 space-y-2">
+        <div className="px-5 pb-4 border-t-2 border-neutral-800 bg-black pt-3 space-y-2">
           {justPaid ? (
             <>
               {cartCustomer?.phone && (
@@ -912,11 +998,20 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             </>
           ) : (
             <>
-              <Button onClick={() => handlePay(false)} disabled={processing || totalPaymentMinor < remainingMinor} className="w-full" size="lg">
-                {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
-              </Button>
+              <button
+                type="button"
+                onClick={() => handlePay(false)}
+                disabled={processing || totalPaymentMinor < remainingMinor}
+                className="flex min-h-16 w-full items-center justify-center gap-2 rounded-2xl bg-green-500 text-2xl font-black text-black hover:bg-green-400 disabled:bg-neutral-800 disabled:text-neutral-400"
+              >
+                {processing
+                  ? t('processingPayment')
+                  : totalPaymentMinor < remainingMinor
+                    ? `Still to pay ${currencyFmt(stillToPay)}`
+                    : <>{t('pay')} {currencyFmt(remaining)} {paySubLabel && <span className="text-lg font-bold">{paySubLabel}</span>}</>}
+              </button>
               {totalPaymentMinor > 0 && totalPaymentMinor < remainingMinor && (
-                <Button onClick={() => handlePay(true)} disabled={processing} variant="outline" className="w-full" size="lg">
+                <Button onClick={() => handlePay(true)} disabled={processing} variant="outline" className="w-full min-h-12 border-2 border-neutral-500 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800" size="lg">
                   Record part payment · {currencyFmt(totalPayment)} (keep bill open)
                 </Button>
               )}

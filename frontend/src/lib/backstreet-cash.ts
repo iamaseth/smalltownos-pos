@@ -13,6 +13,7 @@ export function applyBackStreetCashKey(
     if (currency === 'KHR' || current.includes('.')) return current;
     return `${current || '0'}.`;
   }
+  if (key === '000') return currency === 'KHR' && current !== '' && current !== '0' ? `${current}000` : current;
   if (!/^\d$/.test(key)) return current;
   if (currency === 'USD' && current.includes('.') && current.split('.')[1].length >= 2) return current;
   return current === '0' ? key : current + key;

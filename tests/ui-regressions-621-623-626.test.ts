@@ -39,7 +39,10 @@ assert.match(payment, /sm:max-w-6xl/, 'desktop payment modal stays wide enough f
 assert.match(payment, /lg:grid lg:grid-cols-\[minmax\(0,1fr\)_320px\]/, 'desktop payment content stays side by side with the keypad column');
 assert.match(payment, /max-h-\[75vh\] overflow-y-auto.*lg:grid lg:grid-cols-\[minmax\(0,1fr\)_320px\]/, 'desktop payment stays two-column with bounded overflow fallback');
 assert.match(payment, /data-testid="payment-total-due"/, 'total due sits in the compact payment header');
-assert.match(payment, /More options/, 'rarely used split bill lives under More options');
+assert.match(payment, /aria-label="Payment type"/, 'cash, ABA and card are chosen from one payment-type row');
+assert.match(payment, /ABA_SETUP_TENDER/, 'ABA stays visible at checkout even before ABA (Manual) is enabled');
+assert.match(payment, /aria-label=\{`Add \$\{unit\} note`\}/, 'each cash currency has its own note buttons');
+assert.ok(payment.indexOf('aria-label="Payment type"') < payment.indexOf("setShowDiscount((open) => !open)"), 'discount is a secondary action below the payment controls');
 assert.doesNotMatch(payment, /lg:overflow-visible/, 'desktop payment does not clip controls outside its bounded container');
 
 const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
