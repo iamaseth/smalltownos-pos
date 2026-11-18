@@ -199,54 +199,52 @@ export default function TableCheckoutModal({
   return (
     <>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[92vh] flex flex-col">
-        <div className="flex justify-between items-center p-5 border-b border-border">
+      <div className="dark bg-neutral-950 text-white border-2 border-neutral-700 rounded-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="flex justify-between items-center gap-4 bg-black px-5 py-4 border-b-2 border-neutral-800">
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-bold text-foreground">{table.name}</h2>
-              <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                order.bill?.payment_status === 'paid' 
-                  ? 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800/40'
-                  : 'bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800/40'
+            <div className="flex items-center gap-3">
+              <h2 className="text-3xl font-black text-white">{table.name}</h2>
+              <span className={`px-2.5 py-0.5 text-sm font-extrabold uppercase tracking-wide rounded-full ${
+                order.bill?.payment_status === 'paid' ? 'bg-green-500 text-black' : 'bg-orange-400 text-black'
               }`}>
                 {order.bill?.payment_status === 'paid' ? t('paid') : t('unpaid')}
               </span>
             </div>
-            <p className="text-base text-muted-foreground">{t('orderNumber', { number: order.order_number })}</p>
+            <p className="mt-0.5 text-base font-semibold text-neutral-300">{t('orderNumber', { number: order.order_number })}</p>
           </div>
-          <button onClick={onClose} className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted" aria-label={t('close')}>
-            <X size={20} />
+          <button onClick={onClose} className="touch-target h-13 w-13 rounded-xl border-2 border-neutral-600 bg-neutral-900 text-white hover:bg-neutral-800" aria-label={t('close')}>
+            <X size={22} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
           {/* Existing order items - shown as disabled/reference */}
           <div className="mb-3">
-            <p className="text-sm text-muted-foreground uppercase tracking-wider mb-2">{t('previousItems')}</p>
+            <p className="text-sm font-bold text-neutral-300 uppercase tracking-[0.1em] mb-2">{t('previousItems')}</p>
             <div className="space-y-2">
               {activeItems.map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-muted px-4 py-3">
+                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border-2 border-neutral-700 bg-neutral-900 px-4 py-2.5">
                   <div className="flex-1 min-w-0">
-                    <p className="text-base text-foreground font-medium">
-                      {item.quantity}x {item.product_name}
+                    <p className="text-lg text-white font-extrabold">
+                      {item.quantity}× {item.product_name}
                     </p>
                     {item.special_instructions && (
-                      <p className="text-sm text-muted-foreground italic">{item.special_instructions}</p>
+                      <p className="text-sm font-semibold text-neutral-300">{item.special_instructions}</p>
                     )}
                   </div>
                   <span className="ms-2 text-end">
-                    <span className="block text-base font-semibold text-foreground">{formatItemTotal(item.total, item.subtotal)}</span>
-                    {Number(item.discount_amount) > 0 && <span className="block text-sm font-medium text-emerald-600">−{fmt(Number(item.discount_amount))}</span>}
+                    <span className="block text-lg font-extrabold text-white tabular-nums">{formatItemTotal(item.total, item.subtotal)}</span>
+                    {Number(item.discount_amount) > 0 && <span className="block text-sm font-bold text-green-400">−{fmt(Number(item.discount_amount))}</span>}
                   </span>
                   {canDiscount && canEditOrder && (
                     <button type="button" onClick={() => setDiscountTarget({ kind: 'item', item })}
                       aria-label={`Discount ${item.product_name}`}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-500/10 active:bg-emerald-500/20"><BadgePercent size={20} /></button>
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-green-700 bg-green-950 text-green-300 hover:bg-green-900"><BadgePercent size={20} /></button>
                   )}
                   {canCancelItems && canEditOrder && (
                     <button type="button" disabled={removingId === item.id} onClick={() => handleRemoveItem(item)}
                       aria-label={`${tCommon('remove')} ${item.product_name}`}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-red-500 hover:bg-red-500/10 active:bg-red-500/20 disabled:opacity-40"><Trash2 size={20} /></button>
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-red-800 bg-red-950 text-red-300 hover:bg-red-900 disabled:opacity-40"><Trash2 size={20} /></button>
                   )}
                 </div>
               ))}
@@ -254,13 +252,13 @@ export default function TableCheckoutModal({
           </div>
         </div>
 
-        <div className="p-5 border-t border-border space-y-3">
-          <div className="flex justify-between text-base">
-            <span className="text-muted-foreground">{t('subtotal')}</span>
-            <span>{fmt(Number(order.subtotal))}</span>
+        <div className="bg-black px-5 pb-5 pt-4 border-t-2 border-neutral-800 space-y-3">
+          <div className="flex justify-between text-base font-semibold">
+            <span className="text-neutral-300">{t('subtotal')}</span>
+            <span className="tabular-nums">{fmt(Number(order.subtotal))}</span>
           </div>
           {Number(order.discount_amount) > 0 && (
-            <div className="flex justify-between text-base font-medium text-emerald-600">
+            <div className="flex justify-between text-base font-bold text-green-400">
               <span>{t('discount')}</span>
               <span>−{fmt(Number(order.discount_amount))}</span>
             </div>
@@ -268,23 +266,23 @@ export default function TableCheckoutModal({
           <TaxBreakdown
             taxAmount={Number(order.tax_amount)}
             taxBreakdown={order.tax_breakdown}
-            theme="light"
+            theme="dark"
           />
-          <div className="flex justify-between text-2xl font-bold">
+          <div className="flex items-baseline justify-between text-3xl font-black">
             <span>{t('total')}</span>
-            <span className="text-brand">{fmt(Number(order.total))}</span>
+            <span className="tabular-nums">{fmt(Number(order.total))}</span>
           </div>
           {order.bill && order.bill.payment_status !== 'paid' && Number(order.bill.balance) > 0 && (
-            <div className="flex justify-between text-sm font-medium">
-              <span className="text-orange-600">{t('balanceDue')}</span>
-              <span className="text-orange-600">{fmt(Number(order.bill.balance))}</span>
+            <div className="flex justify-between text-base font-bold">
+              <span className="text-orange-400">{t('balanceDue')}</span>
+              <span className="text-orange-400 tabular-nums">{fmt(Number(order.bill.balance))}</span>
             </div>
           )}
 
           {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-muted-foreground">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pay')}</Button>}</div>)}</div>}
 
           {canDiscount && canEditOrder && (
-            <Button variant="outline" size="lg" className="w-full h-12 text-base" onClick={() => setDiscountTarget({ kind: 'order' })}>
+            <Button variant="outline" size="lg" className="w-full h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800" onClick={() => setDiscountTarget({ kind: 'order' })}>
               <BadgePercent size={18} className="me-2" />{Number(order.discount_amount) > 0 ? 'Change bill discount' : 'Discount whole bill'}
             </Button>
           )}
@@ -296,23 +294,23 @@ export default function TableCheckoutModal({
               <Button 
                 onClick={handleAddCartToOrder} 
                 disabled={addingItems}
-                className="w-full h-14 text-base"
+                className="w-full h-14 bg-[#2563eb] text-lg font-bold text-white hover:bg-[#1d4ed8]"
                 size="lg"
               >
                 <ShoppingCart size={16} className="me-2" />
                 {addingItems ? t('adding') : t('addToOrder', { count: cartItemCount })}
               </Button>
-              <Button onClick={handleCheckout} variant="outline" size="lg" className="w-full h-14 text-base" disabled={generating}>
+              <Button onClick={handleCheckout} variant="outline" size="lg" className="w-full h-14 border-2 border-neutral-400 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" disabled={generating}>
                 {generating ? t('generating') : t('checkoutInstead')}
               </Button>
             </div>
           ) : splitBills.length === 0 ? (
             // Cart empty - show both options
             <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" size="lg" className="h-14 text-base" onClick={() => onAddItems(table, order)}>
+              <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-400 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => onAddItems(table, order)}>
                 {t('addItems')}
               </Button>
-              <Button size="lg" className="h-14 text-base" onClick={handleCheckout} disabled={generating}>
+              <Button size="lg" className="h-14 bg-green-500 text-xl font-black text-black hover:bg-green-400" onClick={handleCheckout} disabled={generating}>
                 {generating ? t('generating') : t('checkout')}
               </Button>
             </div>
