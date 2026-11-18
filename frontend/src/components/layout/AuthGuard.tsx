@@ -30,6 +30,7 @@ const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/server-standalone', '/auth/lo
 const PAGE_PERMISSIONS = [
   ['/pos', 'pos.use'],
   ['/dashboard', 'dashboard.view'],
+  ['/reports', 'reports.view'],
   ['/orders', 'orders.read'],
   ['/products', 'catalog.manage'],
   ['/inventory', 'inventory.view'],

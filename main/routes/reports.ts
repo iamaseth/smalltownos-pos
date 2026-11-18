@@ -4,7 +4,7 @@ import {
   dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, parseDbTimestamp,
   tenantBusinessDayStartTime,
 } from '../db';
-import { requirePermission } from '../services/authorization';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
@@ -807,6 +807,148 @@ router.get('/daily-sales/export', requirePermission('reports.daily-sales.export'
       return res.status(409).json({ error: message });
     }
     console.error('[API] Daily sales export error:', error);
+    res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
+  }
+});
+
+const REPORT_MAX_DAYS = 366;
+
+function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(startDate: string, endDate: string): number {
+  return Math.round((Date.parse(`${endDate}T12:00:00Z`) - Date.parse(`${startDate}T12:00:00Z`)) / 86_400_000) + 1;
+}
+
+interface PeriodOrderRow { id: string; created_at: string; subtotal: number; discount_amount: number; total: number }
+
+function periodSummary(db: ReturnType<typeof getDatabase>, startDate: string, endDate: string) {
+  const orders = db.prepare(`
+    SELECT id, created_at, subtotal, discount_amount, total
+    FROM orders
+    WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'
+  `).all(reportDayBounds(startDate)[0], reportDayBounds(endDate)[1]) as PeriodOrderRow[];
+  const netSales = orders.reduce((sum, o) => sum.plus(o.total || 0), new Decimal(0)).toNumber();
+  const discounts = orders.reduce((sum, o) => sum.plus(o.discount_amount || 0), new Decimal(0)).toNumber();
+  return {
+    orders,
+    summary: {
+      orders: orders.length,
+      netSales,
+      discounts,
+      discountedOrders: orders.filter((o) => Number(o.discount_amount || 0) > 0).length,
+      averageBill: orders.length ? new Decimal(netSales).div(orders.length).toNumber() : 0,
+    },
+  };
+}
+
+router.get('/period', requirePermission('reports.view'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const today = reportToday();
+    const startDate = reportDate(req.query.start_date, today);
+    const endDate = reportDate(req.query.end_date, today);
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'start_date must be on or before end_date' });
+    }
+    const dayCount = daysBetween(startDate, endDate);
+    if (dayCount > REPORT_MAX_DAYS) {
+      return res.status(400).json({ error: `Report period cannot exceed ${REPORT_MAX_DAYS} days` });
+    }
+    const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    const canViewFinancials = hasPermission(userId, 'reports.financial.view');
+    const timeZone = tenantTimezone();
+    const startTime = tenantStartTime();
+    const hourFmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' });
+
+    const current = periodSummary(db, startDate, endDate);
+    const previousStart = shiftDate(startDate, -dayCount);
+    const previousEnd = shiftDate(startDate, -1);
+    const previous = periodSummary(db, previousStart, previousEnd).summary;
+
+    const daily = new Map<string, { orders: number; sales: Decimal }>();
+    for (let i = 0; i < dayCount; i++) daily.set(shiftDate(startDate, i), { orders: 0, sales: new Decimal(0) });
+    const hourly = Array.from({ length: 24 }, () => ({ orders: 0, sales: new Decimal(0) }));
+    for (const order of current.orders) {
+      const at = parseDbTimestamp(order.created_at);
+      const day = daily.get(localDateInTimezone(at, timeZone, startTime));
+      if (day) { day.orders += 1; day.sales = day.sales.plus(order.total || 0); }
+      const hour = parseInt(hourFmt.format(at), 10);
+      if (hour >= 0 && hour <= 23) { hourly[hour].orders += 1; hourly[hour].sales = hourly[hour].sales.plus(order.total || 0); }
+    }
+
+    const itemRows = db.prepare(`
+      SELECT oi.product_id, oi.product_name, p.category_id, p.cost AS unit_cost, p.id AS current_product_id,
+        SUM(oi.quantity) AS quantity, SUM(oi.total) AS net, COUNT(DISTINCT oi.order_id) AS order_count
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      LEFT JOIN products p ON p.id = oi.product_id
+      WHERE o.created_at >= ? AND o.created_at < ? AND o.status != 'cancelled' AND oi.voided_at IS NULL
+      GROUP BY oi.product_id, oi.product_name
+      ORDER BY net DESC
+    `).all(reportDayBounds(startDate)[0], reportDayBounds(endDate)[1]) as {
+      product_id: string; product_name: string; category_id: string | null; unit_cost: number | null;
+      current_product_id: string | null; quantity: number; net: number; order_count: number;
+    }[];
+
+    const categories = db.prepare('SELECT id, name, parent_id FROM categories').all() as { id: string; name: string; parent_id: string | null }[];
+    const categoryById = new Map(categories.map((c) => [c.id, c]));
+    const topCategoryName = (categoryId: string | null): string | null => {
+      let category = categoryId ? categoryById.get(categoryId) : undefined;
+      const seen = new Set<string>();
+      while (category?.parent_id && categoryById.has(category.parent_id) && !seen.has(category.id)) {
+        seen.add(category.id);
+        category = categoryById.get(category.parent_id);
+      }
+      return category?.name ?? null;
+    };
+
+    const byCategory = new Map<string, { name: string | null; quantity: number; net: Decimal }>();
+    const items = itemRows.map((row) => {
+      const onMenu = row.current_product_id !== null;
+      const categoryName = onMenu ? topCategoryName(row.category_id) : null;
+      const key = categoryName ?? '';
+      const bucket = byCategory.get(key) || { name: categoryName, quantity: 0, net: new Decimal(0) };
+      bucket.quantity += Number(row.quantity || 0);
+      bucket.net = bucket.net.plus(row.net || 0);
+      byCategory.set(key, bucket);
+      const unitCost = Number(row.unit_cost || 0);
+      const hasCost = onMenu && unitCost > 0;
+      const cost = hasCost ? new Decimal(unitCost).times(row.quantity || 0).toNumber() : null;
+      return {
+        productId: row.product_id,
+        name: row.product_name,
+        category: categoryName,
+        onMenu,
+        quantity: Number(row.quantity || 0),
+        orders: Number(row.order_count || 0),
+        net: Number(row.net || 0),
+        ...(canViewFinancials ? {
+          cost,
+          profit: cost === null ? null : new Decimal(row.net || 0).minus(cost).toNumber(),
+        } : {}),
+      };
+    });
+
+    res.json({
+      period: { startDate, endDate, days: dayCount, previousStartDate: previousStart, previousEndDate: previousEnd },
+      summary: current.summary,
+      previous,
+      daily: [...daily.entries()].map(([date, value]) => ({ date, orders: value.orders, sales: value.sales.toNumber() })),
+      hourly: hourly.map((value, hour) => ({ hour, orders: value.orders, sales: value.sales.toNumber() })),
+      paymentMethods: paymentMethodBreakdown(db, { startDate, endDate, paidOnly: true }),
+      categories: [...byCategory.values()]
+        .map((c) => ({ name: c.name, quantity: c.quantity, net: c.net.toNumber() }))
+        .sort((a, b) => b.net - a.net),
+      items,
+      canViewFinancials,
+    });
+  } catch (error) {
+    console.error('[API] Internal error:', error);
+    const { statusCode, message } = error as { statusCode?: number; message?: string };
     res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
   }
 });
