@@ -66,6 +66,7 @@ import {
 } from '@/lib/order-attempt';
 
 const POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
+const DESTINATION_PROMPT = 'Select a table, tab or To Go to continue.';
 
 interface PostpaidAttempt {
   userId: string;
@@ -125,6 +126,7 @@ export default function POSPage() {
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [showTabChoice, setShowTabChoice] = useState(false);
+  const [showDestinationChoice, setShowDestinationChoice] = useState(false);
   const [pendingDestination, setPendingDestination] = useState<Exclude<OrderDestination, 'togo'> | null>(null);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
@@ -610,7 +612,7 @@ export default function POSPage() {
 
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyModalOpen = showTablePicker || showTabChoice || !!addonProduct || !!editingCartItem || !!checkoutTable
+  const anyModalOpen = showTablePicker || showTabChoice || showDestinationChoice || !!addonProduct || !!editingCartItem || !!checkoutTable
     || !!paymentBill || showCustomerPrompt || showPrepaidCheckout || cashDrawer.open
     || shift.openModalOpen || shift.closeModalOpen;
 
@@ -624,21 +626,31 @@ export default function POSPage() {
     }
   }, !anyModalOpen);
 
-  const handlePayNow = () => {
-    if (pendingOrder) return;
-    if (cart.items.length === 0) {
-      toast.error(t('cartEmpty'));
-      return;
+  const destinationMissing = () => isRestaurant && cart.orderType === 'dine_in' && tablesRequired
+    && !cart.tableId && !cart.tabName && !pendingOrder;
+
+  const promptForDestination = () => {
+    if (destination === 'table') {
+      toast(DESTINATION_PROMPT);
+      setShowTablePicker(true);
+    } else if (destination === 'tab') {
+      toast(DESTINATION_PROMPT);
+      setShowTabChoice(true);
+    } else {
+      setShowDestinationChoice(true);
     }
-    if (customerMandatory && !cart.customerId) {
-      setShowCustomerPrompt(true);
-      return;
-    }
-    setPayNow(true);
-    setShowPrepaidCheckout(true);
   };
 
-  const handlePlaceOrder = async () => {
+  const handlePayNow = () => {
+    if (pendingOrder) return;
+    void placeOrder(true);
+  };
+
+  const handlePlaceOrder = () => placeOrder(false);
+
+  // thenPay: send the order, then open the payment screen for its bill.
+  const placeOrder = async (thenPay: boolean) => {
+    if (submitting) return;
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
       return;
@@ -647,10 +659,8 @@ export default function POSPage() {
       setShowCustomerPrompt(true);
       return;
     }
-    if (isRestaurant && cart.orderType === 'dine_in' && tablesRequired && !cart.tableId && !cart.tabName && !pendingOrder) {
-      if (destination === 'table') setShowTablePicker(true);
-      else if (destination === 'tab') setShowTabChoice(true);
-      else toast.error('Choose Table, Tab or To Go first');
+    if (destinationMissing()) {
+      promptForDestination();
       return;
     }
 
@@ -664,6 +674,7 @@ export default function POSPage() {
     setSubmitting(true);
     try {
       let orderForKot: Order;
+      let createdOrder: Order | null = null;
 
       if (pendingOrder) {
         // Add new items to an existing order with a durable retry key.
@@ -732,8 +743,9 @@ export default function POSPage() {
         if (!orderAttempt.order && !savePostpaidAttempt({ ...orderAttempt, order: data.order as Order })) {
           throw new OrderAttemptStorageError();
         }
-        toast.success(t('orderPlaced', { number: data.order.order_number }));
+        if (!thenPay) toast.success(t('orderPlaced', { number: data.order.order_number }));
         orderForKot = data.order as Order;
+        createdOrder = orderForKot;
         clearPostpaidAttempt();
       }
 
@@ -753,6 +765,15 @@ export default function POSPage() {
       await refreshTables();
 
       await printKotIfEnabled(orderForKot);
+
+      if (thenPay && createdOrder) {
+        try {
+          const { data: billData } = await api.post('/bills/generate', { order_id: createdOrder.id });
+          setPaymentBill(billData.bill);
+        } catch {
+          toast.error(`${t('orderPlaced', { number: createdOrder.order_number })} ${t('generateBillFailed')}`);
+        }
+      }
     } catch (error) {
       if (error instanceof OrderAttemptStorageError) reportOrderStorageFailure(t('placeOrderFailed'));
       else reportOrderRequestFailure(error, t('placeOrderFailed'));
@@ -1430,6 +1451,32 @@ export default function POSPage() {
           onOpenTab={handleOpenTab}
           onClose={() => setShowTabChoice(false)}
         />
+      )}
+
+      {isRestaurant && showDestinationChoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setShowDestinationChoice(false)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="destination-choice-title" data-testid="destination-choice"
+            className="w-full max-w-md rounded-2xl border-2 border-[#3d4f7c] bg-[#0f1729] p-5 text-[#e5e9f2]" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <h3 id="destination-choice-title" className="text-[20px] font-black leading-tight text-white">{DESTINATION_PROMPT}</h3>
+              <button type="button" onClick={() => setShowDestinationChoice(false)} aria-label={t('close')}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#3d4f7c] bg-[#22325a]"><X size={20} /></button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                ...(tablesRequired ? [['Table', handleChooseTableMode] as const] : []),
+                ['Tab', handleChooseTabMode] as const,
+                ['To Go', handleChooseToGo] as const,
+              ]).map(([label, choose]) => (
+                <button key={label} type="button" onClick={() => { setShowDestinationChoice(false); choose(); }}
+                  className="flex h-16 items-center justify-center rounded-xl border-2 border-[#4a5f92] bg-[#22325a] text-[18px] font-black uppercase text-white hover:bg-[#2b3d68] active:scale-95">
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 text-[14px] font-semibold text-[#a9b9dd]">Your cart stays as it is.</p>
+          </div>
+        </div>
       )}
 
       {isRestaurant && showTablePicker && (

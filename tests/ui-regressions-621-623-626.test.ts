@@ -45,6 +45,15 @@ assert.match(payment, /aria-label=\{`Add \$\{unit\} note`\}/, 'each cash currenc
 assert.ok(payment.indexOf('aria-label="Payment type"') < payment.indexOf("setShowDiscount((open) => !open)"), 'discount is a secondary action below the payment controls');
 assert.doesNotMatch(payment, /lg:overflow-visible/, 'desktop payment does not clip controls outside its bounded container');
 
+const posPage = source('frontend/src/app/(dashboard)/pos/page.tsx');
+const payNowBody = posPage.slice(posPage.indexOf('const handlePayNow'), posPage.indexOf('const handlePlaceOrder'));
+assert.match(payNowBody, /placeOrder\(true\)/, 'cart Pay sends the order and then opens the redesigned payment screen');
+assert.doesNotMatch(payNowBody, /setShowPrepaidCheckout/, 'postpaid cart Pay does not open the old prepaid checkout');
+assert.match(posPage, /thenPay && createdOrder[\s\S]*?\/bills\/generate[\s\S]*?setPaymentBill/, 'Pay generates the bill for the order it just created');
+assert.match(posPage, /if \(destinationMissing\(\)\) \{\s*promptForDestination\(\);/, 'Send and Pay without a destination open the destination chooser');
+assert.match(posPage, /data-testid="destination-choice"/, 'the Table / Tab / To Go chooser exists');
+assert.match(posPage, /Select a table, tab or To Go to continue\./, 'the chooser explains why it opened');
+
 const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
 assert.match(dashboard, /dayInputRef.*monthInputRef/s, 'dashboard retains explicit date and month picker controls');
 assert.match(dashboard, /input\.showPicker\(\)/, 'dashboard calendar buttons invoke the native Chromium picker');
