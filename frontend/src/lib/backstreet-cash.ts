@@ -36,6 +36,10 @@ export function addBackStreetCashNote(
   return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
 }
 
+export function restForTenderMinor(remainingMinor: number, totalPaymentMinor: number, tenderMinor: number): number {
+  return Math.max(0, remainingMinor - (totalPaymentMinor - tenderMinor));
+}
+
 export function calculateBackStreetCash(
   dueUsd: number,
   usdTendered: number,

@@ -29,7 +29,7 @@ import {
   type DiscountType,
 } from '@/lib/discount-settings';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
-import { BACKSTREET_CASH_NOTES, addBackStreetCashNote, applyBackStreetCashKey, khrToUsdMinor } from '@/lib/backstreet-cash';
+import { BACKSTREET_CASH_NOTES, addBackStreetCashNote, applyBackStreetCashKey, khrToUsdMinor, restForTenderMinor } from '@/lib/backstreet-cash';
 
 interface Props {
   bill: Bill;
@@ -257,12 +257,20 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     updateCashField((current) => addBackStreetCashNote(current, note, currency), currency);
   };
 
+  const restForMinor = (idx: number) => restForTenderMinor(
+    remainingMinor,
+    totalPaymentMinor,
+    toMinorUnits(toStoredUnit(parseFloat(payments[idx]?.amount) || 0)),
+  );
+  const restFor = (idx: number) => toDisplayUnit(restForMinor(idx) / minorFactor);
+
   const allocateRemainingTo = (idx: number) => {
-    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt);
-    const dueStored = Math.max(0, remaining - allocatedElsewhere);
-    const dueDisplay = toDisplayUnit(dueStored);
+    const restMinor = restForMinor(idx);
+    const decimals = Math.round(Math.log10(minorFactor));
     setPaymentsTouched(true);
-    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' } : payment));
+    setPayments(payments.map((payment, index) => index === idx
+      ? { ...payment, amount: restMinor > 0 ? toDisplayUnit(restMinor / minorFactor).toFixed(decimals) : '' }
+      : payment));
   };
 
   const activeAmountValue = amountTarget?.kind === 'payment'
@@ -530,11 +538,6 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     return customMethods.find((method) => method.id === payment?.payment_method_id)?.name || tCommon('unknown');
   };
 
-  const restFor = (idx: number) => {
-    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt)
-      + khrUsdMinor / minorFactor;
-    return toDisplayUnit(Math.max(0, remaining - allocatedElsewhere));
-  };
 
   const tenderButton = (idx: number | null, label: string, amount: number) => {
     const selected = tenderIndex === idx;
