@@ -825,19 +825,30 @@ function daysBetween(startDate: string, endDate: string): number {
 
 interface PeriodOrderRow { id: string; created_at: string; subtotal: number; discount_amount: number; total: number }
 
+function periodRefunds(db: ReturnType<typeof getDatabase>, startDate: string, endDate: string) {
+  const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+  return (db.prepare('SELECT created_at, amount_cents FROM refunds WHERE created_at >= ? AND created_at < ?')
+    .all(reportDayBounds(startDate)[0], reportDayBounds(endDate)[1]) as { created_at: string; amount_cents: number }[])
+    .map((r) => ({ created_at: r.created_at, amount: new Decimal(r.amount_cents || 0).div(minorFactor) }));
+}
+
 function periodSummary(db: ReturnType<typeof getDatabase>, startDate: string, endDate: string) {
   const orders = db.prepare(`
     SELECT id, created_at, subtotal, discount_amount, total
     FROM orders
     WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'
   `).all(reportDayBounds(startDate)[0], reportDayBounds(endDate)[1]) as PeriodOrderRow[];
-  const netSales = orders.reduce((sum, o) => sum.plus(o.total || 0), new Decimal(0)).toNumber();
+  const refunds = periodRefunds(db, startDate, endDate);
+  const refundTotal = refunds.reduce((sum, r) => sum.plus(r.amount), new Decimal(0));
+  const netSales = orders.reduce((sum, o) => sum.plus(o.total || 0), new Decimal(0)).minus(refundTotal).toNumber();
   const discounts = orders.reduce((sum, o) => sum.plus(o.discount_amount || 0), new Decimal(0)).toNumber();
   return {
     orders,
+    refunds,
     summary: {
       orders: orders.length,
       netSales,
+      refunds: refundTotal.toNumber(),
       discounts,
       discountedOrders: orders.filter((o) => Number(o.discount_amount || 0) > 0).length,
       averageBill: orders.length ? new Decimal(netSales).div(orders.length).toNumber() : 0,
@@ -878,6 +889,10 @@ router.get('/period', requirePermission('reports.view'), (req: Request, res: Res
       if (day) { day.orders += 1; day.sales = day.sales.plus(order.total || 0); }
       const hour = parseInt(hourFmt.format(at), 10);
       if (hour >= 0 && hour <= 23) { hourly[hour].orders += 1; hourly[hour].sales = hourly[hour].sales.plus(order.total || 0); }
+    }
+    for (const refund of current.refunds) {
+      const day = daily.get(localDateInTimezone(parseDbTimestamp(refund.created_at), timeZone, startTime));
+      if (day) day.sales = day.sales.minus(refund.amount);
     }
 
     const itemRows = db.prepare(`
@@ -944,6 +959,151 @@ router.get('/period', requirePermission('reports.view'), (req: Request, res: Res
         .map((c) => ({ name: c.name, quantity: c.quantity, net: c.net.toNumber() }))
         .sort((a, b) => b.net - a.net),
       items,
+      canViewFinancials,
+    });
+  } catch (error) {
+    console.error('[API] Internal error:', error);
+    const { statusCode, message } = error as { statusCode?: number; message?: string };
+    res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
+  }
+});
+
+function mondayOf(date: string): string {
+  const d = new Date(`${date}T12:00:00Z`);
+  return shiftDate(date, -((d.getUTCDay() + 6) % 7));
+}
+
+interface WeekDay {
+  date: string; orders: number; gross: Decimal; discounts: Decimal; refunds: Decimal; net: Decimal;
+  payments: Map<string, Decimal>; cost: Decimal; costedLines: number;
+}
+
+function weekDays(db: ReturnType<typeof getDatabase>, weekStart: string, paymentNames: Map<number, string>) {
+  const timeZone = tenantTimezone();
+  const startTime = tenantStartTime();
+  const windowStart = reportDayBounds(weekStart)[0];
+  const windowEnd = reportDayBounds(shiftDate(weekStart, 6))[1];
+  const days = new Map<string, WeekDay>();
+  for (let i = 0; i < 7; i++) {
+    const date = shiftDate(weekStart, i);
+    days.set(date, { date, orders: 0, gross: new Decimal(0), discounts: new Decimal(0), refunds: new Decimal(0), net: new Decimal(0), payments: new Map(), cost: new Decimal(0), costedLines: 0 });
+  }
+  const dayOf = (ts: string) => days.get(localDateInTimezone(parseDbTimestamp(ts), timeZone, startTime));
+
+  const orders = db.prepare(`
+    SELECT id, created_at, subtotal, discount_amount, total FROM orders
+    WHERE created_at >= ? AND created_at < ? AND status != 'cancelled'
+  `).all(windowStart, windowEnd) as PeriodOrderRow[];
+  const orderDay = new Map<string, WeekDay>();
+  for (const order of orders) {
+    const day = dayOf(order.created_at);
+    if (!day) continue;
+    orderDay.set(String(order.id), day);
+    day.orders += 1;
+    day.gross = day.gross.plus(order.subtotal || 0);
+    day.discounts = day.discounts.plus(order.discount_amount || 0);
+    day.net = day.net.plus(order.total || 0);
+  }
+
+  for (const refund of periodRefunds(db, weekStart, shiftDate(weekStart, 6))) {
+    const day = dayOf(refund.created_at);
+    if (!day) continue;
+    day.refunds = day.refunds.plus(refund.amount);
+    day.net = day.net.minus(refund.amount);
+  }
+
+  const bills = db.prepare(`
+    SELECT b.order_id, b.payment_details FROM bills b JOIN orders o ON o.id = b.order_id
+    WHERE o.created_at >= ? AND o.created_at < ? AND o.status != 'cancelled' AND b.payment_status = 'paid'
+  `).all(windowStart, windowEnd) as { order_id: string; payment_details: string | null }[];
+  for (const bill of bills) {
+    const day = orderDay.get(String(bill.order_id));
+    if (!day) continue;
+    let entries: { method?: string; payment_method_id?: number; amount?: number }[] = [];
+    try { entries = JSON.parse(bill.payment_details || '[]'); } catch { entries = []; }
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      const key = entry.method === 'custom'
+        ? (paymentNames.get(Number(entry.payment_method_id)) ?? `custom:${entry.payment_method_id}`)
+        : String(entry.method || 'unknown');
+      day.payments.set(key, (day.payments.get(key) || new Decimal(0)).plus(entry.amount || 0));
+    }
+  }
+
+  const lines = db.prepare(`
+    SELECT oi.order_id, oi.quantity, p.cost FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id LEFT JOIN products p ON p.id = oi.product_id
+    WHERE o.created_at >= ? AND o.created_at < ? AND o.status != 'cancelled' AND oi.voided_at IS NULL
+  `).all(windowStart, windowEnd) as { order_id: string; quantity: number; cost: number | null }[];
+  let uncostedLines = 0;
+  for (const line of lines) {
+    const day = orderDay.get(String(line.order_id));
+    if (!day) continue;
+    if (Number(line.cost || 0) > 0) {
+      day.cost = day.cost.plus(new Decimal(line.cost || 0).times(line.quantity || 0));
+      day.costedLines += 1;
+    } else {
+      uncostedLines += 1;
+    }
+  }
+  return { days: [...days.values()], uncostedLines };
+}
+
+router.get('/weekly', requirePermission('reports.view'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const weekStart = mondayOf(reportDate(req.query.week_start, reportToday()));
+    const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    const canViewFinancials = hasPermission(userId, 'reports.financial.view');
+    const paymentNames = new Map(
+      (db.prepare('SELECT id, name FROM payment_methods').all() as { id: number; name: string }[]).map((m) => [m.id, m.name]),
+    );
+    const current = weekDays(db, weekStart, paymentNames);
+    const previous = weekDays(db, shiftDate(weekStart, -7), paymentNames);
+
+    const methodTotals = new Map<string, Decimal>();
+    for (const day of current.days) {
+      for (const [method, amount] of day.payments) methodTotals.set(method, (methodTotals.get(method) || new Decimal(0)).plus(amount));
+    }
+    const paymentMethods = [...methodTotals.entries()].sort((a, b) => b[1].comparedTo(a[1])).map(([method]) => method);
+
+    const anyCost = current.days.some((d) => d.costedLines > 0);
+    const shape = (day: WeekDay, lastWeek?: WeekDay) => ({
+      date: day.date,
+      orders: day.orders,
+      gross: day.gross.toNumber(),
+      refunds: day.refunds.toNumber(),
+      discounts: day.discounts.toNumber(),
+      net: day.net.toNumber(),
+      ...(lastWeek ? { lastWeekNet: lastWeek.net.toNumber() } : {}),
+      payments: Object.fromEntries(paymentMethods.map((m) => [m, (day.payments.get(m) || new Decimal(0)).toNumber()])),
+      ...(canViewFinancials ? {
+        cost: anyCost ? day.cost.toNumber() : null,
+        grossProfit: anyCost ? day.net.minus(day.cost).toNumber() : null,
+      } : {}),
+    });
+    const totalOf = (days: WeekDay[]) => days.reduce((acc, d) => {
+      acc.orders += d.orders; acc.gross = acc.gross.plus(d.gross); acc.refunds = acc.refunds.plus(d.refunds);
+      acc.discounts = acc.discounts.plus(d.discounts); acc.net = acc.net.plus(d.net); acc.cost = acc.cost.plus(d.cost);
+      acc.costedLines += d.costedLines;
+      for (const [m, v] of d.payments) acc.payments.set(m, (acc.payments.get(m) || new Decimal(0)).plus(v));
+      return acc;
+    }, { date: '', orders: 0, gross: new Decimal(0), discounts: new Decimal(0), refunds: new Decimal(0), net: new Decimal(0), payments: new Map<string, Decimal>(), cost: new Decimal(0), costedLines: 0 } as WeekDay);
+    const total = totalOf(current.days);
+    const previousTotal = totalOf(previous.days);
+
+    res.json({
+      weekStart,
+      weekEnd: shiftDate(weekStart, 6),
+      paymentMethods,
+      days: current.days.map((day, i) => shape(day, previous.days[i])),
+      total: { ...shape(total, previousTotal), averageBill: total.orders ? total.net.div(total.orders).toNumber() : 0 },
+      previous: {
+        orders: previousTotal.orders,
+        net: previousTotal.net.toNumber(),
+        averageBill: previousTotal.orders ? previousTotal.net.div(previousTotal.orders).toNumber() : 0,
+        ...(canViewFinancials && previous.days.some((d) => d.costedLines > 0) ? { grossProfit: previousTotal.net.minus(previousTotal.cost).toNumber() } : {}),
+      },
+      uncostedLines: canViewFinancials ? current.uncostedLines : undefined,
       canViewFinancials,
     });
   } catch (error) {

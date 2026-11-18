@@ -84,6 +84,8 @@ async function main() {
   item(12, 1, 'prod-burger', 'Burger', 12, 1, '2026-11-10 11:30:00', '2026-11-10 11:35:00');
   insertBill.run(1, 'B-1', 1, 3, 3, 3, JSON.stringify([{ method: 'cash', amount: 3 }]), '2026-11-10 11:40:00', '2026-11-10 11:40:00', '2026-11-10 11:40:00');
 
+  db.prepare(`INSERT INTO refunds (bill_id, amount_cents, method, reason, approved_by, created_by, created_at) VALUES (1, 100, 'cash', 'test', ?, ?, '2026-11-10 12:00:00')`).run(ownerId, ownerId);
+
   order(2, 'completed', 12, 2, 10, '2026-11-10 16:30:00');
   item(21, 2, 'prod-burger', 'Burger', 12, 1, '2026-11-10 16:30:00');
 
@@ -118,7 +120,8 @@ async function main() {
     assertEqualOrThrow(res.status, 200, 'returns 200');
     const r = res.body;
     assertEqualOrThrow(r.summary.orders, 3, 'counts non-cancelled orders in the period');
-    assertOrThrow(close(r.summary.netSales, 17), 'net sales sums order totals (3 + 10 + 4)');
+    assertOrThrow(close(r.summary.netSales, 16), 'net sales sums order totals minus refunds (3 + 10 + 4 - 1)');
+    assertOrThrow(close(r.summary.refunds, 1), 'refunds are reported');
     assertOrThrow(close(r.summary.discounts, 2), 'discounts sum order discounts');
     assertEqualOrThrow(r.summary.discountedOrders, 1, 'counts discounted orders');
     assertEqualOrThrow(r.period.previousStartDate, '2026-11-08', 'previous period starts the same length earlier');
@@ -129,7 +132,7 @@ async function main() {
     console.log('\n2. Business days and hours');
     assertEqualOrThrow(r.daily.length, 2, 'one row per day in the period');
     assertEqualOrThrow(r.daily[0].orders, 2, '18:30 and 23:30 local land on 10 Nov');
-    assertOrThrow(close(r.daily[0].sales, 13), '10 Nov sales');
+    assertOrThrow(close(r.daily[0].sales, 12), '10 Nov sales net of the refund');
     assertEqualOrThrow(r.daily[1].orders, 1, '00:30 local lands on 11 Nov');
     assertOrThrow(close(r.hourly[18].sales, 3) && close(r.hourly[23].sales, 10) && close(r.hourly[0].sales, 4), 'hours bucket in store local time');
 
@@ -150,9 +153,28 @@ async function main() {
 
     console.log('\n4. Payments and validation');
     const cash = r.paymentMethods.find((p: any) => p.method === 'cash');
-    assertOrThrow(cash && close(cash.total, 3), 'payment methods come from paid bills');
+    assertOrThrow(cash && close(cash.total, 2), 'payment methods come from paid bills, net of refunds');
     assertEqualOrThrow((await get('start_date=2026-11-12&end_date=2026-11-10')).status, 400, 'rejects a reversed range');
     assertEqualOrThrow((await get('start_date=2025-01-01&end_date=2026-11-10')).status, 400, 'rejects periods over a year');
+
+    console.log('\n5. Weekly sheet');
+    const wres = await request(app).get('/api/reports/weekly?week_start=2026-11-12').set('Authorization', `Bearer ${token}`);
+    assertEqualOrThrow(wres.status, 200, 'weekly returns 200');
+    const w = wres.body;
+    assertEqualOrThrow(w.weekStart, '2026-11-09', 'any date snaps to its Monday');
+    assertEqualOrThrow(w.weekEnd, '2026-11-15', 'the week ends on Sunday');
+    assertEqualOrThrow(w.days.length, 7, 'seven days, Monday to Sunday');
+    const mon = w.days[0];
+    const tue = w.days[1];
+    assertOrThrow(close(mon.net, 5) && close(mon.cost, 1), 'Monday net sales and cost of goods');
+    assertOrThrow(close(tue.gross, 15) && close(tue.discounts, 2) && close(tue.refunds, 1), 'Tuesday gross, discounts and refunds');
+    assertOrThrow(close(tue.net, 12), 'Tuesday net is order totals minus refunds');
+    assertOrThrow(close(tue.payments.cash, 3), 'payments split by day and method');
+    assertOrThrow(close(tue.cost, 1) && close(tue.grossProfit, 11), 'daily cost of goods and gross profit');
+    assertOrThrow(close(w.days[2].net, 4), 'after-midnight sale counts on Wednesday');
+    assertOrThrow(close(w.total.net, 21) && w.total.orders === 4, 'week totals');
+    assertOrThrow(close(tue.lastWeekNet, 0) && close(w.previous.net, 0), 'same day last week and previous week');
+    assertEqualOrThrow(w.uncostedLines, 2, 'counts sold lines without a cost (burger and old iB4 item)');
     console.log('\nAll reports-period checks passed');
   } finally {
     closeDatabase();

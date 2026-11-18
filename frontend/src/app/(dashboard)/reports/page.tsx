@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, Download, Minus } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Download, Minus, Printer } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
 import api from '@/lib/api';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { Ltr } from '@/components/layout/Ltr';
+import { useAuthStore } from '@/store/auth';
+import WeeklySales from '@/components/reports/WeeklySales';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type Preset = 'today' | 'thisWeek' | 'thisMonth' | 'custom';
@@ -54,7 +56,7 @@ function Bars({ rows, format }: { rows: { label: string; value: number; title: s
     <div className="flex h-44 items-end gap-1.5" role="list">
       {rows.map((row) => (
         <div key={row.label} role="listitem" className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${row.title}: ${format(row.value)}`}>
-          <div className="w-full max-w-10 rounded-t-md bg-foreground" style={{ height: `${max > 0 ? Math.max((row.value / max) * 100, row.value > 0 ? 2 : 0) : 0}%` }} />
+          <div className="print-bar w-full max-w-10 rounded-t-md bg-foreground" style={{ height: `${max > 0 ? Math.max((row.value / max) * 100, row.value > 0 ? 2 : 0) : 0}%` }} />
           <span className="w-full truncate text-center text-[11px] font-semibold text-muted-foreground">{row.label}</span>
         </div>
       ))}
@@ -67,7 +69,9 @@ export default function ReportsPage() {
   const tDash = useTranslations('dashboard');
   const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
+  const tOrders = useTranslations('orders');
   const fmt = useFormatCurrency();
+  const businessName = useAuthStore((s) => s.currentTenant?.business_name);
   const [preset, setPreset] = useState<Preset>('thisWeek');
   const [range, setRange] = useState<[string, string]>(() => presetRange('thisWeek'));
   const [result, setResult] = useState<{ key: string; report: PeriodReport | null; failed: boolean } | null>(null);
@@ -104,6 +108,8 @@ export default function ReportsPage() {
       : String(d.getDate());
   };
 
+  const formatDay = (date: string) => new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
   const paymentLabel = (method: string) => {
     const meta = PAYMENT_METHODS.find((m) => m.key === method);
     return meta ? tPos(BUILT_IN_PAYMENT_KEYS[meta.key]) : method === 'wallet' ? tPos('methodWallet') : method;
@@ -112,7 +118,6 @@ export default function ReportsPage() {
   const costed = useMemo(() => (report?.items ?? []).filter((i) => i.cost != null), [report]);
   const missingCost = (report?.items ?? []).filter((i) => i.onMenu && i.cost == null).length;
   const paymentTotal = (report?.paymentMethods ?? []).reduce((sum, p) => sum + Number(p.total || 0), 0);
-  const visibleItems = showAllItems ? report?.items ?? [] : (report?.items ?? []).slice(0, TOP_ITEMS);
 
   const exportCsv = () => {
     if (!report) return;
@@ -149,8 +154,16 @@ export default function ReportsPage() {
   const heading = 'mb-4 text-base font-bold text-foreground';
 
   return (
-    <div className="mx-auto w-full max-w-7xl p-4 sm:p-6">
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+    <div className="print-report mx-auto w-full max-w-7xl p-4 sm:p-6">
+      {report && (
+        <div className="mb-4 hidden border-b-2 border-border pb-3 print:block">
+          {businessName && <p className="text-sm font-semibold">{businessName}</p>}
+          <p className="text-xl font-bold">{t('title')} · {formatDay(report.period.startDate)}{report.period.endDate !== report.period.startDate ? ` – ${formatDay(report.period.endDate)}` : ''}</p>
+          <p className="text-xs">{tOrders('printed')} {new Date().toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
+        </div>
+      )}
+      <WeeklySales />
+      <div className="mb-6 flex flex-wrap items-center gap-3 print:hidden">
         <h1 className="me-2 text-2xl font-bold text-foreground">{t('title')}</h1>
         <div className="flex h-10 rounded-xl border-2 border-border bg-card p-1" role="group" aria-label={t('periodView')}>
           {(['today', 'thisWeek', 'thisMonth', 'custom'] as const).map((key) => (
@@ -174,6 +187,10 @@ export default function ReportsPage() {
         <button type="button" onClick={exportCsv} disabled={!report || report.items.length === 0}
           className="inline-flex h-10 items-center gap-2 rounded-xl border-2 border-border bg-card px-4 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">
           <Download size={15} />{tDash('exportCsv')}
+        </button>
+        <button type="button" onClick={() => window.print()} disabled={!report}
+          className="inline-flex h-10 items-center gap-2 rounded-xl border-2 border-border bg-card px-4 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">
+          <Printer size={15} />{tCommon('print')}
         </button>
       </div>
 
@@ -244,8 +261,8 @@ export default function ReportsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleItems.map((i) => (
-                          <tr key={`${i.productId}-${i.name}`} className="border-t border-border">
+                        {report.items.map((i, index) => (
+                          <tr key={`${i.productId}-${i.name}`} className={`border-t border-border ${!showAllItems && index >= TOP_ITEMS ? 'hidden print:table-row' : ''}`}>
                             <td className="py-2 font-semibold text-foreground">
                               {i.name}
                               {!i.onMenu && <span className="ms-2 text-xs font-medium text-muted-foreground">{t('notOnMenu')}</span>}
@@ -258,7 +275,7 @@ export default function ReportsPage() {
                     </table>
                   </div>
                   {report.items.length > TOP_ITEMS && (
-                    <button type="button" onClick={() => setShowAllItems((v) => !v)} className="mt-3 text-sm font-semibold text-foreground underline underline-offset-4">
+                    <button type="button" onClick={() => setShowAllItems((v) => !v)} className="mt-3 text-sm font-semibold text-foreground underline underline-offset-4 print:hidden">
                       {showAllItems ? t('showLess') : t('showAll', { count: report.items.length })}
                     </button>
                   )}
@@ -274,8 +291,8 @@ export default function ReportsPage() {
                             <span className="truncate font-semibold text-foreground">{c.name ?? t('notOnMenu')}</span>
                             <span className="shrink-0 font-semibold text-foreground"><Ltr>{fmt(c.net)}</Ltr></span>
                           </div>
-                          <div className="h-2 overflow-hidden rounded-full bg-muted">
-                            <div className="h-full rounded-full bg-foreground" style={{ width: `${Math.max((c.net / max) * 100, 0)}%` }} />
+                          <div className="print-track h-2 overflow-hidden rounded-full bg-muted">
+                            <div className="print-bar h-full rounded-full bg-foreground" style={{ width: `${Math.max((c.net / max) * 100, 0)}%` }} />
                           </div>
                         </div>
                       );

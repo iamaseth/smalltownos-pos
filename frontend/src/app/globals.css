@@ -622,3 +622,22 @@ html:not(.dark) .pos-reference-font .text-\[\#f08a8a\] { color: #b91c1c; }
 .dark [data-sidebar="menu-button"][data-active="true"] { background: #fff; color: #000; }
 [data-sidebar="sidebar"] .text-muted-foreground { color: #27272a; }
 .dark [data-sidebar="sidebar"] .text-muted-foreground { color: #d4d4d8; }
+
+@media print {
+  @page { margin: 12mm; }
+  body:has(.print-report) [data-slot="sidebar"],
+  body:has(.print-report) [data-slot="sidebar-gap"],
+  body:has(.print-report) [data-slot="sidebar-container"],
+  body:has(.print-report) footer { display: none !important; }
+  body:has(.print-report) div:has(.print-report),
+  body:has(.print-report) main:has(.print-report) { display: block !important; height: auto !important; min-height: 0 !important; overflow: visible !important; }
+  html:has(.print-report), body:has(.print-report), body:has(.print-report) div:has(.print-report), .print-report { background: #fff !important; color: #000 !important; }
+  .print-report td, .print-report th { padding-top: 2px !important; padding-bottom: 2px !important; font-size: 11px !important; line-height: 1.3 !important; }
+  .print-report section { padding: 10px 14px !important; }
+  .print-report * { color: #000 !important; border-color: #bbb !important; background-color: transparent !important; box-shadow: none !important; }
+  .print-report .print-bar { background-color: #111 !important; }
+  .print-report .print-track { background-color: #e5e5e5 !important; }
+  .print-report, .print-report * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-report section, .print-report .rounded-2xl { break-inside: avoid; }
+  .print-report { max-width: none !important; padding: 0 !important; }
+}
