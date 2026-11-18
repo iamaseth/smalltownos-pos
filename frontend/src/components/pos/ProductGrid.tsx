@@ -3,7 +3,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Search, Keyboard, Star, Zap, LayoutGrid } from 'lucide-react';
+import { Search, Keyboard, Star, Zap, LayoutGrid } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -93,6 +93,8 @@ interface Props {
   onOrderSaved?: () => Promise<void>;
 }
 
+const LONG_PRESS_MS = 500;
+
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
   search, setSearch, onProductClick, onQuickAdd, canArrange = false, onOrderSaved, searchSlot = null,
@@ -116,6 +118,24 @@ export default function ProductGrid({
   }, [cart.items]);
 
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [editingFavorites, setEditingFavorites] = useState(false);
+  const pressTimer = useRef<number | null>(null);
+  const longPressed = useRef(false);
+  const startPress = (product: Product) => {
+    longPressed.current = false;
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = window.setTimeout(() => { longPressed.current = true; onProductClick(product); }, LONG_PRESS_MS);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
+  const tapProduct = (product: Product) => {
+    cancelPress();
+    if (longPressed.current) { longPressed.current = false; return; }
+    if (editingFavorites) { toggleFavorite(String(product.id)); return; }
+    onQuickAdd(product);
+  };
   const toggleFavorite = (id: string) => setFavorites(prev => {
     const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
     try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(next)); } catch {}
@@ -334,7 +354,7 @@ export default function ProductGrid({
       <div className="flex min-h-0 flex-1">
       <div ref={gridScrollRef} className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
         {favoritesOnly && !search.trim() && displayed.length === 0 && (
-          <p className="py-10 text-center text-sm text-slate-400">No favorites yet. Tap the ☆ on any product to pin it here.</p>
+          <p className="py-10 text-center text-sm text-slate-400">No favorites yet. Tap ★ Favorites, then tap products to pin them here.</p>
         )}
         
         {<>
@@ -342,8 +362,15 @@ export default function ProductGrid({
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-bold text-white tracking-tight">{selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : favoritesOnly ? 'Favorites' : 'All Products'}</h2>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length}</span>
+              {!arranging && <span className="hidden lg:inline text-xs font-semibold text-slate-400">{editingFavorites ? 'Tap products to pin or unpin' : 'Tap to add · hold for options'}</span>}
             </div>
             <div className="flex items-center gap-2">
+            {!arranging && (
+              <button type="button" aria-pressed={editingFavorites} onClick={() => setEditingFavorites((on) => !on)}
+                className={`h-10 rounded-xl border px-3 text-xs font-semibold ${editingFavorites ? 'border-amber-400 bg-amber-400 text-black' : 'border-[#1e293b] bg-[#131d31] text-slate-300 hover:bg-[#182234]'}`}>
+                {editingFavorites ? 'Done' : '★ Favorites'}
+              </button>
+            )}
             {canArrange && (arranging ? (
               <>
                 <button type="button" disabled={saving} onClick={() => setArranging(false)} className="h-10 rounded-xl border border-[#1e293b] bg-[#131d31] px-3 text-xs font-semibold text-slate-300 hover:bg-[#182234]">Cancel</button>
@@ -375,14 +402,24 @@ export default function ProductGrid({
                 onDragOver={e => {if(arranging)e.preventDefault();}}
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
-                className={`group flex flex-col justify-between bg-[#182234] text-slate-100 rounded-xl border border-[#1e293b] ${catalogView === 'compact' ? 'border-l-4' : ''} hover:border-[#334155] shadow-sm hover:shadow-lg active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500`}
-                style={catalogView === 'compact' ? { borderLeftColor: categoryAccent } : undefined}
+                className="group pos-product-tile flex flex-col justify-between bg-[#182234] text-slate-100 rounded-2xl border-2 border-s-[7px] border-[#3d4f7c] shadow-sm active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                style={{ borderInlineStartColor: categoryAccent }}
 
               >
-                <button type="button" aria-label={`Edit ${product.name}`}
-                  onClick={() => { if (!arranging) onProductClick(product); }}
+                <button type="button" aria-label={editingFavorites ? `${favorites.includes(String(product.id)) ? 'Unpin' : 'Pin'} ${product.name}` : `Add ${product.name}`}
+                  disabled={arranging}
+                  onClick={() => tapProduct(product)}
+                  onPointerDown={() => { if (!arranging && !editingFavorites) startPress(product); }}
+                  onPointerUp={cancelPress}
+                  onPointerLeave={cancelPress}
+                  onPointerCancel={cancelPress}
+                  onContextMenu={(event) => { event.preventDefault(); cancelPress(); if (!arranging) onProductClick(product); }}
                   className="absolute inset-0 z-0 w-full h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl" />
-                <div className="pointer-events-none relative z-[1] p-2.5 min-h-[84px] flex flex-col flex-1 justify-between"><div className="mb-1 flex items-start justify-between gap-1 empty:hidden">
+                {inCartQty > 0 && <span data-testid="pos-product-qty" aria-label={`${inCartQty} in order`} className="pos-qty-badge pointer-events-none absolute -top-0.5 -end-0.5 z-[2] grid h-10 min-w-10 place-items-center rounded-se-xl rounded-es-xl px-2 text-xl font-black">{inCartQty}</span>}
+                {(editingFavorites || favorites.includes(String(product.id))) && (
+                  <Star aria-hidden size={18} className={`pointer-events-none absolute bottom-2.5 end-2.5 z-[2] ${favorites.includes(String(product.id)) ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
+                )}
+                <div className="pointer-events-none relative z-[1] p-3 min-h-[104px] flex flex-col flex-1 justify-start"><div className="mb-1 flex items-start justify-between gap-1 pe-10 empty:hidden">
                   <div>
                     {!!product.track_inventory && product.stock_quantity <= 0 ? (
                       <span className="rounded-full border border-rose-800 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-rose-400">{t('outOfStock')}</span>
@@ -395,7 +432,6 @@ export default function ProductGrid({
                   {!!product.track_inventory && (
                     <span className="shrink-0 rounded border border-slate-800 bg-[#090d16] px-1.5 py-0.5 font-mono text-[10px] text-slate-400">{Number(product.stock_quantity)} left</span>
                   )}
-                  {inCartQty > 0 && <span className="rounded-md bg-emerald-700 px-1.5 py-0.5 text-[10px] font-bold text-white">{inCartQty} in order</span>}
                 </div>
 
                 {catalogView === 'photo' && (
@@ -431,21 +467,10 @@ export default function ProductGrid({
                   </div>
                 )}
 
-                <h3 className="font-bold text-[13px] text-slate-100 leading-snug line-clamp-2 min-h-[2.4em] break-words">{product.name}</h3>
-                <div className="flex items-center justify-between mt-1 pt-1 border-t border-[#1e293b]/60">
-                  <p className="font-bold text-xs text-blue-400">{fmt(Number(product.price))}</p>
-                  <div className="flex items-center gap-1">
-                  <button type="button" aria-label={favorites.includes(String(product.id)) ? `Remove ${product.name} from favorites` : `Add ${product.name} to favorites`}
-                    aria-pressed={favorites.includes(String(product.id))}
-                    onClick={(event) => { event.stopPropagation(); toggleFavorite(String(product.id)); }}
-                    className="pointer-events-auto relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-slate-500 hover:text-amber-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Star size={15} className={favorites.includes(String(product.id)) ? 'fill-amber-400 text-amber-400' : ''} /></button>
-                  <button type="button" aria-label={`Quick add ${product.name}`}
-                    disabled={arranging}
-                    onClick={(event) => { event.stopPropagation(); onQuickAdd(product); }}
-                    className="pointer-events-auto relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Plus size={16} /></button>
-                  </div>
-                </div></div>
-                            </div>
+                <h3 className={`text-[18px] font-extrabold leading-[1.18] tracking-[-0.01em] text-slate-100 line-clamp-3 break-words ${inCartQty > 0 ? 'pe-9' : ''}`}>{product.name}</h3>
+                <p className="mt-auto pt-1 text-[18px] font-extrabold text-blue-400 tabular-nums">{fmt(Number(product.price))}</p>
+                </div>
+              </div>
             );
           })}
           </div></>}

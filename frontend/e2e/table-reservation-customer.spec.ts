@@ -87,7 +87,6 @@ test('reserved customer is searchable, shown after reload, and linked to the din
     await page.goto(`${BASE}/pos`);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
     await page.getByTestId('pos-product-card').filter({ hasText: 'E2E Coffee' }).first().click();
-    await page.getByRole('button', { name: /Add to Cart/ }).click();
     await page.getByRole('button', { name: 'Place Order' }).click();
     await expect(page.getByRole('heading', { name: 'Select Table' })).toBeVisible();
     await page.getByRole('button', { name: new RegExp(tableName) }).click();

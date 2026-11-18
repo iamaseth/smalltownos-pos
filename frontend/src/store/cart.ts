@@ -41,6 +41,13 @@ interface CartState {
   itemCount: () => number;
 }
 
+export function cartLineTotal(item: Pick<CartItem, 'product' | 'quantity' | 'addons'>): number {
+  const itemPrice = Number(item.product?.price) || 0;
+  const itemQty = Number(item.quantity) || 1;
+  const addonTotal = (item.addons || []).reduce((a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1), 0);
+  return (itemPrice + addonTotal) * itemQty;
+}
+
 export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   orderType: 'dine_in',
@@ -148,12 +155,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   setTabName: (name) => set({ tabName: name }),
 
   subtotal: () => {
-    return get().items.reduce((sum, item) => {
-      const itemPrice = Number(item.product?.price) || 0;
-      const itemQty = Number(item.quantity) || 1;
-      const addonTotal = (item.addons || []).reduce((a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1), 0);
-      return sum + (itemPrice + addonTotal) * itemQty;
-    }, 0);
+    return get().items.reduce((sum, item) => sum + cartLineTotal(item), 0);
   },
 
   itemCount: () => {

@@ -104,7 +104,6 @@ test('adding an item to an occupied table only prints the newly appended item on
 
     // Add a second item to the cart, then send it to the already-occupied table.
     await page.getByTestId('pos-product-card').click();
-    await page.getByRole('button', { name: /Add to Cart/ }).click();
     await page.getByRole('button', { name: 'Place Order' }).click();
 
     await expect(page.getByRole('heading', { name: 'Select Table' })).toBeVisible();

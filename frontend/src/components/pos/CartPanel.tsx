@@ -5,7 +5,7 @@ import {
   Plus, Minus, Trash2, Pause, SquarePen,
   Users, MoreHorizontal, Save, Printer, GitMerge, ArrowLeftRight, BadgePercent, CreditCard,
 } from 'lucide-react';
-import { useCartStore } from '@/store/cart';
+import { cartLineTotal, useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -80,15 +80,15 @@ function ItemQuantityControl({
       <>
         <button
           onClick={() => stepBy(-1)}
-          className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md border border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2]"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
           aria-label={t('remove')}
         >
           <Minus size={16} />
         </button>
-        <span className="min-w-[20px] text-center text-[13px] font-medium tabular-nums">{item.quantity}</span>
+        <span className="min-w-[26px] text-center text-[20px] font-black tabular-nums">{item.quantity}</span>
         <button
           onClick={() => stepBy(1)}
-          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
           aria-label={t('addItems')}
         >
           <Plus size={16} />
@@ -101,7 +101,7 @@ function ItemQuantityControl({
     <>
       <button
         onClick={() => stepBy(-1)}
-        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
         aria-label={t('remove')}
       >
         <Minus size={16} />
@@ -118,11 +118,11 @@ function ItemQuantityControl({
           if (e.key === 'Enter') commitDraft();
         }}
         aria-label={t('quantity')}
-        className="w-10 rounded-md border border-[#4a5f92] bg-[#141f38] text-center text-[13px] tabular-nums"
+        className="h-10 w-14 rounded-lg border-2 border-[#4a5f92] bg-[#141f38] text-center text-[18px] font-bold tabular-nums"
       />
       <button
         onClick={() => stepBy(1)}
-        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
         aria-label={t('addItems')}
       >
         <Plus size={16} />
@@ -168,13 +168,14 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
   const savedItems = (existingOrder?.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
   const savedSubtotal = savedItems.reduce((sum: number, item: OrderItem) => sum + (Number(item.total) || 0), 0);
   const combinedSubtotal = savedSubtotal + total; // Informational only; tax and payments are calculated at checkout.
-  const iconButton = 'flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md border border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2]';
+  const iconButton = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 active:scale-95';
+  const destinationPrompt = 'flex h-11 w-full items-center justify-center rounded-xl border-2 border-dashed border-[#f5b942] text-[16px] font-bold text-[#f5b942]';
   return (
     <div className={isDrawer ? 'relative flex w-full flex-col bg-[#0f1729] text-[#e5e9f2]' : 'relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0f1729] text-[#e5e9f2]'}>
       {/* Exact reference hierarchy: header, scrollable rows, notes, fixed totals and actions. */}
       <div className="relative shrink-0 border-b border-[#243049] px-3 py-[10px]">
         <div className="flex items-center gap-2">
-          <div role="group" aria-label="Order type" className="flex min-w-0 flex-1 overflow-hidden rounded-lg border border-[#3d4f7c]">
+          <div role="group" aria-label="Order type" className="flex min-w-0 flex-1 overflow-hidden rounded-xl border-2 border-[#3d4f7c]">
             {([
               ...(showTableOption ? [['table', 'Table', onSelectTable] as const] : []),
               ['tab', 'Tab', onSelectTab] as const,
@@ -184,7 +185,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
               return (
                 <button key={key} type="button" aria-pressed={active} onClick={() => { setMoreOpen(false); onSelect(); }}
                   title={label}
-                  className={`flex h-9 min-w-0 flex-1 items-center justify-center whitespace-nowrap px-1 text-[12px] font-bold uppercase ${index > 0 ? 'border-l border-[#3d4f7c]' : ''} ${active ? 'bg-[#2563eb] text-white' : 'bg-[#22325a] hover:bg-[#2b3d68]'}`}>
+                  className={`flex h-11 min-w-0 flex-1 items-center justify-center whitespace-nowrap px-1 text-[14px] font-extrabold uppercase ${index > 0 ? 'border-s-2 border-[#3d4f7c]' : ''} ${active ? 'bg-[#2563eb] text-white' : 'bg-[#22325a] hover:bg-[#2b3d68]'}`}>
                   {label}
                 </button>
               );
@@ -192,41 +193,46 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
           </div>
           {onShowTabs && (
             <button type="button" onClick={() => { setMoreOpen(false); onShowTabs(); }}
-              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[#3d4f7c] bg-[#22325a] px-[10px] text-[13px] font-medium">
+              className="flex h-11 shrink-0 items-center gap-1.5 rounded-xl border-2 border-[#3d4f7c] bg-[#22325a] px-3 text-[14px] font-extrabold">
               Open ({openTabCount})
             </button>
           )}
         </div>
-        <div className="mt-2 flex min-h-[28px] items-center justify-between gap-2 text-[13px]">
+        <div className="mt-2 flex min-h-11 items-center justify-between gap-2 text-[15px]">
           {destination === 'table' && (cart.tableId ? (
             <>
-              <button type="button" onClick={onSelectTable} className="min-w-0 truncate text-left font-semibold text-white" title="Change table">
-                {selectedTable?.name || cart.tableId}{existingOrder ? ` · #${existingOrder.order_number}` : ''}
+              <button type="button" onClick={onSelectTable} className="flex min-w-0 items-baseline gap-2 text-start" title="Change table">
+                <span className="truncate text-[20px] font-black text-white">{selectedTable?.name || cart.tableId}</span>
+                {existingOrder && <span className="shrink-0 text-[14px] font-semibold text-[#8f9bb8]">#{existingOrder.order_number}</span>}
               </button>
-              <div className="flex shrink-0 items-center gap-1 rounded-full bg-[#1a2540] px-1 py-[3px] text-[12px]">
-                <button type="button" className={iconButton} aria-label="Decrease pax" onClick={() => cart.setGuestCount(Math.max(1,cart.guestCount-1))}><Minus size={14}/></button>
-                <span className="min-w-[48px] text-center">{cart.guestCount} Pax</span>
-                <button type="button" className={iconButton} aria-label="Increase pax" onClick={() => cart.setGuestCount(Math.min(99,cart.guestCount+1))}><Plus size={14}/></button>
+              <div className="flex shrink-0 items-center gap-1 text-[14px] font-bold">
+                <button type="button" className={iconButton+' border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2]'} aria-label="Decrease pax" onClick={() => cart.setGuestCount(Math.max(1,cart.guestCount-1))}><Minus size={16}/></button>
+                <span className="min-w-[52px] text-center">{cart.guestCount} Pax</span>
+                <button type="button" className={iconButton+' border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2]'} aria-label="Increase pax" onClick={() => cart.setGuestCount(Math.min(99,cart.guestCount+1))}><Plus size={16}/></button>
               </div>
             </>
           ) : (
-            <button type="button" onClick={onSelectTable} className="text-[#f5b942] underline-offset-2 hover:underline">Tap to pick a table</button>
+            <button type="button" onClick={onSelectTable} className={destinationPrompt}>Tap to pick a table</button>
           ))}
           {destination === 'tab' && (cart.tabName ? (
-            <button type="button" onClick={onSelectTab} className="min-w-0 truncate text-left font-semibold text-white" title="Change tab">
-              Tab: {cart.tabName}{existingOrder ? ` · #${existingOrder.order_number}` : ''}
-            </button>
+            <>
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span className="truncate text-[20px] font-black text-white">Tab: {cart.tabName}</span>
+                {existingOrder && <span className="shrink-0 text-[14px] font-semibold text-[#8f9bb8]">#{existingOrder.order_number}</span>}
+              </span>
+              <button type="button" onClick={onSelectTab} className="h-10 shrink-0 rounded-lg border-2 border-[#3d4f7c] bg-[#22325a] px-3 text-[14px] font-bold" title="Change tab">Change</button>
+            </>
           ) : (
-            <button type="button" onClick={onSelectTab} className="text-[#f5b942] underline-offset-2 hover:underline">Tap to name or choose a tab</button>
+            <button type="button" onClick={onSelectTab} className={destinationPrompt}>Tap to name or choose a tab</button>
           ))}
           {destination === 'togo' && (existingOrder ? (
-            <span className="min-w-0 truncate font-semibold text-white">To Go{cart.tabName ? `: ${cart.tabName}` : ''} · #{existingOrder.order_number}</span>
+            <span className="min-w-0 truncate text-[20px] font-black text-white">To Go{cart.tabName ? `: ${cart.tabName}` : ''} <span className="text-[14px] font-semibold text-[#8f9bb8]">#{existingOrder.order_number}</span></span>
           ) : (
             <input type="text" maxLength={60} value={cart.tabName} onChange={(e) => cart.setTabName(e.target.value)}
               placeholder="Customer name (optional)" aria-label="To Go customer name"
-              className="h-7 w-full rounded-md border border-[#2f3d5c] bg-[#0f1729] px-2 text-[12px] outline-none placeholder:text-[#7f8bab] focus:border-[#3b73f0]"/>
+              className="h-11 w-full rounded-lg border-2 border-[#3d4f7c] bg-[#0f1729] px-3 text-[16px] font-bold outline-none placeholder:font-semibold placeholder:text-[#7f8bab] focus:border-[#3b73f0]"/>
           ))}
-          {!destination && <span className="text-[#8f9bb8]">{showTableOption ? 'Choose Table, Tab or To Go' : 'Walk-in · or choose Tab / To Go'}</span>}
+          {!destination && <span className="text-[15px] font-semibold text-[#8f9bb8]">{showTableOption ? 'Choose Table, Tab or To Go' : 'Walk-in · or choose Tab / To Go'}</span>}
         </div>
       </div>
       <div className={isDrawer ? 'max-h-[40vh] overflow-y-auto px-[10px] py-[6px]' : 'min-h-0 flex-1 overflow-y-auto px-[10px] py-[6px]'}>
@@ -237,18 +243,19 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
         {existingOrder && <div className="mt-3 border-t border-[#243049] pt-2 text-xs font-semibold uppercase tracking-wide text-[#a9b9dd]">New items to add</div>}
         {cart.items.length === 0 && <div className="py-5 text-center text-[13px] text-[#6b7694]">{existingOrder ? 'No new items selected. Saved tab items are above.' : 'Cart is empty'}</div>}
         {cart.items.map(item => (
-          <div key={item.id} className="mb-1 rounded-lg border border-[#243049] bg-[#141f38] px-[6px] py-[5px]">
-            <div className="flex items-center gap-[6px]">
-              <div className="min-w-0 flex-1 leading-[1.25]">
-                <span className="block text-[13px] font-medium" title={item.product.name}>{item.product.name}</span>
-                <span className="text-[12px] text-[#8f9bb8]">{fmt(Number(item.product.price))}</span>
-              </div>
-              {onEditItem && <button type="button" onClick={() => onEditItem(item)} className={iconButton+' border-[#7a5f22] bg-[#3a2f16] text-[#f5b942]'} aria-label="Edit item"><SquarePen size={14}/></button>}
-              <div className="flex shrink-0 items-center gap-[3px]"><ItemQuantityControl item={item} updateQuantity={cart.updateQuantity}/></div>
-              <button type="button" onClick={() => cart.removeItem(item.id)} className={iconButton+' border-[#7a3a46] bg-[#3a1d24] text-[#f08a8a]'} aria-label="Remove item"><Trash2 size={14}/></button>
+          <div key={item.id} className="mb-2 rounded-xl border-2 border-[#3d4f7c] bg-[#141f38] px-2.5 py-2">
+            <div className="flex items-start justify-between gap-2 leading-tight">
+              <span className="min-w-0 break-words text-[17px] font-extrabold" title={item.product.name}>{item.product.name}</span>
+              <span className="shrink-0 text-[17px] font-extrabold tabular-nums">{fmt(cartLineTotal(item))}</span>
             </div>
-            {item.addons.map(a => <div key={a.id} className="pl-[2px] text-[11px] leading-[1.3] text-[#8f9bb8]">+ {a.name}{(a.quantity || 1)>1 ? ' ×'+a.quantity : ''}{Number(a.price)>0 ? ' ('+fmt(Number(a.price)*(a.quantity||1))+')' : ''}</div>)}
-            {item.special_instructions && <div className="pl-[2px] text-[11px] leading-[1.3] text-[#8f9bb8]">{item.special_instructions}</div>}
+            <div className="mt-1.5 flex items-center gap-1">
+              <span className="me-auto whitespace-nowrap text-[14px] font-semibold text-[#8f9bb8] tabular-nums">{fmt(Number(item.product.price))} ea</span>
+              <div className="flex shrink-0 items-center gap-1"><ItemQuantityControl item={item} updateQuantity={cart.updateQuantity}/></div>
+              {onEditItem && <button type="button" onClick={() => onEditItem(item)} className={iconButton+' border-[#7a5f22] bg-[#3a2f16] text-[#f5b942]'} aria-label="Edit item"><SquarePen size={17}/></button>}
+              <button type="button" onClick={() => cart.removeItem(item.id)} className={iconButton+' border-[#7a3a46] bg-[#3a1d24] text-[#f08a8a]'} aria-label="Remove item"><Trash2 size={17}/></button>
+            </div>
+            {item.addons.map(a => <div key={a.id} className="mt-1 text-[14px] leading-[1.3] text-[#8f9bb8]">+ {a.name}{(a.quantity || 1)>1 ? ' ×'+a.quantity : ''}{Number(a.price)>0 ? ' ('+fmt(Number(a.price)*(a.quantity||1))+')' : ''}</div>)}
+            {item.special_instructions && <div className="mt-1 text-[14px] font-semibold leading-[1.3] text-[#8f9bb8]">{item.special_instructions}</div>}
           </div>
         ))}
       </div>
@@ -258,16 +265,17 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
         <span className="pointer-events-none absolute right-2 top-[6px] text-[11px] leading-[14px] text-[#6b7694]">{cart.orderNotes.length}/200</span>
       </div>
       <div className="mt-[6px] shrink-0 border-t border-[#243049] px-3 pb-3 pt-[6px]">
-        {existingOrder && <div className="flex justify-between py-[1px] text-[12px] text-[#a9b9dd]"><span>Saved tab items (subtotal)</span><span>{fmt(savedSubtotal)}</span></div>}
-        <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>{existingOrder ? 'New items' : 'Items'}</span><span>{cart.itemCount()}</span></div>
-        <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>{existingOrder ? 'New items subtotal' : 'Subtotal'}</span><span>{fmt(cart.subtotal())}</span></div>
-        <div className="flex justify-between py-[1px] text-[12px] text-[#8f9bb8]"><span>Tax</span><span>Calculated at checkout</span></div>
-        <div className="flex justify-between pb-2 pt-[6px] text-[18px] font-medium"><span>{existingOrder ? 'Combined subtotal before tax' : 'Total before tax'}</span><span>{fmt(existingOrder ? combinedSubtotal : total)}</span></div>
+        {existingOrder && <div className="flex justify-between py-[1px] text-[14px] font-semibold text-[#a9b9dd]"><span>Saved tab items (subtotal)</span><span>{fmt(savedSubtotal)}</span></div>}
+        <div className="flex justify-between py-[1px] text-[14px] font-semibold text-[#8f9bb8]"><span>{existingOrder ? 'New items' : 'Items'}</span><span>{cart.itemCount()}</span></div>
+        <div className="flex justify-between py-[1px] text-[14px] font-semibold text-[#8f9bb8]"><span>{existingOrder ? 'New items subtotal' : 'Subtotal'}</span><span>{fmt(cart.subtotal())}</span></div>
+        <div className="flex justify-between py-[1px] text-[14px] font-semibold text-[#8f9bb8]"><span>Tax</span><span>Calculated at checkout</span></div>
+        <div className="flex items-baseline justify-between gap-2 pb-2 pt-[6px] text-[22px] font-black leading-tight"><span>{existingOrder ? 'Combined subtotal before tax' : 'Total before tax'}</span><span>{fmt(existingOrder ? combinedSubtotal : total)}</span></div>
         {(() => {
           const empty = submitting || cart.items.length === 0;
-          const primary = 'flex h-10 flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#2563eb] text-[14px] font-medium text-white disabled:opacity-40';
+          const primary = 'flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#2563eb] text-[16px] font-bold text-white disabled:opacity-40';
+          const payButton = 'flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#22c55e] text-[18px] font-black text-black disabled:opacity-40';
           if (billingType === 'prepaid') {
-            return <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${primary} w-full`}><CreditCard size={15}/>{submitting ? t('placing') : 'Pay '+fmt(total)}</button>;
+            return <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${payButton} w-full`}><CreditCard size={17}/>{submitting ? t('placing') : 'Pay '+fmt(total)}</button>;
           }
           if (existingOrder) {
             return (
@@ -275,7 +283,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
                 {onPayExisting && (
                   <button type="button" onClick={onPayExisting} disabled={submitting || cart.items.length > 0}
                     title={cart.items.length > 0 ? 'Send the new items first' : undefined}
-                    className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#3d4f7c] bg-[#22325a] px-3 text-[14px] font-medium text-white disabled:opacity-40"><CreditCard size={15}/>Bill</button>
+                    className="flex h-12 shrink-0 items-center justify-center gap-1.5 rounded-xl border-2 border-[#3d4f7c] bg-[#22325a] px-3 text-[16px] font-bold text-white disabled:opacity-40"><CreditCard size={17}/>Bill</button>
                 )}
                 <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${primary} min-w-0`}><span className="truncate">{submitting ? t('placing') : `Add to ${destination === 'table' && selectedTable ? selectedTable.name : cart.tabName || `#${existingOrder.order_number}`}`}</span></button>
               </div>
@@ -284,20 +292,20 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
           return (
             <div className="flex gap-[6px]">
               <button type="button" onClick={onPlaceOrder} disabled={empty}
-                className="flex h-10 flex-1 items-center justify-center rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[14px] font-medium text-white disabled:opacity-40">{submitting ? t('placing') : destination === 'togo' ? 'Send, pay later' : cart.tableId ? 'Send order' : 'Add to tab'}</button>
-              <button type="button" onClick={onPayNow} disabled={empty} className={primary}><CreditCard size={15}/>Pay {fmt(total)}</button>
+                className="flex h-12 flex-1 items-center justify-center rounded-xl border-2 border-[#3d4f7c] bg-[#22325a] text-[16px] font-bold text-white disabled:opacity-40">{submitting ? t('placing') : destination === 'togo' ? 'Send, pay later' : cart.tableId ? 'Send order' : 'Add to tab'}</button>
+              <button type="button" onClick={onPayNow} disabled={empty} className={payButton}><CreditCard size={17}/>Pay {fmt(total)}</button>
             </div>
           );
         })()}
         <div className="mt-[6px] flex gap-[6px]">
-          <button type="button" disabled={!canHold} onClick={handleHold} className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[12px] disabled:opacity-40"><Pause size={14}/>Hold</button>
-          <button type="button" disabled title="Save not connected" className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[12px] opacity-40"><Save size={14}/>Save</button>
-          <button type="button" disabled title="Print not connected" className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg border border-[#3d4f7c] bg-[#22325a] text-[12px] opacity-40"><Printer size={14}/>Print</button>
+          <button type="button" disabled={!canHold} onClick={handleHold} className="flex h-10 flex-1 items-center justify-center gap-1 rounded-lg border-2 border-[#3d4f7c] bg-[#22325a] text-[14px] font-bold disabled:opacity-40"><Pause size={15}/>Hold</button>
+          <button type="button" disabled title="Save not connected" className="flex h-10 flex-1 items-center justify-center gap-1 rounded-lg border-2 border-[#3d4f7c] bg-[#22325a] text-[14px] font-bold opacity-40"><Save size={15}/>Save</button>
+          <button type="button" disabled title="Print not connected" className="flex h-10 flex-1 items-center justify-center gap-1 rounded-lg border-2 border-[#3d4f7c] bg-[#22325a] text-[14px] font-bold opacity-40"><Printer size={15}/>Print</button>
           <button type="button" onClick={() => { setMoreOpen(!moreOpen); }} aria-label="More actions" aria-expanded={moreOpen}
-            className="flex h-8 w-10 shrink-0 items-center justify-center rounded-lg border border-[#3d4f7c] bg-[#22325a]"><MoreHorizontal size={17}/></button>
+            className="flex h-10 w-12 shrink-0 items-center justify-center rounded-lg border-2 border-[#3d4f7c] bg-[#22325a]"><MoreHorizontal size={19}/></button>
         </div>
       </div>
-      {moreOpen && <div className="absolute bottom-[54px] right-3 z-40 w-[210px] rounded-[10px] border border-[#3d4f7c] bg-[#1a2540] p-1 shadow-xl">
+      {moreOpen && <div className="absolute bottom-[60px] right-3 z-40 w-[210px] rounded-[10px] border border-[#3d4f7c] bg-[#1a2540] p-1 shadow-xl">
         <button type="button" disabled title="Split bill workflow not connected" className="flex w-full items-center gap-2 rounded-md p-2 text-left text-[13px] opacity-50"><Users size={15}/>Split bill</button>
         <button type="button" disabled={cart.items.length===0} onClick={() => { if(window.confirm('Clear cart?')) {cart.clearCart();onClearCart?.();setMoreOpen(false);} }}
           className="flex w-full items-center gap-2 rounded-md p-2 text-left text-[13px] hover:bg-[#243049] disabled:opacity-40"><Trash2 size={15}/>Clear cart</button>

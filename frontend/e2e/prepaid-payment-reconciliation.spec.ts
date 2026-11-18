@@ -11,7 +11,7 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
   await page.goto(`${BASE}/pos`);
 
   await page.getByTestId('pos-product-card').click();
-  await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
+  await expect(page.getByTestId('pos-product-qty')).toHaveText('1');
   await page.getByRole('button', { name: 'Place Order' }).click();
 
   await expect(page.getByRole('button', { name: 'Tax ฿4.20' })).toBeVisible();
@@ -58,7 +58,7 @@ test('prepaid checkout never reports success when the payment response is partia
   await page.goto(`${BASE}/pos`);
 
   await page.getByTestId('pos-product-card').click();
-  await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
+  await expect(page.getByTestId('pos-product-qty')).toHaveText('1');
   await page.getByRole('button', { name: 'Place Order' }).click();
   await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeVisible();
   await page.getByRole('button', { name: 'Cash', exact: true }).click();

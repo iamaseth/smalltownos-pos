@@ -104,7 +104,6 @@ async function loginAndOpenPos(page: Page): Promise<void> {
 
 async function addProductToCart(page: Page): Promise<void> {
   await page.getByTestId('pos-product-card').click();
-  await page.getByRole('button', { name: /Add to Cart/ }).click();
 }
 
 async function setBillingType(page: Page, billingType: 'prepaid' | 'postpaid'): Promise<Record<string, unknown>> {
