@@ -5,7 +5,7 @@ import { randomUUID, timingSafeEqual } from 'crypto';
 import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
 import { getJWTSecret } from '../security/jwt-secret';
 import { seedSetupProfile } from '../setup/seed-data';
-import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
+import { authorizeMasterPin, isMasterPinAvailable, isMasterPinFromEnvironment, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode, isValidTimeZone, resolveRegionalSnapshot, type RegionalSnapshot } from '../countries';
 import { countryConfirmationPatch } from '../services/country-provenance';
@@ -689,7 +689,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'You must accept the Terms and Conditions, Privacy Policy, and No Warranty Disclaimer to continue.' });
     }
 
-    const masterPinRequired = isMasterPinAvailable();
+    const masterPinRequired = isMasterPinAvailable() && !isMasterPinFromEnvironment();
     if (masterPinRequired && !/^\d{4}$/.test(String(master_pin || ''))) {
       return res.status(400).json({ error: 'A 4-digit Master PIN is required to complete setup' });
     }

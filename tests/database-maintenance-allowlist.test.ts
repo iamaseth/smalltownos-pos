@@ -1,7 +1,7 @@
 /**
  * Database maintenance allowlist cannot drift from the routes that exist.
  *
- * main/db.ts holds five hardcoded "<METHOD> /api/..." strings so the handlers
+ * main/db.ts holds hardcoded "<METHOD> /api/..." strings so the handlers
  * that take the maintenance lock are not counted in activeDatabaseRequests.
  * A route renamed out of that list is no longer excluded, so its own request
  * keeps the drain waiting on itself until MAINTENANCE_DRAIN_TIMEOUT_MS - a
@@ -39,6 +39,7 @@ const EXPECTED_MAINTENANCE_HANDLERS = [
   'GET /api/db/download',
   'POST /api/db-tools/initialize',
   'POST /api/db-tools/currency-reset',
+  'POST /api/db-tools/clear-test-sales',
 ];
 
 function readAllowlistedRoutes(): string[] {
@@ -54,7 +55,7 @@ async function run() {
   assert.deepEqual(
     [...allowlisted].sort(),
     [...EXPECTED_MAINTENANCE_HANDLERS].sort(),
-    'the maintenance allowlist still holds exactly the five handlers that take the lock',
+    'the maintenance allowlist holds exactly the handlers that take the lock',
   );
 
   const app = express();

@@ -36,7 +36,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const {
   isMasterPinAvailable, isMasterPinSet, setMasterPin, resetMasterPin, verifyMasterPin,
-  checkMasterPinRateLimit, authorizeMasterPin,
+  checkMasterPinRateLimit, authorizeMasterPin, isMasterPinFromEnvironment,
 } = require('../main/services/master-pin');
 
 function main() {
@@ -111,7 +111,37 @@ function main() {
   assert.equal(result.ok, false, 'gate hard-blocks (ok: false) when safeStorage is unavailable — vuln-0002');
   if (!result.ok) assert.equal(result.status, 503, 'unavailable encryption returns 503');
   console.log('   ✓ authorizeMasterPin() hard-blocks with 503 when encryption is unavailable (vuln-0002 regression)');
+
+  // ── headless server: FLO_MASTER_PIN fallback ─────────────────────────
+  for (const invalid of ['', '12', '12345', 'abcd']) {
+    process.env.FLO_MASTER_PIN = invalid;
+    assert.equal(isMasterPinFromEnvironment(), false, `malformed FLO_MASTER_PIN "${invalid}" is ignored`);
+    const blocked = authorizeMasterPin('1234', `test:env-invalid-${invalid}`);
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.status, 503, 'malformed FLO_MASTER_PIN still hard-blocks');
+  }
+  console.log('   ✓ malformed FLO_MASTER_PIN values never open the gate');
+
+  process.env.FLO_MASTER_PIN = ' 2468 ';
+  assert.equal(isMasterPinFromEnvironment(), true, 'valid FLO_MASTER_PIN is used without OS encryption');
+  assert.equal(isMasterPinAvailable(), true);
+  assert.equal(isMasterPinSet(), true);
+  assert.equal(authorizeMasterPin('2468', 'test:env-ok').ok, true, 'the server PIN authorizes');
+  assert.equal(authorizeMasterPin('4321', 'test:env-file-pin').ok, false, 'the old on-disk PIN is not accepted in server mode');
+  const envLockout = 'test:env-lockout';
+  for (let i = 0; i < 4; i++) authorizeMasterPin('1111', envLockout);
+  const envLocked = authorizeMasterPin('1111', envLockout);
+  if (!envLocked.ok) assert.equal(envLocked.status, 429, 'server PIN keeps the 5-attempt lockout');
+  assert.equal(envLocked.ok, false);
+  assert.throws(() => resetMasterPin('1357'), /FLO_MASTER_PIN/, 'server PIN cannot be changed from the app');
+  console.log('   ✓ FLO_MASTER_PIN authorizes on headless servers, keeps the lockout, and cannot be overwritten');
+
   encryptionAvailable = true;
+  assert.equal(isMasterPinFromEnvironment(), false, 'desktop keyring wins over FLO_MASTER_PIN');
+  assert.equal(authorizeMasterPin('2468', 'test:env-desktop').ok, false, 'FLO_MASTER_PIN is ignored on desktop');
+  assert.equal(authorizeMasterPin('4321', 'test:env-desktop-file').ok, true, 'desktop keeps its stored PIN');
+  console.log('   ✓ desktop installs ignore FLO_MASTER_PIN');
+  delete process.env.FLO_MASTER_PIN;
 }
 
 try {

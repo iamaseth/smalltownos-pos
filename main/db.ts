@@ -211,6 +211,7 @@ const DATABASE_MAINTENANCE_ROUTES = new Set([
   'GET /api/db/download',
   'POST /api/db-tools/initialize',
   'POST /api/db-tools/currency-reset',
+  'POST /api/db-tools/clear-test-sales',
 ]);
 
 function isDatabaseMaintenanceRoute(req: Request): boolean {

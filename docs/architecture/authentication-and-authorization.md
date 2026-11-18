@@ -174,7 +174,7 @@ to `authorizeMasterPin` in
 
 | Condition | Result |
 | --- | --- |
-| OS-backed encryption unavailable | 503, and the gated operation is blocked rather than allowed through |
+| OS-backed encryption unavailable and no valid `FLO_MASTER_PIN` | 503, and the gated operation is blocked rather than allowed through |
 | PIN not set on this device | 409 |
 | Rate limit reached for this key | 429 |
 | PIN absent, not a string, or not exactly 4 digits | 403 |
@@ -183,6 +183,12 @@ to `authorizeMasterPin` in
 The PIN hash is stored through Electron `safeStorage` in `master-pin.enc` under the app's
 `userData` directory, written with mode `0o600`. Rate limiting is in memory, keyed by IP and route
 path, at 5 attempts per 15 minutes.
+
+Headless server deployments (`node dev-server.js`) have no OS keyring. There the PIN comes from the
+`FLO_MASTER_PIN` environment variable, which must be exactly 4 digits; any other value is ignored and
+the gate stays closed. In that mode the PIN reports as set, is compared in constant time with the
+same rate limit, cannot be changed through `/api/db-tools/master-pin/reset`, and setup does not ask
+for one. Where OS encryption is available, `FLO_MASTER_PIN` is ignored.
 
 The rate-limit key includes the route, so attempts against one endpoint do not consume another's
 budget. A caller with a different route can therefore attempt the PIN 5 times per route. That is

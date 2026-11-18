@@ -1,4 +1,5 @@
 import { app, safeStorage } from 'electron';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as bcrypt from 'bcryptjs';
@@ -17,7 +18,7 @@ function getMasterPinFilePath(): string {
   return path.join(app.getPath('userData'), 'master-pin.enc');
 }
 
-export function isMasterPinAvailable(): boolean {
+function isOsEncryptionAvailable(): boolean {
   try {
     return safeStorage.isEncryptionAvailable();
   } catch {
@@ -25,7 +26,22 @@ export function isMasterPinAvailable(): boolean {
   }
 }
 
+function environmentMasterPin(): string | null {
+  const pin = String(process.env.FLO_MASTER_PIN ?? '').trim();
+  return PIN_REGEX.test(pin) ? pin : null;
+}
+
+/** Headless server deployments without an OS keyring take the Master PIN from FLO_MASTER_PIN. */
+export function isMasterPinFromEnvironment(): boolean {
+  return !isOsEncryptionAvailable() && environmentMasterPin() !== null;
+}
+
+export function isMasterPinAvailable(): boolean {
+  return isOsEncryptionAvailable() || isMasterPinFromEnvironment();
+}
+
 export function isMasterPinSet(): boolean {
+  if (isMasterPinFromEnvironment()) return true;
   return fs.existsSync(getMasterPinFilePath());
 }
 
@@ -46,7 +62,12 @@ function writeBlob(blob: MasterPinBlob): void {
   fs.writeFileSync(getMasterPinFilePath(), encrypted, { mode: 0o600 });
 }
 
+export const ENVIRONMENT_MASTER_PIN_MESSAGE = 'Master PIN is set by the FLO_MASTER_PIN server variable; change it in the server settings.';
+
 function savePin(pin: string): void {
+  if (isMasterPinFromEnvironment()) {
+    throw new Error(ENVIRONMENT_MASTER_PIN_MESSAGE);
+  }
   if (!PIN_REGEX.test(pin)) {
     throw new Error('Master PIN must be exactly 4 digits');
   }
@@ -70,6 +91,10 @@ export function resetMasterPin(pin: string): void {
 }
 
 export function verifyMasterPin(pin: string): boolean {
+  if (isMasterPinFromEnvironment()) {
+    const digest = (value: string) => crypto.createHash('sha256').update(value).digest();
+    return crypto.timingSafeEqual(digest(pin), digest(environmentMasterPin() as string));
+  }
   const blob = readBlob();
   if (!blob) return false;
   return bcrypt.compareSync(pin, blob.hash);
@@ -120,7 +145,8 @@ export function authorizeMasterPin(pin: string | undefined, rateLimitKey: string
       ok: false,
       status: 503,
       error: 'Master PIN is not available on this device (OS encryption unavailable). ' +
-             'Master PIN-gated operations require a desktop environment with keyring support.',
+             'Master PIN-gated operations require a desktop environment with keyring support, ' +
+             'or a 4-digit FLO_MASTER_PIN server variable.',
     };
   }
 
