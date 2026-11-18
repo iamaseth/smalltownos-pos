@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
-  Plus, Minus, Trash2, Pause, SquarePen,
-  Users, MoreHorizontal, Save, Printer, GitMerge, ArrowLeftRight, BadgePercent, CreditCard,
+  Plus, Minus, Trash2, Pause, X, StickyNote,
+  Users, MoreHorizontal, Printer, GitMerge, ArrowLeftRight, BadgePercent, CreditCard,
 } from 'lucide-react';
 import { cartLineTotal, useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
@@ -162,12 +162,14 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
   };
 
   const [moreOpen, setMoreOpen] = useState(false);
+  const [editingNote, setEditingNote] = useState(false);
   const isDrawer = variant === 'drawer';
   const selectedTable = tables.find((table) => table.id === cart.tableId);
   const total = cart.subtotal(); // New items only; preserve existing checkout calculation.
   const savedItems = (existingOrder?.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
   const savedSubtotal = savedItems.reduce((sum: number, item: OrderItem) => sum + (Number(item.total) || 0), 0);
   const combinedSubtotal = savedSubtotal + total; // Informational only; tax and payments are calculated at checkout.
+  const menuItem = 'flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 text-start text-[15px] font-semibold hover:bg-[#243049] disabled:opacity-40';
   const iconButton = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 active:scale-95';
   const destinationPrompt = 'flex h-11 w-full items-center justify-center rounded-xl border-2 border-dashed border-[#f5b942] text-[16px] font-bold text-[#f5b942]';
   return (
@@ -243,76 +245,83 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
         {existingOrder && <div className="mt-3 border-t border-[#243049] pt-2 text-xs font-semibold uppercase tracking-wide text-[#a9b9dd]">New items to add</div>}
         {cart.items.length === 0 && <div className="py-5 text-center text-[13px] text-[#6b7694]">{existingOrder ? 'No new items selected. Saved tab items are above.' : 'Cart is empty'}</div>}
         {cart.items.map(item => (
-          <div key={item.id} className="mb-2 rounded-xl border-2 border-[#3d4f7c] bg-[#141f38] px-2.5 py-2">
-            <div className="flex items-start justify-between gap-2 leading-tight">
-              <span className="min-w-0 break-words text-[17px] font-extrabold" title={item.product.name}>{item.product.name}</span>
-              <span className="shrink-0 text-[17px] font-extrabold tabular-nums">{fmt(cartLineTotal(item))}</span>
-            </div>
-            <div className="mt-1.5 flex items-center gap-1">
-              <span className="me-auto whitespace-nowrap text-[14px] font-semibold text-[#8f9bb8] tabular-nums">{fmt(Number(item.product.price))} ea</span>
-              <div className="flex shrink-0 items-center gap-1"><ItemQuantityControl item={item} updateQuantity={cart.updateQuantity}/></div>
-              {onEditItem && <button type="button" onClick={() => onEditItem(item)} className={iconButton+' border-[#7a5f22] bg-[#3a2f16] text-[#f5b942]'} aria-label="Edit item"><SquarePen size={17}/></button>}
-              <button type="button" onClick={() => cart.removeItem(item.id)} className={iconButton+' border-[#7a3a46] bg-[#3a1d24] text-[#f08a8a]'} aria-label="Remove item"><Trash2 size={17}/></button>
-            </div>
-            {item.addons.map(a => <div key={a.id} className="mt-1 text-[14px] leading-[1.3] text-[#8f9bb8]">+ {a.name}{(a.quantity || 1)>1 ? ' ×'+a.quantity : ''}{Number(a.price)>0 ? ' ('+fmt(Number(a.price)*(a.quantity||1))+')' : ''}</div>)}
-            {item.special_instructions && <div className="mt-1 text-[14px] font-semibold leading-[1.3] text-[#8f9bb8]">{item.special_instructions}</div>}
+          <div key={item.id} className="mb-1.5 flex items-stretch overflow-hidden rounded-xl border-2 border-[#3d4f7c] bg-[#141f38]">
+            {(() => {
+              const line = (
+                <>
+                  <div className="flex items-baseline gap-2 leading-tight">
+                    <span className="shrink-0 text-[18px] font-black tabular-nums">{item.quantity}×</span>
+                    <span className="min-w-0 flex-1 break-words text-[17px] font-extrabold" title={item.product.name}>{item.product.name}</span>
+                    <span className="shrink-0 text-[17px] font-extrabold tabular-nums">{fmt(cartLineTotal(item))}</span>
+                  </div>
+                  {item.addons.map(a => <div key={a.id} className="mt-0.5 ps-7 text-[14px] leading-[1.3] text-[#8f9bb8]">+ {a.name}{(a.quantity || 1)>1 ? ' ×'+a.quantity : ''}{Number(a.price)>0 ? ' ('+fmt(Number(a.price)*(a.quantity||1))+')' : ''}</div>)}
+                  {item.special_instructions && <div className="mt-0.5 ps-7 text-[14px] font-semibold leading-[1.3] text-[#8f9bb8]">{item.special_instructions}</div>}
+                </>
+              );
+              return onEditItem
+                ? <button type="button" onClick={() => onEditItem(item)} aria-label={`Edit ${item.product.name}`} className="min-w-0 flex-1 px-2.5 py-2 text-start active:bg-[#1a2540]">{line}</button>
+                : <div className="min-w-0 flex-1 px-2.5 py-2">{line}<div className="mt-1.5 flex items-center gap-1"><ItemQuantityControl item={item} updateQuantity={cart.updateQuantity}/></div></div>;
+            })()}
+            <button type="button" onClick={() => cart.removeItem(item.id)} aria-label={`Remove ${item.product.name}`}
+              className="flex w-11 shrink-0 items-center justify-center border-s-2 border-[#3d4f7c] text-[#f08a8a] active:bg-[#3a1d24]"><X size={20}/></button>
           </div>
         ))}
       </div>
-      <div className="relative mx-[10px] mt-[2px] h-[26px] shrink-0">
-        <input type="text" maxLength={200} value={cart.orderNotes} onChange={e => cart.setOrderNotes(e.target.value)}
-          placeholder="Order notes (optional)" className="h-[26px] w-full rounded-md border border-[#2f3d5c] bg-[#0f1729] pl-2 pr-[46px] text-[12px] outline-none placeholder:text-[#7f8bab] focus:border-[#3b73f0]"/>
-        <span className="pointer-events-none absolute right-2 top-[6px] text-[11px] leading-[14px] text-[#6b7694]">{cart.orderNotes.length}/200</span>
-      </div>
-      <div className="mt-[6px] shrink-0 border-t border-[#243049] px-3 pb-3 pt-[6px]">
-        {existingOrder && <div className="flex justify-between py-[1px] text-[14px] font-semibold text-[#a9b9dd]"><span>Saved tab items (subtotal)</span><span>{fmt(savedSubtotal)}</span></div>}
-        <div className="flex justify-between py-[1px] text-[14px] font-semibold text-[#8f9bb8]"><span>{existingOrder ? 'New items' : 'Items'}</span><span>{cart.itemCount()}</span></div>
-        <div className="flex justify-between py-[1px] text-[14px] font-semibold text-[#8f9bb8]"><span>{existingOrder ? 'New items subtotal' : 'Subtotal'}</span><span>{fmt(cart.subtotal())}</span></div>
-        <div className="flex justify-between py-[1px] text-[14px] font-semibold text-[#8f9bb8]"><span>Tax</span><span>Calculated at checkout</span></div>
-        <div className="flex items-baseline justify-between gap-2 pb-2 pt-[6px] text-[22px] font-black leading-tight"><span>{existingOrder ? 'Combined subtotal before tax' : 'Total before tax'}</span><span>{fmt(existingOrder ? combinedSubtotal : total)}</span></div>
+      <div className="shrink-0 border-t-2 border-[#243049] px-3 pb-3 pt-2">
+        {cart.orderNotes && (
+          <button type="button" onClick={() => { setMoreOpen(true); setEditingNote(true); }} className="mb-1.5 block w-full truncate text-start text-[14px] font-semibold text-[#8f9bb8]" title="Edit order note">
+            Note: {cart.orderNotes}
+          </button>
+        )}
+        {existingOrder && <div className="flex justify-between text-[14px] font-semibold text-[#8f9bb8]"><span>Already on the bill</span><span className="tabular-nums">{fmt(savedSubtotal)}</span></div>}
+        <div className="flex items-baseline justify-between gap-2 pb-2 text-[26px] font-black leading-tight" data-testid="cart-total"><span>Total</span><span className="tabular-nums">{fmt(existingOrder ? combinedSubtotal : total)}</span></div>
         {(() => {
           const empty = submitting || cart.items.length === 0;
-          const primary = 'flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#2563eb] text-[16px] font-bold text-white disabled:opacity-40';
-          const payButton = 'flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#22c55e] text-[18px] font-black text-black disabled:opacity-40';
+          const side = 'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 border-[#3d4f7c] bg-[#22325a] text-white disabled:opacity-40';
+          const secondary = 'flex h-12 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-[#3d4f7c] bg-[#22325a] px-2 text-[16px] font-bold text-white disabled:opacity-40';
+          const payButton = 'flex h-12 min-w-0 flex-[1.4] items-center justify-center gap-1.5 rounded-xl bg-[#22c55e] px-2 text-[18px] font-black text-black disabled:opacity-40';
+          const printButton = <button type="button" disabled title="Printing is not connected yet" aria-label="Print" className={side}><Printer size={20}/></button>;
+          const moreButton = <button type="button" onClick={() => { setMoreOpen(!moreOpen); setEditingNote(false); }} aria-label="More actions" aria-expanded={moreOpen} className={side}><MoreHorizontal size={22}/></button>;
+          let actions: ReactNode;
           if (billingType === 'prepaid') {
-            return <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${payButton} w-full`}><CreditCard size={17}/>{submitting ? t('placing') : 'Pay '+fmt(total)}</button>;
+            actions = <button type="button" onClick={onPlaceOrder} disabled={empty} aria-label={`Pay ${fmt(total)}`} className={payButton}><CreditCard size={18}/>{submitting ? t('placing') : 'Pay'}</button>;
+          } else if (existingOrder) {
+            actions = <>
+              {onPayExisting && (
+                <button type="button" onClick={onPayExisting} disabled={submitting || cart.items.length > 0}
+                  title={cart.items.length > 0 ? 'Send the new items first' : undefined} className={secondary}><CreditCard size={17}/>Bill</button>
+              )}
+              <button type="button" onClick={onPlaceOrder} disabled={empty} className="flex h-12 min-w-0 flex-[1.4] items-center justify-center rounded-xl bg-[#2563eb] px-2 text-[16px] font-bold text-white disabled:opacity-40"><span className="truncate">{submitting ? t('placing') : `Add to ${destination === 'table' && selectedTable ? selectedTable.name : cart.tabName || `#${existingOrder.order_number}`}`}</span></button>
+            </>;
+          } else {
+            actions = <>
+              <button type="button" onClick={onPlaceOrder} disabled={empty} className={secondary}
+                title={destination === 'togo' ? 'Send now, pay later' : cart.tableId ? 'Send order' : 'Add to tab'}>{submitting ? t('placing') : 'Send'}</button>
+              <button type="button" onClick={onPayNow} disabled={empty} aria-label={`Pay ${fmt(total)}`} className={payButton}><CreditCard size={18}/>Pay</button>
+            </>;
           }
-          if (existingOrder) {
-            return (
-              <div className="flex gap-[6px]">
-                {onPayExisting && (
-                  <button type="button" onClick={onPayExisting} disabled={submitting || cart.items.length > 0}
-                    title={cart.items.length > 0 ? 'Send the new items first' : undefined}
-                    className="flex h-12 shrink-0 items-center justify-center gap-1.5 rounded-xl border-2 border-[#3d4f7c] bg-[#22325a] px-3 text-[16px] font-bold text-white disabled:opacity-40"><CreditCard size={17}/>Bill</button>
-                )}
-                <button type="button" onClick={onPlaceOrder} disabled={empty} className={`${primary} min-w-0`}><span className="truncate">{submitting ? t('placing') : `Add to ${destination === 'table' && selectedTable ? selectedTable.name : cart.tabName || `#${existingOrder.order_number}`}`}</span></button>
-              </div>
-            );
-          }
-          return (
-            <div className="flex gap-[6px]">
-              <button type="button" onClick={onPlaceOrder} disabled={empty}
-                className="flex h-12 flex-1 items-center justify-center rounded-xl border-2 border-[#3d4f7c] bg-[#22325a] text-[16px] font-bold text-white disabled:opacity-40">{submitting ? t('placing') : destination === 'togo' ? 'Send, pay later' : cart.tableId ? 'Send order' : 'Add to tab'}</button>
-              <button type="button" onClick={onPayNow} disabled={empty} className={payButton}><CreditCard size={17}/>Pay {fmt(total)}</button>
-            </div>
-          );
+          return <div className="flex gap-[6px]">{printButton}{actions}{moreButton}</div>;
         })()}
-        <div className="mt-[6px] flex gap-[6px]">
-          <button type="button" disabled={!canHold} onClick={handleHold} className="flex h-10 flex-1 items-center justify-center gap-1 rounded-lg border-2 border-[#3d4f7c] bg-[#22325a] text-[14px] font-bold disabled:opacity-40"><Pause size={15}/>Hold</button>
-          <button type="button" disabled title="Save not connected" className="flex h-10 flex-1 items-center justify-center gap-1 rounded-lg border-2 border-[#3d4f7c] bg-[#22325a] text-[14px] font-bold opacity-40"><Save size={15}/>Save</button>
-          <button type="button" disabled title="Print not connected" className="flex h-10 flex-1 items-center justify-center gap-1 rounded-lg border-2 border-[#3d4f7c] bg-[#22325a] text-[14px] font-bold opacity-40"><Printer size={15}/>Print</button>
-          <button type="button" onClick={() => { setMoreOpen(!moreOpen); }} aria-label="More actions" aria-expanded={moreOpen}
-            className="flex h-10 w-12 shrink-0 items-center justify-center rounded-lg border-2 border-[#3d4f7c] bg-[#22325a]"><MoreHorizontal size={19}/></button>
-        </div>
       </div>
-      {moreOpen && <div className="absolute bottom-[60px] right-3 z-40 w-[210px] rounded-[10px] border border-[#3d4f7c] bg-[#1a2540] p-1 shadow-xl">
-        <button type="button" disabled title="Split bill workflow not connected" className="flex w-full items-center gap-2 rounded-md p-2 text-left text-[13px] opacity-50"><Users size={15}/>Split bill</button>
-        <button type="button" disabled={cart.items.length===0} onClick={() => { if(window.confirm('Clear cart?')) {cart.clearCart();onClearCart?.();setMoreOpen(false);} }}
-          className="flex w-full items-center gap-2 rounded-md p-2 text-left text-[13px] hover:bg-[#243049] disabled:opacity-40"><Trash2 size={15}/>Clear cart</button>
-        <div className="my-1 border-t border-[#2f3d5c]"/>
-        {([['Combine bills',GitMerge],['Move table',ArrowLeftRight],['Discount',BadgePercent]] as const).map(([label,Icon]) => (
-          <div key={label} className="flex items-center gap-2 rounded-md p-2 text-[13px] text-[#6b7694]"><Icon size={15}/>{label}<span className="ml-auto rounded-full bg-[#243049] px-1.5 text-[10px] text-[#8f9bb8]">Soon</span></div>
-        ))}
+      {moreOpen && <div className="absolute bottom-[68px] right-3 z-40 w-[250px] rounded-xl border-2 border-[#3d4f7c] bg-[#1a2540] p-1.5 shadow-xl">
+        {editingNote ? (
+          <div className="p-1.5">
+            <label className="mb-1 block text-[13px] font-bold text-[#8f9bb8]" htmlFor="cart-order-note">Order note</label>
+            <textarea id="cart-order-note" autoFocus maxLength={200} rows={3} value={cart.orderNotes} onChange={e => cart.setOrderNotes(e.target.value)}
+              placeholder="e.g. birthday, no ice for the table" className="w-full rounded-lg border-2 border-[#3d4f7c] bg-[#0f1729] p-2 text-[15px] outline-none placeholder:text-[#7f8bab] focus:border-[#3b73f0]"/>
+            <div className="mt-1 flex items-center justify-between text-[12px] text-[#8f9bb8]"><span>{cart.orderNotes.length}/200</span>
+              <button type="button" onClick={() => { setEditingNote(false); setMoreOpen(false); }} className="rounded-lg bg-[#2563eb] px-3 py-1.5 text-[14px] font-bold text-white">Done</button></div>
+          </div>
+        ) : (<>
+          <button type="button" onClick={() => setEditingNote(true)} className={menuItem}><StickyNote size={17}/>{cart.orderNotes ? 'Edit order note' : 'Add order note'}</button>
+          <button type="button" disabled={!canHold} onClick={() => { setMoreOpen(false); handleHold(); }} className={menuItem}><Pause size={17}/>Hold</button>
+          <button type="button" disabled title="Split bill workflow not connected" className={menuItem}><Users size={17}/>Split bill</button>
+          <button type="button" disabled={cart.items.length===0} onClick={() => { if(window.confirm('Clear cart?')) {cart.clearCart();onClearCart?.();setMoreOpen(false);} }} className={menuItem}><Trash2 size={17}/>Clear cart</button>
+          <div className="my-1 border-t border-[#2f3d5c]"/>
+          {([['Combine bills',GitMerge],['Move table',ArrowLeftRight],['Discount',BadgePercent]] as const).map(([label,Icon]) => (
+            <div key={label} className="flex items-center gap-2 rounded-lg p-2 text-[14px] text-[#6b7694]"><Icon size={16}/>{label}<span className="ms-auto rounded-full bg-[#243049] px-1.5 text-[11px] text-[#8f9bb8]">Soon</span></div>
+          ))}
+        </>)}
       </div>}
     </div>
   );

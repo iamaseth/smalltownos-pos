@@ -610,6 +610,7 @@ html:not(.dark) .pos-reference-font .bg-\[\#3a1d24\] { background-color: #fee2e2
 .pos-reference-font .pos-qty-badge { background-color: var(--pos-badge); color: var(--pos-badge-text); }
 html:not(.dark) .pos-reference-font .text-\[\#f5b942\] { color: #92400e; }
 html:not(.dark) .pos-reference-font .border-\[\#f5b942\] { border-color: #b45309; }
+html:not(.dark) .pos-reference-font .text-\[\#f08a8a\] { color: #b91c1c; }
 .pos-reference-font button.border,
 .pos-reference-font input.border,
 .pos-reference-font textarea.border { border-width: 2px; }
