@@ -502,7 +502,7 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
     try { await fn(); } finally { setBusy(false); }
   };
 
-  const addSpent = () => run(async () => {
+  const saveDraft = async (): Promise<boolean> => {
     const amount = Number.parseFloat(draft.amount) || 0;
     try {
       const res = await api.post(`/cash-handover/sessions/${sessionId}/cash-spent`, {
@@ -514,8 +514,14 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
       setSpent((items) => [...items, res.data.item]);
       setNoneSpent(false);
       setDraft({ amount: '', currency: draft.currency, what: '', mediaId: null, photoKey: draft.photoKey + 1 });
-    } catch (error) { toast.error(errorText(error, 'Could not add cash spent')); }
-  });
+      return true;
+    } catch (error) {
+      toast.error(errorText(error, 'Could not add cash spent'));
+      return false;
+    }
+  };
+
+  const addSpent = () => run(async () => { await saveDraft(); });
 
   const removeSpent = (id: number) => run(async () => {
     try {
@@ -524,7 +530,17 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
     } catch (error) { toast.error(errorText(error, 'Could not remove item')); }
   });
 
+  const draftValid = (Number.parseFloat(draft.amount) || 0) > 0 && draft.what.trim().length > 0;
+  const draftStarted = draft.amount.trim() !== '' || draft.what.trim() !== '' || draft.mediaId != null;
+
   const checkResult = () => run(async () => {
+    if (draftStarted) {
+      if (!draftValid) {
+        toast.error('Finish the cash spent entry (amount and what it was for), or clear it');
+        return;
+      }
+      if (!(await saveDraft())) return;
+    }
     try {
       const res = await api.post(`/cash-handover/sessions/${sessionId}/close-preview`, { count: cashCountPayload(count), float_out: floatPayload });
       setPreview(res.data);
@@ -541,8 +557,6 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
       onClosed();
     } catch (error) { toast.error(errorText(error, 'Could not close the register')); }
   });
-
-  const draftValid = (Number.parseFloat(draft.amount) || 0) > 0 && draft.what.trim().length > 0;
 
   return (
     <div className="space-y-4">
@@ -605,7 +619,10 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
               onChange={(e) => setDraft({ ...draft, what: e.target.value })} className="w-full rounded-lg border px-3 py-3" aria-label="What for" />
             <PhotoCapture key={draft.photoKey} kind="purchase_receipt" sessionId={sessionId} label="Receipt photo (optional)"
               onUploaded={(mediaId) => setDraft((d) => ({ ...d, mediaId }))} />
-            <BigButton disabled={busy || !draftValid} onClick={addSpent}>+ Add</BigButton>
+            <button type="button" disabled={busy || !draftValid} onClick={addSpent}
+              className="w-full rounded-xl border-2 border-emerald-600 px-5 py-3 text-base font-semibold text-emerald-700 disabled:border-muted disabled:text-muted-foreground">
+              + Add this item
+            </button>
           </div>
           {spent.length === 0 && (
             <label className="flex items-center gap-3 rounded-xl border p-4 text-base">
@@ -613,7 +630,7 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
               No cash spent today
             </label>
           )}
-          <BigButton tone="primary" disabled={busy || (spent.length === 0 && !noneSpent)} onClick={checkResult}>See result</BigButton>
+          <BigButton tone="primary" disabled={busy || (spent.length === 0 && !noneSpent && !draftValid)} onClick={checkResult}>See result</BigButton>
           <button type="button" className="text-sm underline" onClick={() => setStep(1)}>Back</button>
         </>
       )}
