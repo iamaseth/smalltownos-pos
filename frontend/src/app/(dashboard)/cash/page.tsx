@@ -5,6 +5,7 @@
  * float out, count, cash spent, result. Handover and review views stay for older shifts.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { formatKhr, formatUsdCents } from '@shared/cash-counter';
@@ -133,6 +134,7 @@ function PhotoCapture({ kind, sessionId, onUploaded, label }: {
 }
 
 export default function CashPage() {
+  const router = useRouter();
   const [status, setStatus] = useState<Status | null>(null);
   const [view, setView] = useState<View>({ name: 'home' });
   const [count, setCount] = useState<CashCountValue>(emptyCashCount());
@@ -207,10 +209,9 @@ export default function CashPage() {
         {!s && status.awaiting_incoming.length === 0 && (
           <BigButton tone="primary" onClick={() => go({ name: 'open' })}>Open shift — count the float</BigButton>
         )}
+        {s && <BigButton tone="primary" onClick={() => router.push('/pos')}>Go to POS</BigButton>}
         {s && (s.is_mine || status.can_resolve) && (
-          <>
-            <BigButton onClick={() => go({ name: 'close', sessionId: s.id })}>Close shift</BigButton>
-          </>
+          <BigButton onClick={() => go({ name: 'close', sessionId: s.id })}>Close shift</BigButton>
         )}
         {myPending.length > 0 && (
           <div className="space-y-2 pt-2">
@@ -235,8 +236,7 @@ export default function CashPage() {
           try {
             await api.post('/cash-handover/open', { count: cashCountPayload(count), device: 'pos' });
             toast.success('Shift opened');
-            go({ name: 'home' });
-            await load();
+            router.push('/pos');
           } catch (error) { toast.error(errorText(error, 'Could not open shift')); }
         })}>Confirm opening float</BigButton>
       </div>
