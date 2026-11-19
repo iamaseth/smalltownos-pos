@@ -5,6 +5,7 @@ import {
   tenantBusinessDayStartTime,
 } from '../db';
 import { hasPermission, requirePermission } from '../services/authorization';
+import { listRecipes } from '../services/recipes';
 import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
@@ -921,6 +922,7 @@ router.get('/period', requirePermission('reports.view'), (req: Request, res: Res
       return category?.name ?? null;
     };
 
+    const unitCosts = menuUnitCosts(db);
     const byCategory = new Map<string, { name: string | null; quantity: number; net: Decimal }>();
     const items = itemRows.map((row) => {
       const onMenu = row.current_product_id !== null;
@@ -930,7 +932,7 @@ router.get('/period', requirePermission('reports.view'), (req: Request, res: Res
       bucket.quantity += Number(row.quantity || 0);
       bucket.net = bucket.net.plus(row.net || 0);
       byCategory.set(key, bucket);
-      const unitCost = Number(row.unit_cost || 0);
+      const unitCost = onMenu ? unitCosts.get(String(row.current_product_id)) ?? 0 : 0;
       const hasCost = onMenu && unitCost > 0;
       const cost = hasCost ? new Decimal(unitCost).times(row.quantity || 0).toNumber() : null;
       return {
@@ -967,6 +969,17 @@ router.get('/period', requirePermission('reports.view'), (req: Request, res: Res
     res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
   }
 });
+
+function menuUnitCosts(db: ReturnType<typeof getDatabase>): Map<string, number> {
+  const costs = new Map<string, number>();
+  for (const recipe of listRecipes(db)) {
+    if (recipe.cost_complete && Number(recipe.cost_per_serving) > 0) costs.set(String(recipe.product_id), Number(recipe.cost_per_serving));
+  }
+  for (const row of db.prepare('SELECT id, cost FROM products WHERE cost > 0').all() as { id: string; cost: number }[]) {
+    costs.set(String(row.id), Number(row.cost));
+  }
+  return costs;
+}
 
 function mondayOf(date: string): string {
   const d = new Date(`${date}T12:00:00Z`);
@@ -1030,16 +1043,18 @@ function weekDays(db: ReturnType<typeof getDatabase>, weekStart: string, payment
   }
 
   const lines = db.prepare(`
-    SELECT oi.order_id, oi.quantity, p.cost FROM order_items oi
+    SELECT oi.order_id, oi.quantity, p.id AS product_id FROM order_items oi
     JOIN orders o ON o.id = oi.order_id LEFT JOIN products p ON p.id = oi.product_id
     WHERE o.created_at >= ? AND o.created_at < ? AND o.status != 'cancelled' AND oi.voided_at IS NULL
-  `).all(windowStart, windowEnd) as { order_id: string; quantity: number; cost: number | null }[];
+  `).all(windowStart, windowEnd) as { order_id: string; quantity: number; product_id: string | null }[];
+  const unitCosts = menuUnitCosts(db);
   let uncostedLines = 0;
   for (const line of lines) {
     const day = orderDay.get(String(line.order_id));
     if (!day) continue;
-    if (Number(line.cost || 0) > 0) {
-      day.cost = day.cost.plus(new Decimal(line.cost || 0).times(line.quantity || 0));
+    const unitCost = line.product_id ? unitCosts.get(String(line.product_id)) ?? 0 : 0;
+    if (unitCost > 0) {
+      day.cost = day.cost.plus(new Decimal(unitCost).times(line.quantity || 0));
       day.costedLines += 1;
     } else {
       uncostedLines += 1;

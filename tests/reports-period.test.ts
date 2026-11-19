@@ -175,6 +175,25 @@ async function main() {
     assertOrThrow(close(w.total.net, 21) && w.total.orders === 4, 'week totals');
     assertOrThrow(close(tue.lastWeekNet, 0) && close(w.previous.net, 0), 'same day last week and previous week');
     assertEqualOrThrow(w.uncostedLines, 2, 'counts sold lines without a cost (burger and old iB4 item)');
+
+    console.log('\n6. Recipe cost fills in cost of goods');
+    const { createSupply } = require('../main/services/supplies');
+    const { saveRecipe } = require('../main/services/recipes');
+    const beef = createSupply(db, { name: 'Test beef', baseUnit: 'g', unitCost: 0.01 });
+    saveRecipe(db, { productId: 'prod-burger', isActive: false, items: [{ supplyId: beef.id, quantity: 150, unit: 'g' }] });
+    const burgerQty = Number((db.prepare(`SELECT COALESCE(SUM(oi.quantity),0) q FROM order_items oi JOIN orders o ON o.id = oi.order_id
+      WHERE oi.product_id = 'prod-burger' AND o.status != 'cancelled' AND oi.voided_at IS NULL AND o.created_at >= '2026-11-08' AND o.created_at < '2026-11-17'`).get() as { q: number }).q);
+    const w2 = (await request(app).get('/api/reports/weekly?week_start=2026-11-12').set('Authorization', `Bearer ${token}`)).body;
+    assertOrThrow(burgerQty > 0, 'fixture sells burgers this week');
+    assertOrThrow(close(w2.total.cost, w.total.cost + burgerQty * 1.5), 'a draft recipe costs the burger at 150 g x $0.01');
+    assertEqualOrThrow(w2.uncostedLines, 1, 'only the old iB4 item is left without a cost');
+    const p2 = (await request(app).get('/api/reports/period?start_date=2026-11-09&end_date=2026-11-15').set('Authorization', `Bearer ${token}`)).body;
+    const burger2 = p2.items.find((i: { productId: string }) => i.productId === 'prod-burger');
+    assertOrThrow(burger2 && close(burger2.cost, burger2.quantity * 1.5), 'profit by item uses the recipe cost');
+    db.prepare(`UPDATE products SET cost = 2 WHERE id = 'prod-burger'`).run();
+    const w3 = (await request(app).get('/api/reports/weekly?week_start=2026-11-12').set('Authorization', `Bearer ${token}`)).body;
+    assertOrThrow(close(w3.total.cost, w.total.cost + burgerQty * 2), 'a cost typed on the menu item wins over the recipe');
+
     console.log('\nAll reports-period checks passed');
   } finally {
     closeDatabase();
