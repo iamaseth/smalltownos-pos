@@ -3035,6 +3035,19 @@
     "day_wed": "Mercoledì",
     "day_thu": "Giovedì",
     "day_fri": "Venerdì",
-    "day_sat": "Sabato"
+    "day_sat": "Sabato",
+    "sendToTelegram": "Invia su Telegram",
+    "sendDaily": "Riepilogo giornaliero · {date}",
+    "sendWeekly": "Report settimanale · {start} – {end}",
+    "sendPeriod": "Riepilogo vendite · {start} – {end}",
+    "sendAttachmentsNote": "Con PDF e CSV allegati",
+    "sendTo": "Invia a",
+    "send": "Invia",
+    "cancel": "Annulla",
+    "chooseRecipient": "Scegli almeno un destinatario",
+    "sendFailed": "Invio non riuscito. Vedi Invii recenti nelle impostazioni.",
+    "sendQueued": "In coda. Verrà inviato a breve.",
+    "sendDone": "{count, plural, one {Inviato a # destinatario} other {Inviato a # destinatari}}",
+    "notConnectedHint": "Telegram non è ancora connesso. Configuralo in"
   }
 }

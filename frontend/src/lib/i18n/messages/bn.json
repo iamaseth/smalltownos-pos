@@ -3035,6 +3035,19 @@
     "day_wed": "বুধবার",
     "day_thu": "বৃহস্পতিবার",
     "day_fri": "শুক্রবার",
-    "day_sat": "শনিবার"
+    "day_sat": "শনিবার",
+    "sendToTelegram": "টেলিগ্রামে পাঠান",
+    "sendDaily": "দৈনিক সারাংশ · {date}",
+    "sendWeekly": "সাপ্তাহিক রিপোর্ট · {start} – {end}",
+    "sendPeriod": "বিক্রির সারাংশ · {start} – {end}",
+    "sendAttachmentsNote": "PDF ও CSV সংযুক্ত",
+    "sendTo": "যাকে পাঠাবেন",
+    "send": "পাঠান",
+    "cancel": "বাতিল",
+    "chooseRecipient": "অন্তত একজন প্রাপক বেছে নিন",
+    "sendFailed": "পাঠানো যায়নি। সেটিংসে সাম্প্রতিক পাঠানো দেখুন।",
+    "sendQueued": "সারিতে আছে। একটু পরে পাঠানো হবে।",
+    "sendDone": "{count, plural, one {# জন প্রাপককে পাঠানো হয়েছে} other {# জন প্রাপককে পাঠানো হয়েছে}}",
+    "notConnectedHint": "টেলিগ্রাম এখনো সংযুক্ত নয়। এখানে সেট আপ করুন:"
   }
 }

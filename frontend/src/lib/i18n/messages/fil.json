@@ -3035,6 +3035,19 @@
     "day_wed": "Miyerkoles",
     "day_thu": "Huwebes",
     "day_fri": "Biyernes",
-    "day_sat": "Sabado"
+    "day_sat": "Sabado",
+    "sendToTelegram": "Ipadala sa Telegram",
+    "sendDaily": "Buod ng araw · {date}",
+    "sendWeekly": "Lingguhang ulat · {start} – {end}",
+    "sendPeriod": "Buod ng benta · {start} – {end}",
+    "sendAttachmentsNote": "May kalakip na PDF at CSV",
+    "sendTo": "Ipadala kay",
+    "send": "Ipadala",
+    "cancel": "Kanselahin",
+    "chooseRecipient": "Pumili ng kahit isang tatanggap",
+    "sendFailed": "Hindi naipadala. Tingnan ang mga kamakailang padala sa Settings.",
+    "sendQueued": "Nakapila. Ipapadala ito sandali.",
+    "sendDone": "{count, plural, one {Naipadala sa # tatanggap} other {Naipadala sa # tatanggap}}",
+    "notConnectedHint": "Hindi pa nakakonekta ang Telegram. I-set up ito sa"
   }
 }

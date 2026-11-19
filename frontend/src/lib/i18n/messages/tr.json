@@ -3035,6 +3035,19 @@
     "day_wed": "Çarşamba",
     "day_thu": "Perşembe",
     "day_fri": "Cuma",
-    "day_sat": "Cumartesi"
+    "day_sat": "Cumartesi",
+    "sendToTelegram": "Telegram’a gönder",
+    "sendDaily": "Günlük özet · {date}",
+    "sendWeekly": "Haftalık rapor · {start} – {end}",
+    "sendPeriod": "Satış özeti · {start} – {end}",
+    "sendAttachmentsNote": "PDF ve CSV ekli",
+    "sendTo": "Gönderilecek kişi",
+    "send": "Gönder",
+    "cancel": "İptal",
+    "chooseRecipient": "En az bir alıcı seçin",
+    "sendFailed": "Gönderilemedi. Ayarlar’daki son gönderimlere bakın.",
+    "sendQueued": "Sıraya alındı. Birazdan gönderilecek.",
+    "sendDone": "{count, plural, one {# alıcıya gönderildi} other {# alıcıya gönderildi}}",
+    "notConnectedHint": "Telegram henüz bağlı değil. Şuradan kurun:"
   }
 }

@@ -201,7 +201,30 @@ async function main() {
     res = await request(app).put('/api/telegram/schedule').set('Authorization', owner).send({ weeklyTime: '25:00' });
     assertEqualOrThrow(res.status, 400, 'invalid times are refused');
 
-    console.log('\n8. Disconnect stops sending');
+    console.log('\n8. Send a report now from the Reports page');
+    assertEqualOrThrow(telegram.onDemandKind('2026-11-16', '2026-11-16'), 'daily', 'one day sends the daily summary');
+    assertEqualOrThrow(telegram.onDemandKind('2026-11-09', '2026-11-15'), 'weekly', 'a Monday-Sunday week sends the weekly report');
+    assertEqualOrThrow(telegram.onDemandKind('2026-11-16', '2026-11-19'), 'period', 'a partial week sends a period summary');
+    assertEqualOrThrow(telegram.onDemandKind('2026-11-01', '2026-11-19'), 'period', 'a month range sends a period summary');
+    calls.length = 0;
+    res = await request(app).post('/api/telegram/send-now').set('Authorization', owner).send({ start_date: businessDate, end_date: businessDate, recipient_ids: [recipient.id] });
+    assertEqualOrThrow(res.body.sent, 1, 'the daily summary is sent on demand');
+    res = await request(app).post('/api/telegram/send-now').set('Authorization', owner).send({ start_date: businessDate, end_date: businessDate, recipient_ids: [recipient.id] });
+    assertEqualOrThrow(res.body.sent, 1, 'sending the same day again is allowed');
+    assertEqualOrThrow(calls.filter((c) => c.method === 'sendMessage' && c.body.includes('Daily summary')).length, 2, 'both on-demand sends reached Telegram');
+    calls.length = 0;
+    res = await request(app).post('/api/telegram/send-now').set('Authorization', owner).send({ start_date: '2026-11-01', end_date: '2026-11-19', recipient_ids: [recipient.id] });
+    assertEqualOrThrow(res.body.kind, 'period', 'a range sends the period summary');
+    assertOrThrow(calls.some((c) => c.method === 'sendMessage' && c.body.includes('Sales summary') && c.body.includes('Payments')), 'the period summary has sales and payments');
+    assertEqualOrThrow(calls.filter((c) => c.method === 'sendDocument').length, 2, 'the period summary has PDF and CSV');
+    res = await request(app).post('/api/telegram/send-now').set('Authorization', owner).send({ start_date: '2026-11-19', end_date: '2026-11-01', recipient_ids: [recipient.id] });
+    assertEqualOrThrow(res.status, 400, 'a reversed range is refused');
+    res = await request(app).post('/api/telegram/send-now').set('Authorization', owner).send({ start_date: businessDate, end_date: businessDate, recipient_ids: [] });
+    assertEqualOrThrow(res.status, 400, 'sending with no recipient is refused');
+    res = await request(app).post('/api/telegram/send-now').set('Authorization', cashier).send({ start_date: businessDate, end_date: businessDate, recipient_ids: [recipient.id] });
+    assertEqualOrThrow(res.status, 403, 'cashiers cannot send reports');
+
+    console.log('\n9. Disconnect stops sending');
     await request(app).post('/api/telegram/disconnect').set('Authorization', owner);
     calls.length = 0;
     telegram.notifyTelegram('shift_open', { sessionId: sessionId + 99 });

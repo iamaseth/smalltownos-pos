@@ -3035,6 +3035,19 @@
     "day_wed": "बुधबार",
     "day_thu": "बिहीबार",
     "day_fri": "शुक्रबार",
-    "day_sat": "शनिबार"
+    "day_sat": "शनिबार",
+    "sendToTelegram": "टेलिग्राममा पठाउनुहोस्",
+    "sendDaily": "दैनिक सारांश · {date}",
+    "sendWeekly": "साप्ताहिक रिपोर्ट · {start} – {end}",
+    "sendPeriod": "बिक्री सारांश · {start} – {end}",
+    "sendAttachmentsNote": "PDF र CSV संलग्न",
+    "sendTo": "यसलाई पठाउनुहोस्",
+    "send": "पठाउनुहोस्",
+    "cancel": "रद्द गर्नुहोस्",
+    "chooseRecipient": "कम्तीमा एक प्राप्तकर्ता छान्नुहोस्",
+    "sendFailed": "पठाउन सकिएन। सेटिङमा हालका पठाइहरू हेर्नुहोस्।",
+    "sendQueued": "लाइनमा छ। केही बेरमा पठाइन्छ।",
+    "sendDone": "{count, plural, one {# प्राप्तकर्तालाई पठाइयो} other {# प्राप्तकर्तालाई पठाइयो}}",
+    "notConnectedHint": "टेलिग्राम अझै जडान भएको छैन। यहाँ सेटअप गर्नुहोस्:"
   }
 }

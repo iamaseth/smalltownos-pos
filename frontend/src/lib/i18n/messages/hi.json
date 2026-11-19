@@ -3035,6 +3035,19 @@
     "day_wed": "बुधवार",
     "day_thu": "गुरुवार",
     "day_fri": "शुक्रवार",
-    "day_sat": "शनिवार"
+    "day_sat": "शनिवार",
+    "sendToTelegram": "टेलीग्राम पर भेजें",
+    "sendDaily": "दैनिक सारांश · {date}",
+    "sendWeekly": "साप्ताहिक रिपोर्ट · {start} – {end}",
+    "sendPeriod": "बिक्री सारांश · {start} – {end}",
+    "sendAttachmentsNote": "PDF और CSV संलग्न",
+    "sendTo": "इन्हें भेजें",
+    "send": "भेजें",
+    "cancel": "रद्द करें",
+    "chooseRecipient": "कम से कम एक प्राप्तकर्ता चुनें",
+    "sendFailed": "भेजा नहीं जा सका। सेटिंग्स में हाल की डिलीवरी देखें।",
+    "sendQueued": "कतार में है। थोड़ी देर में भेजा जाएगा।",
+    "sendDone": "{count, plural, one {# प्राप्तकर्ता को भेजा गया} other {# प्राप्तकर्ताओं को भेजा गया}}",
+    "notConnectedHint": "टेलीग्राम अभी कनेक्ट नहीं है। यहां सेट करें:"
   }
 }

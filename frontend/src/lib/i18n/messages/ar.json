@@ -3035,6 +3035,19 @@
     "day_wed": "الأربعاء",
     "day_thu": "الخميس",
     "day_fri": "الجمعة",
-    "day_sat": "السبت"
+    "day_sat": "السبت",
+    "sendToTelegram": "إرسال إلى تيليجرام",
+    "sendDaily": "الملخص اليومي · {date}",
+    "sendWeekly": "التقرير الأسبوعي · {start} – {end}",
+    "sendPeriod": "ملخص المبيعات · {start} – {end}",
+    "sendAttachmentsNote": "مع مرفقات PDF وCSV",
+    "sendTo": "إرسال إلى",
+    "send": "إرسال",
+    "cancel": "إلغاء",
+    "chooseRecipient": "اختر مستلمًا واحدًا على الأقل",
+    "sendFailed": "تعذّر الإرسال. راجع الإرسالات الأخيرة في الإعدادات.",
+    "sendQueued": "في قائمة الانتظار. سيُرسل بعد لحظات.",
+    "sendDone": "{count, plural, zero {أُرسل إلى # مستلم} one {أُرسل إلى مستلم واحد} two {أُرسل إلى مستلمَين} few {أُرسل إلى # مستلمين} many {أُرسل إلى # مستلمًا} other {أُرسل إلى # مستلم}}",
+    "notConnectedHint": "لم يتم ربط تيليجرام بعد. اضبطه من"
   }
 }

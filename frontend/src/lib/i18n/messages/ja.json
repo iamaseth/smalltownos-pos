@@ -3035,6 +3035,19 @@
     "day_wed": "水曜日",
     "day_thu": "木曜日",
     "day_fri": "金曜日",
-    "day_sat": "土曜日"
+    "day_sat": "土曜日",
+    "sendToTelegram": "Telegramに送信",
+    "sendDaily": "日次サマリー · {date}",
+    "sendWeekly": "週次レポート · {start} – {end}",
+    "sendPeriod": "売上サマリー · {start} – {end}",
+    "sendAttachmentsNote": "PDFとCSVを添付",
+    "sendTo": "送信先",
+    "send": "送信",
+    "cancel": "キャンセル",
+    "chooseRecipient": "受信者を1人以上選んでください",
+    "sendFailed": "送信できませんでした。設定の最近の送信を確認してください。",
+    "sendQueued": "送信待ちです。まもなく送信されます。",
+    "sendDone": "{count, plural, one {#件の受信者に送信しました} other {#件の受信者に送信しました}}",
+    "notConnectedHint": "Telegramはまだ接続されていません。設定はこちら:"
   }
 }

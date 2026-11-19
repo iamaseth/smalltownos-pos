@@ -100,6 +100,10 @@ the backup time (default 10:00), the weekly management and purchasing reports on
 and time (default Monday 08:00, covering the previous Monday to Sunday), and low-stock alerts once
 per item per business day.
 
+**On demand.** The Reports page's Send to Telegram button sends the period on screen: the daily
+summary for one day, the weekly report for a full Monday-to-Sunday week, and a sales summary for any
+other range. On-demand sends are never deduplicated and do not affect scheduled reports.
+
 **Delivery** rows live in `telegram_deliveries`. A unique `dedupe_key` per report, period and chat
 prevents duplicates. Network, 429 and 5xx errors retry after 1, 5 and 15 minutes (four attempts in
 total); other API errors fail at once. Status and the last error are shown in Settings.

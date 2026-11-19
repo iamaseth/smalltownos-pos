@@ -4,8 +4,8 @@ import { serializeDailySalesExportCsv } from './daily-sales-export-files';
 import { listSupplies } from './supplies';
 import { getTenantCurrency } from './refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
-import { computeDayAggregates, expectedCashFromAggregates, tenantTimezone } from '../routes/cash-closures';
-import { buildCogsReport, buildWeeklyReport, mondayOf, shiftDate } from '../routes/reports';
+import { computeDayAggregates, expectedCashFromAggregates, paymentMethodBreakdown, tenantTimezone } from '../routes/cash-closures';
+import { buildCogsReport, buildWeeklyReport, mondayOf, periodSummary, shiftDate } from '../routes/reports';
 import { buildTextPdf, pdfRow, type PdfLine } from '../lib/simple-pdf';
 import { toCsvRow } from '../lib/csv';
 
@@ -153,6 +153,55 @@ export function buildWeeklyManagementReport(db: Db, anyDateInWeek: string, optio
     const rows = [toCsvRow(['item', 'category', 'sold', 'sales', 'cost_each', 'total_cost', 'gross_profit'])];
     for (const i of cogs.items) rows.push(toCsvRow([i.name, i.category ?? '', i.quantity, i.net.toFixed(2), i.unitCost === null ? '' : i.unitCost.toFixed(2), i.cost === null ? '' : i.cost.toFixed(2), i.profit === null ? '' : i.profit.toFixed(2)]));
     attachments.push({ filename: `weekly-items-${weekly.weekStart}.csv`, contentType: 'text/csv', data: Buffer.from(`﻿${rows.join('\r\n')}\r\n`, 'utf8') });
+  }
+  return { title, html, attachments };
+}
+
+export function buildPeriodReport(db: Db, startDate: string, endDate: string, options: ReportOptions): TelegramReport {
+  const { money } = moneyFormatter(db);
+  const days = Math.round((Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86_400_000) + 1;
+  const current = periodSummary(db, startDate, endDate).summary;
+  const previous = periodSummary(db, shiftDate(startDate, -days), shiftDate(startDate, -1)).summary;
+  const cogs = buildCogsReport(db, startDate, endDate, days > 62 ? 'month' : 'week');
+  const payments = paymentMethodBreakdown(db, { startDate, endDate, paidOnly: true });
+  const title = `Sales summary ${prettyDate(startDate)} - ${prettyDate(endDate)}`;
+  const change = previous.netSales > 0 ? Math.round(((current.netSales - previous.netSales) / previous.netSales) * 100) : null;
+  const headline = [
+    `Net sales      ${money(current.netSales)}${change === null ? '' : ` (${change >= 0 ? '+' : ''}${change}% vs previous ${days} days)`}`,
+    `Orders         ${current.orders}`,
+    `Average bill   ${money(current.averageBill)}`,
+    `Discounts      ${money(current.discounts)}`,
+    `Refunds        ${money(current.refunds)}`,
+    ...(cogs.totals.costedSales > 0 ? [
+      `Cost of goods  ${money(cogs.totals.cost)} (${percent(cogs.totals.costPercent)})`,
+      `Gross profit   ${money(cogs.totals.grossProfit)} (margin ${percent(cogs.totals.margin)})`,
+    ] : ['Cost of goods  no costed recipes sold']),
+  ];
+  const paymentRows = payments.map((p) => `${(p.method.charAt(0).toUpperCase() + p.method.slice(1)).slice(0, 18).padEnd(18)} ${money(p.total)}`);
+  const top = [...cogs.items].sort((a, b) => b.net - a.net).slice(0, 8);
+  const topRows = top.map((i) => `${i.name.slice(0, 22).padEnd(22)} ${String(i.quantity).padStart(5)} ${money(i.net)}`);
+  const html = [
+    `<b>${escapeHtml(businessName(db))} - ${escapeHtml(title)}</b>`, '', pre(headline),
+    '<b>Payments</b>', pre(paymentRows.length ? paymentRows : ['No payments']),
+    topRows.length ? `<b>Best sellers</b>\n${pre(topRows)}` : '',
+  ].filter((part) => part !== '').join('\n');
+
+  const attachments: TelegramAttachment[] = [];
+  if (options.pdf) {
+    const lines: PdfLine[] = [
+      { text: `${businessName(db)} - ${title}`, bold: true, size: 15, gap: 4 },
+      ...headline.map((t) => ({ text: t, mono: true })),
+      { text: 'Payments', bold: true, size: 12, gap: 8 }, ...(paymentRows.length ? paymentRows : ['No payments']).map((t) => ({ text: t, mono: true })),
+      { text: 'Items', bold: true, size: 12, gap: 8 },
+      { text: pdfRow(['Item', 'Sold', 'Sales', 'Cost', 'Profit'], [28, 6, 12, 11, 11]), mono: true, bold: true },
+      ...[...cogs.items].sort((a, b) => b.net - a.net).map((i) => ({ text: pdfRow([i.name, i.quantity, money(i.net), i.cost === null ? '-' : money(i.cost), i.profit === null ? '-' : money(i.profit)], [28, 6, 12, 11, 11]), mono: true })),
+    ];
+    attachments.push({ filename: `sales-summary-${startDate}-to-${endDate}.pdf`, contentType: 'application/pdf', data: buildTextPdf(lines) });
+  }
+  if (options.csv) {
+    const rows = [toCsvRow(['item', 'category', 'sold', 'sales', 'cost_each', 'total_cost', 'gross_profit'])];
+    for (const i of cogs.items) rows.push(toCsvRow([i.name, i.category ?? '', i.quantity, i.net.toFixed(2), i.unitCost === null ? '' : i.unitCost.toFixed(2), i.cost === null ? '' : i.cost.toFixed(2), i.profit === null ? '' : i.profit.toFixed(2)]));
+    attachments.push({ filename: `sales-items-${startDate}-to-${endDate}.csv`, contentType: 'text/csv', data: Buffer.from(`\ufeff${rows.join('\r\n')}\r\n`, 'utf8') });
   }
   return { title, html, attachments };
 }

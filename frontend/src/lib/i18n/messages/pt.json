@@ -3035,6 +3035,19 @@
     "day_wed": "Quarta-feira",
     "day_thu": "Quinta-feira",
     "day_fri": "Sexta-feira",
-    "day_sat": "Sábado"
+    "day_sat": "Sábado",
+    "sendToTelegram": "Enviar para o Telegram",
+    "sendDaily": "Resumo diário · {date}",
+    "sendWeekly": "Relatório semanal · {start} – {end}",
+    "sendPeriod": "Resumo de vendas · {start} – {end}",
+    "sendAttachmentsNote": "Com PDF e CSV anexados",
+    "sendTo": "Enviar para",
+    "send": "Enviar",
+    "cancel": "Cancelar",
+    "chooseRecipient": "Escolha pelo menos um destinatário",
+    "sendFailed": "Não foi possível enviar. Veja os envios recentes nas Configurações.",
+    "sendQueued": "Na fila. Será enviado em instantes.",
+    "sendDone": "{count, plural, one {Enviado para # destinatário} other {Enviado para # destinatários}}",
+    "notConnectedHint": "O Telegram ainda não está conectado. Configure em"
   }
 }

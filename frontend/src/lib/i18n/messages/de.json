@@ -3035,6 +3035,19 @@
     "day_wed": "Mittwoch",
     "day_thu": "Donnerstag",
     "day_fri": "Freitag",
-    "day_sat": "Samstag"
+    "day_sat": "Samstag",
+    "sendToTelegram": "An Telegram senden",
+    "sendDaily": "Tageszusammenfassung · {date}",
+    "sendWeekly": "Wochenbericht · {start} – {end}",
+    "sendPeriod": "Umsatzübersicht · {start} – {end}",
+    "sendAttachmentsNote": "Mit PDF- und CSV-Anhang",
+    "sendTo": "Senden an",
+    "send": "Senden",
+    "cancel": "Abbrechen",
+    "chooseRecipient": "Wähle mindestens einen Empfänger",
+    "sendFailed": "Senden fehlgeschlagen. Siehe Letzte Zustellungen in den Einstellungen.",
+    "sendQueued": "In der Warteschlange. Wird gleich gesendet.",
+    "sendDone": "{count, plural, one {An # Empfänger gesendet} other {An # Empfänger gesendet}}",
+    "notConnectedHint": "Telegram ist noch nicht verbunden. Richte es ein unter"
   }
 }

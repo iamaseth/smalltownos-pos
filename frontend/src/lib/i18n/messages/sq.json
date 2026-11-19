@@ -3035,6 +3035,19 @@
     "day_wed": "E mërkurë",
     "day_thu": "E enjte",
     "day_fri": "E premte",
-    "day_sat": "E shtunë"
+    "day_sat": "E shtunë",
+    "sendToTelegram": "Dërgo në Telegram",
+    "sendDaily": "Përmbledhje ditore · {date}",
+    "sendWeekly": "Raport javor · {start} – {end}",
+    "sendPeriod": "Përmbledhje shitjesh · {start} – {end}",
+    "sendAttachmentsNote": "Me PDF dhe CSV bashkëngjitur",
+    "sendTo": "Dërgo te",
+    "send": "Dërgo",
+    "cancel": "Anulo",
+    "chooseRecipient": "Zgjidhni të paktën një marrës",
+    "sendFailed": "Dërgimi dështoi. Shihni dërgesat e fundit te Cilësimet.",
+    "sendQueued": "Në radhë. Do të dërgohet së shpejti.",
+    "sendDone": "{count, plural, one {U dërgua te # marrës} other {U dërgua te # marrës}}",
+    "notConnectedHint": "Telegram nuk është lidhur ende. Konfigurojeni te"
   }
 }

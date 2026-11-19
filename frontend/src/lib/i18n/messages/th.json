@@ -3035,6 +3035,19 @@
     "day_wed": "วันพุธ",
     "day_thu": "วันพฤหัสบดี",
     "day_fri": "วันศุกร์",
-    "day_sat": "วันเสาร์"
+    "day_sat": "วันเสาร์",
+    "sendToTelegram": "ส่งไป Telegram",
+    "sendDaily": "สรุปรายวัน · {date}",
+    "sendWeekly": "รายงานรายสัปดาห์ · {start} – {end}",
+    "sendPeriod": "สรุปยอดขาย · {start} – {end}",
+    "sendAttachmentsNote": "แนบ PDF และ CSV",
+    "sendTo": "ส่งถึง",
+    "send": "ส่ง",
+    "cancel": "ยกเลิก",
+    "chooseRecipient": "เลือกผู้รับอย่างน้อยหนึ่งคน",
+    "sendFailed": "ส่งไม่สำเร็จ ดูการส่งล่าสุดในการตั้งค่า",
+    "sendQueued": "อยู่ในคิว จะส่งในอีกสักครู่",
+    "sendDone": "{count, plural, one {ส่งถึงผู้รับ # คนแล้ว} other {ส่งถึงผู้รับ # คนแล้ว}}",
+    "notConnectedHint": "ยังไม่ได้เชื่อมต่อ Telegram ตั้งค่าได้ที่"
   }
 }

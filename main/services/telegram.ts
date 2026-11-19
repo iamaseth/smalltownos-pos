@@ -228,6 +228,7 @@ function buildReport(db: Db, reportType: string, params: Record<string, unknown>
     case 'shift': return reports.buildShiftReport(db, Number(params.sessionId), params.event === 'open' ? 'open' : 'close');
     case 'low_stock': return reports.buildLowStockAlert(db, (params.names as string[]) ?? []);
     case 'purchasing': return reports.buildPurchasingReport(db, String(params.startDate), String(params.endDate), options);
+    case 'period': return reports.buildPeriodReport(db, String(params.startDate), String(params.endDate), options);
     case 'test': return { title: 'Test message', attachments: [], html: '<b>Test message</b>\nTelegram reports are connected to the POS.' };
     default: throw new Error(`unknown report type ${reportType}`);
   }
@@ -313,6 +314,40 @@ export async function sendTest(recipientId: number | null, db: Db = getDatabase(
   for (const t of targets) insert.run(t.id, t.chat_id, `test|${Date.now()}|${randomInt(1e9)}|${t.chat_id}`, timestamp, timestamp);
   await processQueue(db);
   return targets.length;
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export type OnDemandKind = 'daily' | 'weekly' | 'period';
+
+export function onDemandKind(startDate: string, endDate: string): OnDemandKind {
+  if (startDate === endDate) return 'daily';
+  const isMonday = new Date(`${startDate}T12:00:00Z`).getUTCDay() === 1;
+  return isMonday && endDate === shiftIso(startDate, 6) ? 'weekly' : 'period';
+}
+
+export async function sendReportNow(startDate: string, endDate: string, recipientIds: number[], db: Db = getDatabase()) {
+  if (!DATE_RE.test(startDate) || !DATE_RE.test(endDate) || startDate > endDate) throw Object.assign(new Error('Choose a valid date range'), { statusCode: 400 });
+  if ((Date.parse(endDate) - Date.parse(startDate)) / 86_400_000 > 366) throw Object.assign(new Error('The range cannot be longer than a year'), { statusCode: 400 });
+  if (!isEnabled(db) || !botToken()) throw Object.assign(new Error('Telegram is not connected'), { statusCode: 400 });
+  const ids = new Set(recipientIds.map(Number));
+  const targets = listRecipients(db).filter((r) => r.is_active && ids.has(r.id));
+  if (!targets.length) throw Object.assign(new Error('Choose at least one active recipient'), { statusCode: 400 });
+  const kind = onDemandKind(startDate, endDate);
+  const params = kind === 'daily' ? { businessDate: startDate } : kind === 'weekly' ? { weekStart: startDate } : { startDate, endDate };
+  const insert = db.prepare(`INSERT INTO telegram_deliveries (recipient_id, chat_id, report_type, dedupe_key, title, params, status, created_at, next_attempt_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`);
+  const timestamp = now();
+  const batch = `manual|${kind}|${startDate}|${endDate}|${Date.now()}|${randomInt(1e9)}`;
+  const deliveryIds = targets.map((t) => Number(insert.run(t.id, t.chat_id, kind, `${batch}|${t.chat_id}`, `${kind} ${startDate} ${endDate}`, JSON.stringify(params), timestamp, timestamp).lastInsertRowid));
+  await processQueue(db);
+  const rows = db.prepare(`SELECT status, title FROM telegram_deliveries WHERE id IN (${deliveryIds.map(() => '?').join(',')})`).all(...deliveryIds) as { status: string; title: string }[];
+  return {
+    kind,
+    title: rows[0]?.title ?? '',
+    sent: rows.filter((r) => r.status === 'sent').length,
+    pending: rows.filter((r) => r.status === 'pending').length,
+    failed: rows.filter((r) => r.status === 'failed').length,
+  };
 }
 
 // ---- Events and schedule ----

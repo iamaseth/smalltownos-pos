@@ -616,6 +616,7 @@ Router: `main/routes/telegram.ts`. Full path: `/api/telegram`. Every endpoint re
 | `DELETE` | `/recipients/:id` | `settings.manage` + `reports.financial.view` | path: `id` | Removes the recipient. |
 | `PUT` | `/schedule` | `settings.manage` + `reports.financial.view` | body: `weeklyDay`, `weeklyTime`, `dailyFallbackTime`, `pdf`, `csv` | Saved schedule. 400 on an invalid day or time. |
 | `POST` | `/test` | `settings.manage` + `reports.financial.view` | body: `recipient_id` (optional) | Sends a test message to one or all active recipients. |
+| `POST` | `/send-now` | `settings.manage` + `reports.financial.view` | body: `start_date`, `end_date`, `recipient_ids` | Sends one report now: the daily summary for a single day, the weekly report for a Monday-to-Sunday week, otherwise a sales summary for the range. Returns sent, pending and failed counts. Not deduplicated. |
 | `GET` | `/deliveries` | `settings.manage` + `reports.financial.view` | none | The 50 latest deliveries with status, attempts and last error. |
 
 ### Support tickets

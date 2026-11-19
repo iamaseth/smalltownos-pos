@@ -3035,6 +3035,19 @@
     "day_wed": "Woensdag",
     "day_thu": "Donderdag",
     "day_fri": "Vrijdag",
-    "day_sat": "Zaterdag"
+    "day_sat": "Zaterdag",
+    "sendToTelegram": "Naar Telegram sturen",
+    "sendDaily": "Dagsamenvatting · {date}",
+    "sendWeekly": "Weekrapport · {start} – {end}",
+    "sendPeriod": "Verkoopoverzicht · {start} – {end}",
+    "sendAttachmentsNote": "Met PDF en CSV als bijlage",
+    "sendTo": "Sturen naar",
+    "send": "Versturen",
+    "cancel": "Annuleren",
+    "chooseRecipient": "Kies minstens één ontvanger",
+    "sendFailed": "Versturen mislukt. Zie Recente verzendingen in Instellingen.",
+    "sendQueued": "In de wachtrij. Wordt zo verstuurd.",
+    "sendDone": "{count, plural, one {Verstuurd naar # ontvanger} other {Verstuurd naar # ontvangers}}",
+    "notConnectedHint": "Telegram is nog niet verbonden. Stel het in bij"
   }
 }

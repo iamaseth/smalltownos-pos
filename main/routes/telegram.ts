@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requirePermission } from '../services/authorization';
 import {
-  createLinkCode, listDeliveries, listRecipients, refreshStatus, removeRecipient, saveSchedule, sendTest, setEnabled, updateRecipient,
+  createLinkCode, listDeliveries, listRecipients, refreshStatus, removeRecipient, saveSchedule, sendReportNow, sendTest, setEnabled, updateRecipient,
 } from '../services/telegram';
 
 const router = Router();
@@ -50,6 +50,13 @@ router.post('/test', ...manage, async (req: Request, res: Response) => {
     const id = req.body?.recipient_id === undefined || req.body?.recipient_id === null ? null : Number(req.body.recipient_id);
     const count = await sendTest(id);
     res.json({ queued: count, deliveries: listDeliveries() });
+  } catch (error) { fail(res, error); }
+});
+
+router.post('/send-now', ...manage, async (req: Request, res: Response) => {
+  try {
+    const ids = Array.isArray(req.body?.recipient_ids) ? req.body.recipient_ids.map(Number).filter(Number.isInteger) : [];
+    res.json(await sendReportNow(String(req.body?.start_date || ''), String(req.body?.end_date || ''), ids));
   } catch (error) { fail(res, error); }
 });
 

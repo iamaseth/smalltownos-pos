@@ -3035,6 +3035,19 @@
     "day_wed": "بدھ",
     "day_thu": "جمعرات",
     "day_fri": "جمعہ",
-    "day_sat": "ہفتہ"
+    "day_sat": "ہفتہ",
+    "sendToTelegram": "ٹیلیگرام پر بھیجیں",
+    "sendDaily": "روزانہ خلاصہ · {date}",
+    "sendWeekly": "ہفتہ وار رپورٹ · {start} – {end}",
+    "sendPeriod": "فروخت کا خلاصہ · {start} – {end}",
+    "sendAttachmentsNote": "PDF اور CSV منسلک",
+    "sendTo": "کس کو بھیجیں",
+    "send": "بھیجیں",
+    "cancel": "منسوخ کریں",
+    "chooseRecipient": "کم از کم ایک وصول کنندہ منتخب کریں",
+    "sendFailed": "بھیجا نہیں جا سکا۔ ترتیبات میں حالیہ ترسیل دیکھیں۔",
+    "sendQueued": "قطار میں ہے۔ تھوڑی دیر میں بھیجا جائے گا۔",
+    "sendDone": "{count, plural, one {# وصول کنندہ کو بھیج دیا گیا} other {# وصول کنندگان کو بھیج دیا گیا}}",
+    "notConnectedHint": "ٹیلیگرام ابھی منسلک نہیں ہے۔ یہاں سیٹ اپ کریں:"
   }
 }

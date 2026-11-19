@@ -3035,6 +3035,19 @@
     "day_wed": "星期三",
     "day_thu": "星期四",
     "day_fri": "星期五",
-    "day_sat": "星期六"
+    "day_sat": "星期六",
+    "sendToTelegram": "发送到 Telegram",
+    "sendDaily": "每日汇总 · {date}",
+    "sendWeekly": "周报 · {start} – {end}",
+    "sendPeriod": "销售汇总 · {start} – {end}",
+    "sendAttachmentsNote": "附带 PDF 和 CSV",
+    "sendTo": "发送给",
+    "send": "发送",
+    "cancel": "取消",
+    "chooseRecipient": "请至少选择一位收件人",
+    "sendFailed": "发送失败。请在设置的最近发送中查看。",
+    "sendQueued": "已排队，稍后发送。",
+    "sendDone": "{count, plural, one {已发送给 # 位收件人} other {已发送给 # 位收件人}}",
+    "notConnectedHint": "Telegram 尚未连接。请在此设置："
   }
 }

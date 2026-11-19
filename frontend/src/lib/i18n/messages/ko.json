@@ -3035,6 +3035,19 @@
     "day_wed": "수요일",
     "day_thu": "목요일",
     "day_fri": "금요일",
-    "day_sat": "토요일"
+    "day_sat": "토요일",
+    "sendToTelegram": "텔레그램으로 보내기",
+    "sendDaily": "일일 요약 · {date}",
+    "sendWeekly": "주간 보고서 · {start} – {end}",
+    "sendPeriod": "매출 요약 · {start} – {end}",
+    "sendAttachmentsNote": "PDF 및 CSV 첨부",
+    "sendTo": "받는 사람",
+    "send": "보내기",
+    "cancel": "취소",
+    "chooseRecipient": "받는 사람을 한 명 이상 선택하세요",
+    "sendFailed": "보내지 못했습니다. 설정의 최근 전송을 확인하세요.",
+    "sendQueued": "대기 중입니다. 곧 전송됩니다.",
+    "sendDone": "{count, plural, one {#명에게 보냈습니다} other {#명에게 보냈습니다}}",
+    "notConnectedHint": "텔레그램이 아직 연결되지 않았습니다. 설정 위치:"
   }
 }

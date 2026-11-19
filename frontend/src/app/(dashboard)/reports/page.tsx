@@ -10,6 +10,8 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useAuthStore } from '@/store/auth';
 import WeeklySales from '@/components/reports/WeeklySales';
 import CogsReport from '@/components/reports/CogsReport';
+import TelegramSendButton from '@/components/reports/TelegramSendButton';
+import { tenantCan } from '@/lib/permissions';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type Preset = 'today' | 'thisWeek' | 'thisMonth' | 'custom';
@@ -73,6 +75,8 @@ export default function ReportsPage() {
   const tOrders = useTranslations('orders');
   const fmt = useFormatCurrency();
   const businessName = useAuthStore((s) => s.currentTenant?.business_name);
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const canSendTelegram = tenantCan(currentTenant, 'settings.manage') && tenantCan(currentTenant, 'reports.financial.view');
   const [preset, setPreset] = useState<Preset>('thisWeek');
   const [range, setRange] = useState<[string, string]>(() => presetRange('thisWeek'));
   const [result, setResult] = useState<{ key: string; report: PeriodReport | null; failed: boolean } | null>(null);
@@ -193,6 +197,7 @@ export default function ReportsPage() {
           className="inline-flex h-10 items-center gap-2 rounded-xl border-2 border-border bg-card px-4 text-sm font-semibold text-foreground hover:bg-muted disabled:opacity-50">
           <Printer size={15} />{tCommon('print')}
         </button>
+        {canSendTelegram && validRange && <TelegramSendButton startDate={range[0]} endDate={range[1]} />}
       </div>
 
       {report?.canViewFinancials && validRange && <CogsReport startDate={range[0]} endDate={range[1]} />}

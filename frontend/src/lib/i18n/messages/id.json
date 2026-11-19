@@ -3035,6 +3035,19 @@
     "day_wed": "Rabu",
     "day_thu": "Kamis",
     "day_fri": "Jumat",
-    "day_sat": "Sabtu"
+    "day_sat": "Sabtu",
+    "sendToTelegram": "Kirim ke Telegram",
+    "sendDaily": "Ringkasan harian · {date}",
+    "sendWeekly": "Laporan mingguan · {start} – {end}",
+    "sendPeriod": "Ringkasan penjualan · {start} – {end}",
+    "sendAttachmentsNote": "Dengan lampiran PDF dan CSV",
+    "sendTo": "Kirim ke",
+    "send": "Kirim",
+    "cancel": "Batal",
+    "chooseRecipient": "Pilih setidaknya satu penerima",
+    "sendFailed": "Gagal mengirim. Lihat pengiriman terbaru di Pengaturan.",
+    "sendQueued": "Dalam antrean. Akan segera dikirim.",
+    "sendDone": "{count, plural, one {Terkirim ke # penerima} other {Terkirim ke # penerima}}",
+    "notConnectedHint": "Telegram belum terhubung. Atur di"
   }
 }

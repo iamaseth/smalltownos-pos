@@ -3035,6 +3035,19 @@
     "day_wed": "Thứ tư",
     "day_thu": "Thứ năm",
     "day_fri": "Thứ sáu",
-    "day_sat": "Thứ bảy"
+    "day_sat": "Thứ bảy",
+    "sendToTelegram": "Gửi qua Telegram",
+    "sendDaily": "Tóm tắt ngày · {date}",
+    "sendWeekly": "Báo cáo tuần · {start} – {end}",
+    "sendPeriod": "Tóm tắt doanh thu · {start} – {end}",
+    "sendAttachmentsNote": "Kèm PDF và CSV",
+    "sendTo": "Gửi đến",
+    "send": "Gửi",
+    "cancel": "Hủy",
+    "chooseRecipient": "Hãy chọn ít nhất một người nhận",
+    "sendFailed": "Không gửi được. Xem lần gửi gần đây trong Cài đặt.",
+    "sendQueued": "Đã xếp hàng. Sẽ gửi trong giây lát.",
+    "sendDone": "{count, plural, one {Đã gửi cho # người nhận} other {Đã gửi cho # người nhận}}",
+    "notConnectedHint": "Telegram chưa được kết nối. Thiết lập tại"
   }
 }

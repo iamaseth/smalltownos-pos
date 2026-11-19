@@ -3035,6 +3035,19 @@
     "day_wed": "چهارشنبه",
     "day_thu": "پنجشنبه",
     "day_fri": "جمعه",
-    "day_sat": "شنبه"
+    "day_sat": "شنبه",
+    "sendToTelegram": "ارسال به تلگرام",
+    "sendDaily": "خلاصه روزانه · {date}",
+    "sendWeekly": "گزارش هفتگی · {start} – {end}",
+    "sendPeriod": "خلاصه فروش · {start} – {end}",
+    "sendAttachmentsNote": "همراه با پیوست PDF و CSV",
+    "sendTo": "ارسال به",
+    "send": "ارسال",
+    "cancel": "لغو",
+    "chooseRecipient": "حداقل یک گیرنده انتخاب کنید",
+    "sendFailed": "ارسال نشد. ارسال‌های اخیر را در تنظیمات ببینید.",
+    "sendQueued": "در صف است. به‌زودی ارسال می‌شود.",
+    "sendDone": "{count, plural, one {به # گیرنده ارسال شد} other {به # گیرنده ارسال شد}}",
+    "notConnectedHint": "تلگرام هنوز متصل نیست. آن را اینجا تنظیم کنید:"
   }
 }

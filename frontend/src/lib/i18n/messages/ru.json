@@ -3035,6 +3035,19 @@
     "day_wed": "Среда",
     "day_thu": "Четверг",
     "day_fri": "Пятница",
-    "day_sat": "Суббота"
+    "day_sat": "Суббота",
+    "sendToTelegram": "Отправить в Telegram",
+    "sendDaily": "Дневная сводка · {date}",
+    "sendWeekly": "Недельный отчёт · {start} – {end}",
+    "sendPeriod": "Сводка продаж · {start} – {end}",
+    "sendAttachmentsNote": "С вложениями PDF и CSV",
+    "sendTo": "Кому",
+    "send": "Отправить",
+    "cancel": "Отмена",
+    "chooseRecipient": "Выберите хотя бы одного получателя",
+    "sendFailed": "Не удалось отправить. См. последние отправки в настройках.",
+    "sendQueued": "В очереди. Скоро будет отправлено.",
+    "sendDone": "{count, plural, one {Отправлено # получателю} few {Отправлено # получателям} many {Отправлено # получателям} other {Отправлено # получателям}}",
+    "notConnectedHint": "Telegram ещё не подключён. Настройте его в разделе"
   }
 }
