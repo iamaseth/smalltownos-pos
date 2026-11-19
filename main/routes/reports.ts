@@ -1128,4 +1128,121 @@ router.get('/weekly', requirePermission('reports.view'), (req: Request, res: Res
   }
 });
 
+interface CogsItem { productId: string; name: string; category: string | null; quantity: number; net: number; unitCost: number | null; cost: number | null; profit: number | null; previousMargin: number | null }
+
+function cogsItems(db: ReturnType<typeof getDatabase>, startDate: string, endDate: string, unitCosts: Map<string, number>) {
+  const rows = db.prepare(`
+    SELECT oi.product_id, oi.product_name, p.id AS current_product_id, p.category_id,
+      SUM(oi.quantity) AS quantity, SUM(oi.total) AS net
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
+    LEFT JOIN products p ON p.id = oi.product_id
+    WHERE o.created_at >= ? AND o.created_at < ? AND o.status != 'cancelled' AND oi.voided_at IS NULL
+    GROUP BY oi.product_id, oi.product_name
+  `).all(reportDayBounds(startDate)[0], reportDayBounds(endDate)[1]) as {
+    product_id: string | null; product_name: string; current_product_id: string | null; category_id: string | null; quantity: number; net: number;
+  }[];
+  return rows.map((row) => {
+    const unitCost = row.current_product_id ? unitCosts.get(String(row.current_product_id)) ?? null : null;
+    const quantity = Number(row.quantity || 0);
+    const net = Number(row.net || 0);
+    const cost = unitCost === null ? null : new Decimal(unitCost).times(quantity).toNumber();
+    return { row, productId: String(row.product_id ?? ''), name: row.product_name, quantity, net, unitCost, cost, profit: cost === null ? null : new Decimal(net).minus(cost).toNumber() };
+  });
+}
+
+function cogsTotals(items: { net: number; cost: number | null }[]) {
+  let sales = new Decimal(0); let costedSales = new Decimal(0); let cost = new Decimal(0); let uncostedItems = 0;
+  for (const item of items) {
+    sales = sales.plus(item.net);
+    if (item.cost === null) { uncostedItems += 1; continue; }
+    costedSales = costedSales.plus(item.net);
+    cost = cost.plus(item.cost);
+  }
+  const profit = costedSales.minus(cost);
+  return {
+    sales: sales.toNumber(), costedSales: costedSales.toNumber(), cost: cost.toNumber(), grossProfit: profit.toNumber(),
+    margin: costedSales.gt(0) ? profit.div(costedSales).times(100).toNumber() : null,
+    costPercent: costedSales.gt(0) ? cost.div(costedSales).times(100).toNumber() : null,
+    uncostedSales: sales.minus(costedSales).toNumber(), uncostedItems,
+  };
+}
+
+function monthStart(date: string, monthsBack: number): string {
+  const [y, m] = date.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 - monthsBack, 1));
+  return d.toISOString().slice(0, 10);
+}
+
+router.get('/cogs', requirePermission('reports.financial.view'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const today = reportToday();
+    let startDate = reportDate(req.query.start_date, today);
+    let endDate = reportDate(req.query.end_date, today);
+    if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
+    const trendBy = req.query.trend === 'month' ? 'month' : 'week';
+    const unitCosts = menuUnitCosts(db);
+
+    const length = daysBetween(startDate, endDate);
+    const previousEnd = shiftDate(startDate, -1);
+    const previousStart = shiftDate(previousEnd, -(length - 1));
+    const current = cogsItems(db, startDate, endDate, unitCosts);
+    const previous = cogsItems(db, previousStart, previousEnd, unitCosts);
+    const previousMargins = new Map<string, number>();
+    for (const item of previous) {
+      if (item.profit !== null && item.net > 0) previousMargins.set(`${item.productId}|${item.name}`, (item.profit / item.net) * 100);
+    }
+
+    const categories = db.prepare('SELECT id, name, parent_id FROM categories').all() as { id: string; name: string; parent_id: string | null }[];
+    const categoryById = new Map(categories.map((c) => [c.id, c]));
+    const topCategoryName = (categoryId: string | null): string | null => {
+      let category = categoryId ? categoryById.get(categoryId) : undefined;
+      const seen = new Set<string>();
+      while (category?.parent_id && categoryById.has(category.parent_id) && !seen.has(category.id)) {
+        seen.add(category.id);
+        category = categoryById.get(category.parent_id);
+      }
+      return category?.name ?? null;
+    };
+
+    const items: CogsItem[] = current
+      .map((item) => ({
+        productId: item.productId,
+        name: item.name,
+        category: item.row.current_product_id ? topCategoryName(item.row.category_id) : null,
+        quantity: item.quantity,
+        net: item.net,
+        unitCost: item.unitCost,
+        cost: item.cost,
+        profit: item.profit,
+        previousMargin: previousMargins.get(`${item.productId}|${item.name}`) ?? null,
+      }))
+      .sort((a, b) => b.net - a.net);
+
+    const trend: { start: string; end: string; sales: number; costedSales: number; cost: number; costPercent: number | null; margin: number | null }[] = [];
+    const anchor = endDate;
+    for (let i = trendBy === 'week' ? 7 : 5; i >= 0; i -= 1) {
+      const start = trendBy === 'week' ? shiftDate(mondayOf(anchor), -7 * i) : monthStart(anchor, i);
+      const end = trendBy === 'week' ? shiftDate(start, 6) : shiftDate(monthStart(anchor, i - 1), -1);
+      const totals = cogsTotals(cogsItems(db, start, end, unitCosts));
+      trend.push({ start, end, sales: totals.sales, costedSales: totals.costedSales, cost: totals.cost, costPercent: totals.costPercent, margin: totals.margin });
+    }
+
+    res.json({
+      period: { startDate, endDate, days: length },
+      previousPeriod: { startDate: previousStart, endDate: previousEnd },
+      totals: cogsTotals(current),
+      previous: cogsTotals(previous),
+      items,
+      trendBy,
+      trend,
+    });
+  } catch (error) {
+    console.error('[API] Internal error:', error);
+    const { statusCode, message } = error as { statusCode?: number; message?: string };
+    res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
+  }
+});
+
 export const reportRoutes = router;

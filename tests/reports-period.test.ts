@@ -194,6 +194,23 @@ async function main() {
     const w3 = (await request(app).get('/api/reports/weekly?week_start=2026-11-12').set('Authorization', `Bearer ${token}`)).body;
     assertOrThrow(close(w3.total.cost, w.total.cost + burgerQty * 2), 'a cost typed on the menu item wins over the recipe');
 
+
+    console.log('\n7. Cost of goods report');
+    const cres = await request(app).get('/api/reports/cogs?start_date=2026-11-09&end_date=2026-11-15&trend=week').set('Authorization', `Bearer ${token}`);
+    assertEqualOrThrow(cres.status, 200, 'cogs report returns 200 for owners');
+    const c = cres.body;
+    const cBurger = c.items.find((i: { productId: string }) => i.productId === 'prod-burger');
+    assertOrThrow(cBurger && close(cBurger.unitCost, 2) && close(cBurger.cost, cBurger.quantity * 2), 'items carry cost each and total cost');
+    assertOrThrow(close(c.totals.cost, c.items.reduce((sum: number, i: { cost: number | null }) => sum + (i.cost ?? 0), 0)), 'total cost adds up the items');
+    assertOrThrow(close(c.totals.grossProfit, c.totals.costedSales - c.totals.cost), 'gross profit is costed sales minus cost');
+    assertOrThrow(c.totals.uncostedItems >= 1 && c.totals.uncostedSales > 0, 'items without a cost are counted, not hidden');
+    assertEqualOrThrow(c.previousPeriod.startDate, '2026-11-02', 'previous period is the same length right before');
+    assertEqualOrThrow(c.trend.length, 8, 'eight weeks of trend');
+    assertEqualOrThrow(c.trend[7].start, '2026-11-09', 'trend ends with the selected week');
+    const mres = (await request(app).get('/api/reports/cogs?start_date=2026-11-09&end_date=2026-11-15&trend=month').set('Authorization', `Bearer ${token}`)).body;
+    assertEqualOrThrow(mres.trend.length, 6, 'six months of trend');
+    assertOrThrow(mres.trend[5].start === '2026-11-01' && mres.trend[5].end === '2026-11-30', 'monthly buckets are calendar months');
+
     console.log('\nAll reports-period checks passed');
   } finally {
     closeDatabase();

@@ -9,6 +9,7 @@ import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { Ltr } from '@/components/layout/Ltr';
 import { useAuthStore } from '@/store/auth';
 import WeeklySales from '@/components/reports/WeeklySales';
+import CogsReport from '@/components/reports/CogsReport';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type Preset = 'today' | 'thisWeek' | 'thisMonth' | 'custom';
@@ -193,6 +194,8 @@ export default function ReportsPage() {
           <Printer size={15} />{tCommon('print')}
         </button>
       </div>
+
+      {report?.canViewFinancials && validRange && <CogsReport startDate={range[0]} endDate={range[1]} />}
 
       {loading && !report ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4" role="status" aria-live="polite">
