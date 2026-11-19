@@ -1,7 +1,7 @@
 {
-  "name": "Flo",
-  "short_name": "Flo",
-  "description": "Smart Point of Sale for restaurants, salons, and retail",
+  "name": "BackStreet Riverside POS",
+  "short_name": "BackStreet POS",
+  "description": "BackStreet Riverside restaurant point of sale",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -9,16 +9,10 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ]
 }
