@@ -675,6 +675,7 @@ export default function ProductsPage() {
               <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCategory')}</th>
               <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnAddons')}</th>
               <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnPrice')}</th>
+              {canRecipe && <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{tInv('costPerServing')}</th>}
               {canRecipe && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{tInv('recipeColumn')}</th>}
               <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnTax')}</th>
               {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCashback')}</th>}
@@ -750,6 +751,22 @@ export default function ProductsPage() {
                 </td>
                 {canRecipe && (() => {
                   const recipe = recipeByProduct.get(product.id);
+                  const cost = product.cost_price != null && product.cost_price > 0 ? Number(product.cost_price) : recipe?.cost_per_serving ?? null;
+                  const price = Number(product.price);
+                  const margin = cost !== null && price > 0 ? Math.round(((price - cost) / price) * 100) : null;
+                  return (
+                    <td className="p-4 text-end">
+                      {cost !== null ? (
+                        <>
+                          <p className="font-medium">{fmt(cost)}</p>
+                          {margin !== null && <p className={`text-xs ${margin < 55 ? 'text-amber-600' : 'text-muted-foreground'}`}>{margin}%</p>}
+                        </>
+                      ) : <span className="text-muted-foreground">—</span>}
+                    </td>
+                  );
+                })()}
+                {canRecipe && (() => {
+                  const recipe = recipeByProduct.get(product.id);
                   return (
                     <td className="p-4 text-sm">
                       {recipe ? (
@@ -757,7 +774,6 @@ export default function ProductsPage() {
                           <span className={recipe.is_active === 1 ? 'text-green-600 font-medium' : 'text-amber-600 font-medium'}>
                             {recipe.is_active === 1 ? tInv('confirmedTag') : tInv('draft')}
                           </span>
-                          {recipe.margin_percent !== null && <span className="text-xs text-muted-foreground">{Math.round(recipe.margin_percent * 10) / 10}%</span>}
                         </div>
                       ) : <span className="text-muted-foreground">{tInv('noRecipeTag')}</span>}
                     </td>
