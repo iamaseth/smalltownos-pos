@@ -1,162 +1,296 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
-import { getDatabase, now } from '../db';
+import { dayBoundsInTimezone, getDatabase, now, withTxn } from '../db';
 import { requirePermission } from '../services/authorization';
+import { tenantTimezone } from './cash-closures';
+
+type Db = ReturnType<typeof getDatabase>;
+type ShiftStatus = 'draft' | 'published' | 'cancelled';
+
+interface ShiftRow {
+  id: string; staff_id: string; role: string; work_date: string; shift_type_id: string | null;
+  starts_at: string; ends_at: string; status: ShiftStatus; notes: string | null;
+  created_by: string; updated_by: string; created_at: string; updated_at: string;
+}
+interface ShiftTypeRow { id: string; label: string; start_time: string; end_time: string; sort_order: number; active: number }
 
 const router = Router();
-const VALID_ROLES = new Set(['owner', 'manager', 'cashier', 'server', 'chef']);
-const MAX_SHIFT_MS = 16 * 60 * 60 * 1000;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const MAX_RANGE_DAYS = 45;
+const SHIFT_SELECT = `
+  SELECT s.*, u.name AS staff_name FROM scheduled_shifts s JOIN users u ON u.id = s.staff_id
+`;
 
-function parseIso(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.trim()) return null;
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+class ScheduleError extends Error {
+  constructor(message: string, public statusCode: number) { super(message); }
 }
 
-function actorId(req: Request): string | null {
+function fail(message: string, statusCode = 400): never {
+  throw new ScheduleError(message, statusCode);
+}
+
+function send(res: Response, error: unknown, fallback: string): void {
+  if (error instanceof ScheduleError) {
+    res.status(error.statusCode).json({ error: error.message });
+    return;
+  }
+  console.error(`[Schedule] ${fallback}:`, error);
+  res.status(500).json({ error: fallback });
+}
+
+function actor(req: Request): string {
   const id = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
-  return id || null;
+  if (!id) fail('Authentication required', 401);
+  return id;
 }
 
-function overlaps(db: ReturnType<typeof getDatabase>, staffId: string, startsAt: string, endsAt: string, excludeId?: string): boolean {
-  const row = db.prepare(`
-    SELECT id FROM scheduled_shifts
-    WHERE staff_id = ? AND status != 'cancelled'
-      AND starts_at < ? AND ends_at > ?${excludeId ? ' AND id != ?' : ''}
+function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+function parseDate(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !DATE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) fail(`${label} must be YYYY-MM-DD`);
+  return value;
+}
+
+function parseTime(value: unknown, label: string): string {
+  if (typeof value !== 'string' || !TIME.test(value)) fail(`${label} must be HH:MM`);
+  return value;
+}
+
+/** Store-local date and wall times to canonical UTC timestamps; an end at or before the start ends the next day. */
+export function shiftInstants(workDate: string, start: string, end: string, timezone: string): { starts_at: string; ends_at: string } {
+  const startsAt = dayBoundsInTimezone(workDate, timezone, start)[0];
+  const endDate = end <= start ? addDays(workDate, 1) : workDate;
+  const endsAt = dayBoundsInTimezone(endDate, timezone, end)[0];
+  return { starts_at: startsAt, ends_at: endsAt };
+}
+
+function loadShift(db: Db, id: string): ShiftRow {
+  const row = db.prepare(`SELECT * FROM scheduled_shifts WHERE id = ?`).get(id) as ShiftRow | undefined;
+  if (!row) fail('Scheduled shift not found', 404);
+  return row;
+}
+
+function loadType(db: Db, id: unknown): ShiftTypeRow {
+  const row = typeof id === 'string'
+    ? db.prepare(`SELECT * FROM schedule_shift_types WHERE id = ? AND active = 1`).get(id) as ShiftTypeRow | undefined
+    : undefined;
+  if (!row) fail('Choose a shift');
+  return row;
+}
+
+function activeStaff(db: Db, id: unknown): { id: string; role: string; name: string } {
+  const row = typeof id === 'string'
+    ? db.prepare(`SELECT id, role, name FROM users WHERE id = ? AND is_active = 1`).get(id) as { id: string; role: string; name: string } | undefined
+    : undefined;
+  if (!row) fail('Choose an active staff member');
+  return row;
+}
+
+function overlapping(db: Db, staffId: string, startsAt: string, endsAt: string, ignoreId?: string): boolean {
+  return Boolean(db.prepare(`
+    SELECT 1 FROM scheduled_shifts
+    WHERE staff_id = ? AND status != 'cancelled' AND starts_at < ? AND ends_at > ? AND id != ?
     LIMIT 1
-  `).get(...(excludeId ? [staffId, endsAt, startsAt, excludeId] : [staffId, endsAt, startsAt]));
-  return Boolean(row);
+  `).get(staffId, endsAt, startsAt, ignoreId ?? ''));
 }
 
-function activeStaff(db: ReturnType<typeof getDatabase>, staffId: string): { id: string; role: string } | undefined {
-  return db.prepare('SELECT id, role FROM users WHERE id = ? AND is_active = 1').get(staffId) as { id: string; role: string } | undefined;
+function recordEvent(db: Db, shiftId: string, action: string, before: ShiftRow | null, after: ShiftRow | null, actorId: string): void {
+  db.prepare(`
+    INSERT INTO scheduled_shift_events (shift_id, action, before_json, after_json, actor_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(shiftId, action, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null, actorId, now());
+}
+
+function shapeShift(db: Db, id: string): unknown {
+  return db.prepare(`${SHIFT_SELECT} WHERE s.id = ?`).get(id);
+}
+
+function insertShift(db: Db, fields: Omit<ShiftRow, 'id' | 'created_at' | 'updated_at' | 'updated_by'>, actorId: string, action: string): string {
+  const id = randomUUID();
+  const at = now();
+  db.prepare(`
+    INSERT INTO scheduled_shifts (id, staff_id, role, work_date, shift_type_id, starts_at, ends_at, status, notes, created_by, updated_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, fields.staff_id, fields.role, fields.work_date, fields.shift_type_id, fields.starts_at, fields.ends_at,
+    fields.status, fields.notes, fields.created_by, actorId, at, at);
+  recordEvent(db, id, action, null, loadShift(db, id), actorId);
+  return id;
 }
 
 router.get('/', requirePermission('staff.view'), (req: Request, res: Response) => {
-  const from = parseIso(req.query.from);
-  const to = parseIso(req.query.to);
-  if (!from || !to || Date.parse(to) <= Date.parse(from) || Date.parse(to) - Date.parse(from) > 46 * 86400_000) {
-    return res.status(400).json({ error: 'Provide a valid date range of 46 days or less' });
-  }
-
   try {
-    const shifts = getDatabase().prepare(`
-      SELECT s.*, u.name AS staff_name, u.is_active AS staff_is_active
-      FROM scheduled_shifts s JOIN users u ON u.id = s.staff_id
-      WHERE s.starts_at < ? AND s.ends_at > ?
-      ORDER BY s.starts_at, u.name
-    `).all(to, from);
-    res.json({ shifts });
-  } catch (error) {
-    console.error('[Schedule] Could not load shifts:', error);
-    res.status(500).json({ error: 'Could not load the staff schedule' });
-  }
+    const from = parseDate(req.query.from, 'from');
+    const to = parseDate(req.query.to, 'to');
+    if (to < from || addDays(from, MAX_RANGE_DAYS) < to) fail(`Choose a date range of ${MAX_RANGE_DAYS} days or less`);
+    const db = getDatabase();
+    const shifts = db.prepare(`${SHIFT_SELECT} WHERE s.work_date >= ? AND s.work_date <= ? AND s.status != 'cancelled' ORDER BY s.work_date, s.starts_at, u.name`).all(from, to);
+    const shiftTypes = db.prepare(`SELECT id, label, start_time, end_time, sort_order FROM schedule_shift_types WHERE active = 1 ORDER BY sort_order, label`).all();
+    const staff = db.prepare(`
+      SELECT u.id, u.name, u.role, st.target_days_per_week
+      FROM users u LEFT JOIN staff_schedule_settings st ON st.user_id = u.id
+      WHERE u.is_active = 1 ORDER BY u.name
+    `).all();
+    res.json({ shifts, shift_types: shiftTypes, staff, timezone: tenantTimezone() });
+  } catch (error) { send(res, error, 'Could not load the staff schedule'); }
 });
 
 router.post('/', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
-  const userId = actorId(req);
-  const staffId = typeof req.body?.staff_id === 'string' ? req.body.staff_id : '';
-  const startsAt = parseIso(req.body?.starts_at);
-  const endsAt = parseIso(req.body?.ends_at);
-  if (!userId) return res.status(401).json({ error: 'Authentication required' });
-  if (!staffId || !startsAt || !endsAt || Date.parse(endsAt) <= Date.parse(startsAt)
-    || Date.parse(endsAt) - Date.parse(startsAt) > MAX_SHIFT_MS) {
-    return res.status(400).json({ error: 'Choose a staff member and valid shift times (maximum 16 hours)' });
-  }
+  try {
+    const me = actor(req);
+    const db = getDatabase();
+    const body = req.body || {};
+    const id = withTxn(() => {
+      const person = activeStaff(db, body.staff_id);
+      const workDate = parseDate(body.work_date, 'work_date');
+      const type = loadType(db, body.shift_type_id);
+      const start = body.start_time == null ? type.start_time : parseTime(body.start_time, 'start_time');
+      const end = body.end_time == null ? type.end_time : parseTime(body.end_time, 'end_time');
+      const instants = shiftInstants(workDate, start, end, tenantTimezone());
+      if (overlapping(db, person.id, instants.starts_at, instants.ends_at)) fail(`${person.name} already works then`, 409);
+      return insertShift(db, {
+        staff_id: person.id, role: person.role, work_date: workDate, shift_type_id: type.id, ...instants,
+        status: 'draft', notes: null, created_by: me,
+      }, me, 'created');
+    });
+    res.status(201).json({ shift: shapeShift(db, id) });
+  } catch (error) { send(res, error, 'Could not add the shift'); }
+});
 
+/** Move, reassign, retime or change status. Any change other than status turns a published shift back into a draft. */
+router.patch('/:id', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
+  try {
+    const me = actor(req);
+    const db = getDatabase();
+    const body = req.body || {};
+    withTxn(() => {
+      const before = loadShift(db, String(req.params.id));
+      if (before.status === 'cancelled') fail('This shift was removed', 409);
+      const person = body.staff_id == null ? activeStaff(db, before.staff_id) : activeStaff(db, body.staff_id);
+      const workDate = body.work_date == null ? before.work_date : parseDate(body.work_date, 'work_date');
+      const type = body.shift_type_id == null ? (before.shift_type_id ? loadType(db, before.shift_type_id) : null) : loadType(db, body.shift_type_id);
+      const typeChanged = body.shift_type_id != null && body.shift_type_id !== before.shift_type_id;
+      const status: ShiftStatus | null = body.status == null ? null
+        : (['draft', 'published', 'cancelled'] as const).find((s) => s === body.status) ?? fail('Status must be draft, published or cancelled');
+      let instants = { starts_at: before.starts_at, ends_at: before.ends_at };
+      const timesGiven = body.start_time != null || body.end_time != null;
+      const placementChanged = workDate !== before.work_date || typeChanged || timesGiven;
+      if (placementChanged) {
+        const tz = tenantTimezone();
+        const currentLocal = (iso: string) => new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+          .format(new Date(`${iso.replace(' ', 'T')}Z`));
+        const start = body.start_time != null ? parseTime(body.start_time, 'start_time')
+          : (typeChanged && type ? type.start_time : currentLocal(before.starts_at));
+        const end = body.end_time != null ? parseTime(body.end_time, 'end_time')
+          : (typeChanged && type ? type.end_time : currentLocal(before.ends_at));
+        instants = shiftInstants(workDate, start, end, tz);
+      }
+      const nextStatus: ShiftStatus = status ?? (placementChanged || person.id !== before.staff_id ? 'draft' : before.status);
+      if (nextStatus !== 'cancelled' && overlapping(db, person.id, instants.starts_at, instants.ends_at, before.id)) fail(`${person.name} already works then`, 409);
+      db.prepare(`
+        UPDATE scheduled_shifts SET staff_id = ?, role = ?, work_date = ?, shift_type_id = ?, starts_at = ?, ends_at = ?, status = ?, updated_by = ?, updated_at = ?
+        WHERE id = ?
+      `).run(person.id, person.id === before.staff_id ? before.role : person.role, workDate, type?.id ?? before.shift_type_id,
+        instants.starts_at, instants.ends_at, nextStatus, me, now(), before.id);
+      const action = status === 'cancelled' ? 'removed' : status === 'published' ? 'published'
+        : person.id !== before.staff_id ? 'reassigned' : placementChanged ? 'moved' : 'updated';
+      recordEvent(db, before.id, action, before, loadShift(db, before.id), me);
+    });
+    res.json({ shift: shapeShift(db, String(req.params.id)) });
+  } catch (error) { send(res, error, 'Could not update the shift'); }
+});
+
+router.get('/:id/history', requirePermission('staff.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const staff = activeStaff(db, staffId);
-    if (!staff || !VALID_ROLES.has(staff.role)) return res.status(400).json({ error: 'Choose an active staff member' });
-    if (overlaps(db, staffId, startsAt, endsAt)) return res.status(409).json({ error: 'This staff member already has an overlapping shift' });
-    const timestamp = now();
-    const id = randomUUID();
-    db.prepare(`
-      INSERT INTO scheduled_shifts
-        (id, staff_id, role, starts_at, ends_at, status, notes, created_by, updated_by, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'draft', NULL, ?, ?, ?, ?)
-    `).run(id, staffId, staff.role, startsAt, endsAt, userId, userId, timestamp, timestamp);
-    const shift = db.prepare(`
-      SELECT s.*, u.name AS staff_name, u.is_active AS staff_is_active
-      FROM scheduled_shifts s JOIN users u ON u.id = s.staff_id WHERE s.id = ?
-    `).get(id);
-    res.status(201).json({ shift });
-  } catch (error) {
-    console.error('[Schedule] Could not create shift:', error);
-    res.status(500).json({ error: 'Could not create the scheduled shift' });
-  }
+    loadShift(db, String(req.params.id));
+    const events = db.prepare(`
+      SELECT e.id, e.action, e.before_json, e.after_json, e.created_at, u.name AS actor_name
+      FROM scheduled_shift_events e LEFT JOIN users u ON u.id = e.actor_id WHERE e.shift_id = ? ORDER BY e.id
+    `).all(String(req.params.id));
+    res.json({ events });
+  } catch (error) { send(res, error, 'Could not load the shift history'); }
 });
 
 router.post('/copy-week', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
-  const userId = actorId(req);
-  const weekStart = parseIso(req.body?.week_start);
-  if (!userId) return res.status(401).json({ error: 'Authentication required' });
-  if (!weekStart) return res.status(400).json({ error: 'Provide the start of the week to copy into' });
-
   try {
+    const me = actor(req);
     const db = getDatabase();
-    const currentStart = Date.parse(weekStart);
-    const currentEnd = currentStart + 7 * 86400_000;
-    const previousStart = currentStart - 7 * 86400_000;
-    const source = db.prepare(`
-      SELECT * FROM scheduled_shifts
-      WHERE starts_at >= ? AND starts_at < ? AND status != 'cancelled'
-      ORDER BY starts_at
-    `).all(new Date(previousStart).toISOString(), new Date(currentStart).toISOString()) as Array<{
-      staff_id: string; role: string; starts_at: string; ends_at: string; notes: string | null;
-    }>;
-
-    const copy = db.transaction(() => {
+    const weekStart = parseDate(req.body?.week_start, 'week_start');
+    const onlyStaff = typeof req.body?.staff_id === 'string' ? req.body.staff_id : null;
+    const result = withTxn(() => {
+      const source = db.prepare(`
+        SELECT * FROM scheduled_shifts WHERE work_date >= ? AND work_date < ? AND status != 'cancelled' ${onlyStaff ? 'AND staff_id = ?' : ''}
+        ORDER BY work_date, starts_at
+      `).all(...[addDays(weekStart, -7), weekStart, ...(onlyStaff ? [onlyStaff] : [])]) as ShiftRow[];
       let copied = 0;
       let skipped = 0;
-      const timestamp = now();
       for (const shift of source) {
-        const startsAt = new Date(Date.parse(shift.starts_at) + 7 * 86400_000).toISOString();
-        const endsAt = new Date(Date.parse(shift.ends_at) + 7 * 86400_000).toISOString();
-        if (Date.parse(startsAt) >= currentEnd || overlaps(db, shift.staff_id, startsAt, endsAt)) {
-          skipped += 1;
-          continue;
-        }
-        db.prepare(`
-          INSERT INTO scheduled_shifts
-            (id, staff_id, role, starts_at, ends_at, status, notes, created_by, updated_by, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, 'draft', 'Copied from previous week', ?, ?, ?, ?)
-        `).run(randomUUID(), shift.staff_id, shift.role, startsAt, endsAt, userId, userId, timestamp, timestamp);
+        const staff = db.prepare(`SELECT is_active FROM users WHERE id = ?`).get(shift.staff_id) as { is_active: number } | undefined;
+        const shiftBy = (iso: string) => new Date(Date.parse(`${iso.replace(' ', 'T')}Z`) + 7 * 86400_000).toISOString().replace('T', ' ').replace(/\..*$/, '');
+        const startsAt = shiftBy(shift.starts_at);
+        const endsAt = shiftBy(shift.ends_at);
+        if (!staff?.is_active || overlapping(db, shift.staff_id, startsAt, endsAt)) { skipped += 1; continue; }
+        insertShift(db, {
+          staff_id: shift.staff_id, role: shift.role, work_date: addDays(shift.work_date, 7), shift_type_id: shift.shift_type_id,
+          starts_at: startsAt, ends_at: endsAt, status: 'draft', notes: 'Copied from previous week', created_by: me,
+        }, me, 'copied');
         copied += 1;
       }
       return { copied, skipped };
     });
-
-    res.json(copy());
-  } catch (error) {
-    console.error('[Schedule] Could not copy previous week:', error);
-    res.status(500).json({ error: 'Could not copy last week’s schedule' });
-  }
+    res.json(result);
+  } catch (error) { send(res, error, "Could not copy last week's schedule"); }
 });
 
-router.patch('/:id', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
-  const userId = actorId(req);
-  const status = req.body?.status;
-  if (!userId) return res.status(401).json({ error: 'Authentication required' });
-  if (!['draft', 'published', 'cancelled'].includes(status)) {
-    return res.status(400).json({ error: 'Status must be draft, published, or cancelled' });
-  }
-
+router.post('/publish-week', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
   try {
+    const me = actor(req);
     const db = getDatabase();
-    const result = db.prepare(`
-      UPDATE scheduled_shifts SET status = ?, updated_by = ?, updated_at = ? WHERE id = ?
-    `).run(status, userId, now(), req.params.id);
-    if (!result.changes) return res.status(404).json({ error: 'Scheduled shift not found' });
-    const shift = db.prepare(`
-      SELECT s.*, u.name AS staff_name, u.is_active AS staff_is_active
-      FROM scheduled_shifts s JOIN users u ON u.id = s.staff_id WHERE s.id = ?
-    `).get(req.params.id);
-    res.json({ shift });
-  } catch (error) {
-    console.error('[Schedule] Could not update shift:', error);
-    res.status(500).json({ error: 'Could not update the scheduled shift' });
-  }
+    const weekStart = parseDate(req.body?.week_start, 'week_start');
+    const published = withTxn(() => {
+      const drafts = db.prepare(`SELECT * FROM scheduled_shifts WHERE work_date >= ? AND work_date < ? AND status = 'draft'`)
+        .all(weekStart, addDays(weekStart, 7)) as ShiftRow[];
+      for (const before of drafts) {
+        db.prepare(`UPDATE scheduled_shifts SET status = 'published', updated_by = ?, updated_at = ? WHERE id = ?`).run(me, now(), before.id);
+        recordEvent(db, before.id, 'published', before, loadShift(db, before.id), me);
+      }
+      return drafts.length;
+    });
+    res.json({ published });
+  } catch (error) { send(res, error, 'Could not publish the week'); }
+});
+
+router.put('/shift-types/:id', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
+  try {
+    actor(req);
+    const db = getDatabase();
+    const type = loadType(db, req.params.id);
+    const label = typeof req.body?.label === 'string' && req.body.label.trim() ? req.body.label.trim().slice(0, 40) : type.label;
+    const start = parseTime(req.body?.start_time ?? type.start_time, 'start_time');
+    const end = parseTime(req.body?.end_time ?? type.end_time, 'end_time');
+    if (start === end) fail('Start and end time cannot be the same');
+    db.prepare(`UPDATE schedule_shift_types SET label = ?, start_time = ?, end_time = ?, updated_at = ? WHERE id = ?`).run(label, start, end, now(), type.id);
+    res.json({ shift_type: db.prepare(`SELECT id, label, start_time, end_time, sort_order FROM schedule_shift_types WHERE id = ?`).get(type.id) });
+  } catch (error) { send(res, error, 'Could not save the shift times'); }
+});
+
+router.put('/targets/:staffId', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
+  try {
+    actor(req);
+    const db = getDatabase();
+    const person = activeStaff(db, req.params.staffId);
+    const raw = req.body?.target_days_per_week;
+    if (raw !== null && (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0 || raw > 7)) fail('Target must be 0–7 days or empty');
+    db.prepare(`
+      INSERT INTO staff_schedule_settings (user_id, target_days_per_week, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(user_id) DO UPDATE SET target_days_per_week = excluded.target_days_per_week, updated_at = excluded.updated_at
+    `).run(person.id, raw, now());
+    res.json({ staff_id: person.id, target_days_per_week: raw });
+  } catch (error) { send(res, error, 'Could not save the target'); }
 });
 
 export const scheduleRoutes = router;

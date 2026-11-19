@@ -1,223 +1,503 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Copy, LoaderCircle, Send, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import api from '@/lib/api';
 import { tenantCan } from '@/lib/permissions';
 import { useAuthStore } from '@/store/auth';
-import type { Staff } from '@/lib/types';
 
 type ShiftStatus = 'draft' | 'published' | 'cancelled';
-type ScheduledShift = {
-  id: string;
-  staff_id: string;
-  staff_name: string;
-  role: string;
-  starts_at: string;
-  ends_at: string;
-  status: ShiftStatus;
-};
-type ShiftPreset = { id: string; label: string; start: string; end: string };
+type View = 'day' | 'week' | 'month';
+type Layout = 'shift' | 'person';
+interface Shift {
+  id: string; staff_id: string; staff_name: string; role: string; work_date: string;
+  shift_type_id: string | null; starts_at: string; ends_at: string; status: ShiftStatus;
+}
+interface ShiftType { id: string; label: string; start_time: string; end_time: string }
+interface StaffMember { id: string; name: string; role: string; target_days_per_week: number | null }
+interface ScheduleData { shifts: Shift[]; shift_types: ShiftType[]; staff: StaffMember[]; timezone: string }
 
-const PRESETS: ShiftPreset[] = [
-  { id: 'opening', label: 'Opening', start: '14:00', end: '20:00' },
-  { id: 'main', label: 'Main', start: '16:00', end: '23:00' },
-  { id: 'closing', label: 'Closing', start: '18:00', end: '01:00' },
-  { id: 'full', label: 'Full', start: '14:00', end: '01:00' },
+const COLORS = [
+  'bg-sky-100 border-sky-300 text-sky-950', 'bg-violet-100 border-violet-300 text-violet-950',
+  'bg-emerald-100 border-emerald-300 text-emerald-950', 'bg-amber-100 border-amber-300 text-amber-950',
+  'bg-rose-100 border-rose-300 text-rose-950', 'bg-cyan-100 border-cyan-300 text-cyan-950',
+  'bg-fuchsia-100 border-fuchsia-300 text-fuchsia-950', 'bg-lime-100 border-lime-300 text-lime-950',
+  'bg-indigo-100 border-indigo-300 text-indigo-950', 'bg-orange-100 border-orange-300 text-orange-950',
+  'bg-slate-100 border-slate-300 text-slate-950', 'bg-pink-100 border-pink-300 text-pink-950',
 ];
-function mondayOf(date: Date): Date {
-  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
-  monday.setHours(0, 0, 0, 0);
-  return monday;
-}
+const DOTS = ['bg-sky-400', 'bg-violet-400', 'bg-emerald-400', 'bg-amber-400', 'bg-rose-400', 'bg-cyan-400',
+  'bg-fuchsia-400', 'bg-lime-400', 'bg-indigo-400', 'bg-orange-400', 'bg-slate-400', 'bg-pink-400'];
+const ROLE_LABEL: Record<string, string> = { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', server: 'Server', chef: 'Kitchen' };
+const roleLabel = (role: string) => ROLE_LABEL[role] ?? role.charAt(0).toUpperCase() + role.slice(1);
 
-function addDays(date: Date, count: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() + count);
-  return result;
+function addDays(date: string, n: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
 }
-
-function localIso(date: Date, time: string): string {
-  const [hours, minutes] = time.split(':').map(Number);
-  const result = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0);
-  return result.toISOString();
+function mondayOf(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return addDays(date, -((weekday + 6) % 7));
 }
-
-function weekLabel(start: Date, end: Date): string {
-  const first = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  const last = end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  return `${first} – ${last}`;
+function todayIn(timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    return parts.slice(0, 10);
+  } catch { return new Date().toISOString().slice(0, 10); }
 }
-
-function dateKey(date: Date): string {
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+function dayLabel(date: string, options: Intl.DateTimeFormatOptions): string {
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { timeZone: 'UTC', ...options });
 }
-
-function timeLabel(value: string): string {
-  return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function localTime(iso: string, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .format(new Date(`${iso.replace(' ', 'T')}Z`));
+  } catch { return iso.slice(11, 16); }
+}
+interface Ctx {
+  canManage: boolean; busy: boolean; selected: string | null; openChip: string | null; setOpenChip: (id: string | null) => void;
+  timezone: string; types: ShiftType[]; shifts: Shift[]; colorIndex: Map<string, number>; dropCell: string | null;
+  update: (shift: Shift, changes: Record<string, unknown>, message?: string) => Promise<void>;
+  place: (staffId: string, workDate: string, typeId: string) => Promise<void>;
+  dropProps: (cellKey: string, workDate: string, typeId: string | null, staffId?: string) => Record<string, unknown>;
+}
+function errorText(error: unknown, fallback: string): string {
+  return (error as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
 }
 
 export default function StaffSchedulePage() {
   const { currentTenant } = useAuthStore();
   const canManage = tenantCan(currentTenant, 'staff.operational.manage');
-  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
-  const [staff, setStaff] = useState<Staff[]>([]);
-  const [shifts, setShifts] = useState<ScheduledShift[]>([]);
-  const [selectedStaff, setSelectedStaff] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [timezone, setTimezone] = useState('Asia/Phnom_Penh');
+  const [anchor, setAnchor] = useState(() => todayIn('Asia/Phnom_Penh'));
+  const [view, setView] = useState<View>('week');
+  const [layout, setLayout] = useState<Layout>('shift');
+  const [data, setData] = useState<ScheduleData | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [openChip, setOpenChip] = useState<string | null>(null);
+  const [picker, setPicker] = useState<string | null>(null);
+  const [menu, setMenu] = useState<'copy' | 'times' | 'targets' | null>(null);
+  const [dropCell, setDropCell] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
-  const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
-  const range = useMemo(() => ({ from: weekStart.toISOString(), to: weekEnd.toISOString() }), [weekStart, weekEnd]);
+  const weekStart = mondayOf(anchor);
+  const range = useMemo(() => {
+    if (view === 'day') return { from: anchor, to: anchor };
+    if (view === 'week') return { from: weekStart, to: addDays(weekStart, 6) };
+    const first = `${anchor.slice(0, 7)}-01`;
+    const start = mondayOf(first);
+    return { from: start, to: addDays(start, 41) };
+  }, [view, anchor, weekStart]);
 
+  const params = useMemo(() => ({
+    from: view === 'month' || range.from < weekStart ? range.from : weekStart,
+    to: view === 'month' || range.to > addDays(weekStart, 6) ? range.to : addDays(weekStart, 6),
+  }), [range, view, weekStart]);
+  const apply = (next: ScheduleData) => { setData(next); setTimezone(next.timezone || 'Asia/Phnom_Penh'); };
   const load = useCallback(async () => {
-    setLoading(true);
     try {
-      const [staffResponse, shiftResponse] = await Promise.all([
-        api.get('/staff?active=true'),
-        api.get('/schedule', { params: range }),
-      ]);
-      setStaff((staffResponse.data.staff || []).filter((member: Staff) => member.is_active));
-      setShifts(shiftResponse.data.shifts || []);
-    } catch {
-      toast.error('Could not load the staff schedule');
-    } finally {
-      setLoading(false);
-    }
-  }, [range]);
+      const res = await api.get('/schedule', { params });
+      setData(res.data);
+      setTimezone(res.data.timezone || 'Asia/Phnom_Penh');
+    } catch (error) { toast.error(errorText(error, 'Could not load the staff schedule')); }
+  }, [params]);
+  useEffect(() => {
+    let active = true;
+    api.get('/schedule', { params })
+      .then((res) => { if (active) apply(res.data); })
+      .catch((error) => toast.error(errorText(error, 'Could not load the staff schedule')));
+    return () => { active = false; };
+  }, [params]);
 
-  useEffect(() => { void load(); }, [load]);
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
 
-  const shiftsFor = (day: Date, preset: ShiftPreset) => shifts.filter((shift) => {
-    const endDay = preset.end <= preset.start ? addDays(day, 1) : day;
-    return shift.starts_at === localIso(day, preset.start) && shift.ends_at === localIso(endDay, preset.end);
+  const staff = useMemo(() => data?.staff ?? [], [data]);
+  const types = data?.shift_types ?? [];
+  const shifts = useMemo(() => data?.shifts ?? [], [data]);
+  const colorIndex = useMemo(() => new Map(staff.map((p, i) => [p.id, i % COLORS.length])), [staff]);
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const inWeek = (s: Shift) => s.work_date >= weekStart && s.work_date <= addDays(weekStart, 6);
+  const daysFor = (id: string) => new Set(shifts.filter((s) => s.staff_id === id && inWeek(s)).map((s) => s.work_date)).size;
+  const weekShifts = shifts.filter(inWeek);
+  const drafts = weekShifts.filter((s) => s.status === 'draft').length;
+  const belowTarget = staff.filter((p) => p.target_days_per_week != null && daysFor(p.id) < p.target_days_per_week).length;
+  const today = todayIn(timezone);
+  const name = (id: string) => staff.find((p) => p.id === id)?.name ?? 'Staff';
+
+  const place = (staffId: string, workDate: string, typeId: string) => run(async () => {
+    try {
+      await api.post('/schedule', { staff_id: staffId, work_date: workDate, shift_type_id: typeId });
+      toast.success(`${name(staffId)} added (draft)`);
+      await load();
+    } catch (error) { toast.error(errorText(error, 'Could not add the shift')); }
+  });
+  const update = (shift: Shift, changes: Record<string, unknown>, message?: string) => run(async () => {
+    try {
+      await api.patch(`/schedule/${shift.id}`, changes);
+      if (message) toast.success(message);
+      setOpenChip(null);
+      await load();
+    } catch (error) { toast.error(errorText(error, 'Could not update the shift')); }
+  });
+  const copyWeek = (staffId?: string) => run(async () => {
+    try {
+      const res = await api.post('/schedule/copy-week', { week_start: weekStart, staff_id: staffId });
+      toast.success(`Copied ${res.data.copied} shifts as drafts${res.data.skipped ? `, skipped ${res.data.skipped} already booked` : ''}`);
+      setMenu(null);
+      await load();
+    } catch (error) { toast.error(errorText(error, 'Could not copy last week')); }
+  });
+  const publishWeek = () => run(async () => {
+    try {
+      const res = await api.post('/schedule/publish-week', { week_start: weekStart });
+      toast.success(res.data.published ? `Published ${res.data.published} shifts` : 'Nothing to publish');
+      await load();
+    } catch (error) { toast.error(errorText(error, 'Could not publish the week')); }
   });
 
-  async function addShift(day: Date, preset: ShiftPreset) {
-    const cell = `${dateKey(day)}-${preset.id}`;
-    const staffId = selectedStaff[cell];
-    if (!staffId) { toast.error('Choose a staff member first'); return; }
-    let endDay = day;
-    if (preset.end <= preset.start) endDay = addDays(day, 1);
-    setSaving(true);
-    try {
-      await api.post('/schedule', {
-        staff_id: staffId,
-        starts_at: localIso(day, preset.start),
-        ends_at: localIso(endDay, preset.end),
-      });
-      toast.success('Shift added as a draft');
-      setSelectedStaff((current) => ({ ...current, [cell]: '' }));
-      await load();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Could not add this shift');
-    } finally {
-      setSaving(false);
+  const onDrop = (event: React.DragEvent, workDate: string, typeId: string | null, staffId?: string) => {
+    event.preventDefault();
+    setDropCell(null);
+    if (!canManage) return;
+    const [kind, id] = event.dataTransfer.getData('text/plain').split(':');
+    if (kind === 'staff' && typeId) void place(id, workDate, typeId);
+    if (kind === 'shift') {
+      const shift = shifts.find((s) => s.id === id);
+      if (!shift) return;
+      const changes: Record<string, unknown> = {};
+      if (shift.work_date !== workDate) changes.work_date = workDate;
+      if (typeId && shift.shift_type_id !== typeId) changes.shift_type_id = typeId;
+      if (staffId && shift.staff_id !== staffId) changes.staff_id = staffId;
+      if (Object.keys(changes).length) void update(shift, changes, 'Moved — publish again so staff see it');
     }
-  }
+  };
+  const dropProps = (cellKey: string, workDate: string, typeId: string | null, staffId?: string) => canManage ? {
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); if (dropCell !== cellKey) setDropCell(cellKey); },
+    onDragLeave: () => setDropCell((current) => (current === cellKey ? null : current)),
+    onDrop: (e: React.DragEvent) => onDrop(e, workDate, typeId, staffId),
+  } : {};
 
-  async function updateStatus(shift: ScheduledShift, status: ShiftStatus) {
-    setSaving(true);
-    try {
-      await api.patch(`/schedule/${shift.id}`, { status });
-      await load();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Could not update this shift');
-    } finally {
-      setSaving(false);
-    }
-  }
+  const ctx: Ctx = {
+    canManage, busy, selected, openChip, setOpenChip, timezone, types, shifts, colorIndex, dropCell,
+    update, place, dropProps,
+  };
 
-  async function copyPreviousWeek() {
-    setSaving(true);
-    try {
-      const response = await api.post('/schedule/copy-week', { week_start: weekStart.toISOString() });
-      const { copied = 0, skipped = 0 } = response.data;
-      toast.success(`Copied ${copied} shifts as drafts${skipped ? `; skipped ${skipped} overlapping` : ''}`);
-      await load();
-    } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Could not copy last week');
-    } finally {
-      setSaving(false);
-    }
-  }
+  const title = view === 'day' ? dayLabel(anchor, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    : view === 'week' ? `${dayLabel(weekStart, { day: 'numeric', month: 'short' })} – ${dayLabel(addDays(weekStart, 6), { day: 'numeric', month: 'short', year: 'numeric' })}`
+      : dayLabel(`${anchor.slice(0, 7)}-01`, { month: 'long', year: 'numeric' });
+  const move = (n: number) => {
+    if (view === 'day') setAnchor(addDays(anchor, n));
+    else if (view === 'week') setAnchor(addDays(anchor, 7 * n));
+    else { const [y, m] = anchor.split('-').map(Number); setAnchor(new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 10)); }
+  };
+  const tabClass = (on: boolean) => `rounded-md px-3 py-1 text-sm ${on ? 'bg-background font-semibold shadow-sm' : 'text-muted-foreground'}`;
+  const btn = 'rounded-lg border bg-background px-3 py-1.5 text-sm disabled:opacity-50';
 
-  const activeShifts = shifts.filter((shift) => shift.status !== 'cancelled');
+  if (!data) return <div className="p-6 text-muted-foreground">Loading schedule…</div>;
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+    <div className="mx-auto w-full max-w-[1500px] space-y-3 p-1" onClick={() => { setMenu(null); setPicker(null); }}>
+      <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold"><CalendarDays className="size-6" /> Staff schedule</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Plan expected shifts for the team. Scheduling does not record clock-in or attendance.</p>
+          <h1 className="text-2xl font-bold">Staff schedule</h1>
+          <p className="text-sm text-muted-foreground">
+            {canManage ? 'Drag a person onto a shift — or tap the person, then tap the shift. Drag shifts to move them.' : 'Planned shifts for the team.'}
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1">
-            <Button size="sm" variant="outline" aria-label="Previous week" onClick={() => setWeekStart((date) => addDays(date, -7))}><ChevronLeft className="size-4" /></Button>
-            <Button size="sm" variant="outline" onClick={() => setWeekStart(mondayOf(new Date()))}>This week</Button>
-            <Button size="sm" variant="outline" aria-label="Next week" onClick={() => setWeekStart((date) => addDays(date, 7))}><ChevronRight className="size-4" /></Button>
-          </div>
-          <span className="min-w-36 text-sm font-semibold">{weekLabel(weekStart, addDays(weekEnd, -1))}</span>
-          {canManage && <Button size="sm" variant="outline" disabled={saving} onClick={() => void copyPreviousWeek()}><Copy className="mr-1 size-4" /> Copy last week</Button>}
+        <div className="flex flex-wrap gap-1.5 text-xs">
+          <span className="rounded-full border px-2.5 py-1">{weekShifts.length} shifts this week</span>
+          {belowTarget > 0 && <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-amber-800">{belowTarget} staff below their days</span>}
+          {drafts > 0 && <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-amber-800">{drafts} drafts not published</span>}
         </div>
       </header>
 
-      <div className="flex flex-wrap gap-2 text-sm">
-        <span className="rounded-full border px-3 py-1">{activeShifts.length} scheduled shifts</span>
-        <span className="rounded-full border px-3 py-1">{staff.length} active staff</span>
-        {!canManage && <span className="rounded-full border px-3 py-1 text-muted-foreground">View only</span>}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border p-2.5">
+        <span className="mr-1 text-xs text-muted-foreground">Staff</span>
+        {staff.map((p) => {
+          const days = daysFor(p.id);
+          return (
+            <button key={p.id} type="button" draggable={canManage}
+              onDragStart={(e) => e.dataTransfer.setData('text/plain', `staff:${p.id}`)}
+              onClick={(e) => { e.stopPropagation(); if (canManage) setSelected(selected === p.id ? null : p.id); }}
+              className={`rounded-lg border px-3 py-1.5 text-left ${COLORS[colorIndex.get(p.id) ?? 0]} ${selected === p.id ? 'ring-2 ring-foreground ring-offset-1' : ''}`}>
+              <span className="block text-sm font-semibold">{p.name}</span>
+              <span className="text-[11px]">{roleLabel(p.role)} · {p.target_days_per_week == null ? `${days} days` : `${days}/${p.target_days_per_week} days`}</span>
+            </button>
+          );
+        })}
+        {staff.length === 0 && <span className="text-sm text-muted-foreground">Add staff on the Staff page first.</span>}
       </div>
-
-      {loading ? (
-        <div className="flex min-h-56 items-center justify-center text-muted-foreground"><LoaderCircle className="mr-2 size-5 animate-spin" /> Loading schedule</div>
-      ) : (
-        <Card className="overflow-x-auto p-0">
-          <div className="min-w-[1040px]">
-            <div className="grid grid-cols-[140px_repeat(7,minmax(128px,1fr))] border-b bg-muted/40">
-              <div className="border-r p-3 text-sm font-semibold">Shift</div>
-              {weekDays.map((day) => <div key={day.toISOString()} className="border-r p-2 text-center last:border-r-0">
-                <div className="text-xs text-muted-foreground">{day.toLocaleDateString(undefined, { weekday: 'short' })}</div>
-                <div className="font-bold">{day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div>
-              </div>)}
-            </div>
-            {PRESETS.map((preset) => <div key={preset.id} className="grid grid-cols-[140px_repeat(7,minmax(128px,1fr))] border-b last:border-b-0">
-              <div className="border-r bg-muted/20 p-3"><div className="text-sm font-semibold">{preset.label}</div><div className="text-xs text-muted-foreground">{preset.start}–{preset.end}</div></div>
-              {weekDays.map((day) => {
-                const cell = `${dateKey(day)}-${preset.id}`;
-                const cellShifts = shiftsFor(day, preset);
-                return <div key={cell} className="min-h-32 space-y-2 border-r p-2 last:border-r-0">
-                  {cellShifts.map((shift) => <div key={shift.id} className={`rounded-md border p-2 ${shift.status === 'cancelled' ? 'opacity-50' : 'bg-card'}`}>
-                    <div className="truncate text-sm font-semibold">{shift.staff_name}</div>
-                    <div className="text-xs text-muted-foreground">{shift.role} · {timeLabel(shift.starts_at)}–{timeLabel(shift.ends_at)}</div>
-                    <div className="mt-1 flex items-center justify-between gap-1">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] ${shift.status === 'published' ? 'bg-green-100 text-green-800' : shift.status === 'cancelled' ? 'bg-muted text-muted-foreground' : 'bg-amber-100 text-amber-800'}`}>{shift.status}</span>
-                      {canManage && shift.status !== 'cancelled' && <div className="flex gap-1">
-                        {shift.status === 'draft' && <Button size="icon" variant="ghost" className="size-7" title="Publish shift" disabled={saving} onClick={() => void updateStatus(shift, 'published')}><Send className="size-3.5" /></Button>}
-                        <Button size="icon" variant="ghost" className="size-7" title="Cancel shift" disabled={saving} onClick={() => void updateStatus(shift, 'cancelled')}><XCircle className="size-3.5" /></Button>
-                      </div>}
-                    </div>
-                  </div>)}
-                  {canManage && <div className="flex gap-1">
-                    <select className="min-w-0 flex-1 rounded-md border bg-background px-2 text-xs" aria-label={`Staff for ${preset.label} ${day.toDateString()}`} value={selectedStaff[cell] || ''} onChange={(event) => setSelectedStaff((current) => ({ ...current, [cell]: event.target.value }))}>
-                      <option value="">Add staff…</option>
-                      {staff.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.role}</option>)}
-                    </select>
-                    <Button size="sm" className="px-2" disabled={saving || !selectedStaff[cell]} aria-label={`Add shift for ${preset.label} ${day.toDateString()}`} onClick={() => void addShift(day, preset)}>+</Button>
-                  </div>}
-                  {!cellShifts.length && !canManage && <div className="pt-2 text-center text-xs text-muted-foreground">No shifts</div>}
-                </div>;
-              })}
-            </div>)}
-          </div>
-        </Card>
+      {selected && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-900">
+          Tap a shift to place {name(selected)}. Tap {name(selected)} again to stop.
+        </div>
       )}
 
-      <p className="text-xs text-muted-foreground">Managers can edit draft shifts. Publishing marks a planned shift as official; clock-in, attendance, and payroll hours are not included.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          <button type="button" className={btn} onClick={() => move(-1)} aria-label="Previous">‹</button>
+          <button type="button" className={btn} onClick={() => { setAnchor(today); setView('day'); }}>Today</button>
+          <button type="button" className={btn} onClick={() => move(1)} aria-label="Next">›</button>
+          <b className="ml-2 text-sm">{title}</b>
+        </div>
+        <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          {canManage && (
+            <>
+              <div className="relative">
+                <button type="button" className={btn} disabled={busy} onClick={() => setMenu(menu === 'copy' ? null : 'copy')}>Copy last week ▾</button>
+                {menu === 'copy' && (
+                  <div className="absolute right-0 z-30 mt-1 w-56 rounded-lg border bg-background p-1.5 shadow-xl">
+                    <button type="button" className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted" onClick={() => void copyWeek()}>Copy everyone</button>
+                    <div className="px-2 pt-2 text-[11px] text-muted-foreground">Or copy one person</div>
+                    <div className="max-h-56 overflow-y-auto">
+                      {staff.map((p) => <button key={p.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-muted" onClick={() => void copyWeek(p.id)}>{p.name}</button>)}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="relative">
+                <button type="button" className={btn} onClick={() => setMenu(menu === 'times' ? null : 'times')}>Shift times ▾</button>
+                {menu === 'times' && <ShiftTimesMenu types={types} onSaved={load} />}
+              </div>
+              <div className="relative">
+                <button type="button" className={btn} onClick={() => setMenu(menu === 'targets' ? null : 'targets')}>Weekly days ▾</button>
+                {menu === 'targets' && <TargetsMenu staff={staff} onSaved={load} />}
+              </div>
+              <button type="button" className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" disabled={busy || drafts === 0} onClick={() => void publishWeek()}>Publish week</button>
+            </>
+          )}
+          <div className="inline-flex rounded-lg bg-muted p-0.5">
+            <button type="button" className={tabClass(layout === 'shift')} onClick={() => { setLayout('shift'); }}>By shift</button>
+            <button type="button" className={tabClass(layout === 'person')} onClick={() => { setLayout('person'); setView('week'); }}>By person</button>
+          </div>
+          <div className="inline-flex rounded-lg bg-muted p-0.5">
+            {(['day', 'week', 'month'] as View[]).map((v) => <button key={v} type="button" className={tabClass(view === v)} onClick={() => setView(v)}>{v[0].toUpperCase() + v.slice(1)}</button>)}
+          </div>
+        </div>
+      </div>
+
+      {view === 'week' && layout === 'shift' && (
+        <div className="overflow-x-auto rounded-xl border">
+          <div className="min-w-[980px]">
+            <div className="grid grid-cols-[130px_repeat(7,minmax(120px,1fr))] border-b bg-muted/40">
+              <div className="border-r p-2 text-xs font-semibold">Shift</div>
+              {weekDays.map((d) => (
+                <div key={d} className={`border-r p-2 text-center last:border-r-0 ${d === today ? 'bg-emerald-50' : ''}`}>
+                  <div className="text-xs text-muted-foreground">{dayLabel(d, { weekday: 'short' })}</div>
+                  <div className="font-bold">{dayLabel(d, { day: 'numeric' })}</div>
+                </div>
+              ))}
+            </div>
+            {types.map((t) => (
+              <div key={t.id} className="grid grid-cols-[130px_repeat(7,minmax(120px,1fr))] border-b last:border-b-0">
+                <div className="border-r bg-muted/20 p-2"><div className="text-sm font-semibold">{t.label}</div><div className="text-[11px] text-muted-foreground">{t.start_time}–{t.end_time}</div></div>
+                {weekDays.map((d) => <div key={d} className="border-r last:border-r-0"><ShiftCell workDate={d} type={t} ctx={ctx} /></div>)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {view === 'week' && layout === 'person' && (
+        <div className="overflow-x-auto rounded-xl border">
+          <div className="min-w-[980px]">
+            <div className="grid grid-cols-[150px_repeat(7,minmax(115px,1fr))] border-b bg-muted/40">
+              <div className="border-r p-2 text-xs font-semibold">Staff</div>
+              {weekDays.map((d) => (
+                <div key={d} className={`border-r p-2 text-center last:border-r-0 ${d === today ? 'bg-emerald-50' : ''}`}>
+                  <div className="text-xs text-muted-foreground">{dayLabel(d, { weekday: 'short' })}</div>
+                  <div className="font-bold">{dayLabel(d, { day: 'numeric' })}</div>
+                </div>
+              ))}
+            </div>
+            {staff.map((p) => (
+              <div key={p.id} className="grid grid-cols-[150px_repeat(7,minmax(115px,1fr))] border-b">
+                <div className="flex items-center gap-2 border-r px-2.5 py-2">
+                  <i className={`inline-block size-2.5 rounded-full ${DOTS[colorIndex.get(p.id) ?? 0]}`} />
+                  <div><div className="text-sm font-semibold">{p.name}</div>
+                    <div className="text-[11px] text-muted-foreground">{roleLabel(p.role)} · {p.target_days_per_week == null ? `${daysFor(p.id)} days` : `${daysFor(p.id)}/${p.target_days_per_week} days`}</div></div>
+                </div>
+                {weekDays.map((d) => {
+                  const cellKey = `${p.id}|${d}`;
+                  const list = shifts.filter((s) => s.staff_id === p.id && s.work_date === d);
+                  return (
+                    <div key={d} {...dropProps(cellKey, d, null, p.id)}
+                      onClick={(e) => { e.stopPropagation(); if (canManage) setPicker(picker === cellKey ? null : cellKey); }}
+                      className={`relative flex min-h-14 flex-col gap-1 border-r p-1.5 last:border-r-0 ${canManage ? 'cursor-pointer hover:bg-muted/40' : ''} ${dropCell === cellKey ? 'bg-emerald-50 outline-2 outline-dashed outline-emerald-400 -outline-offset-4' : ''}`}>
+                      {list.map((s) => <Chip key={s.id} shift={s} mode="person" ctx={ctx} />)}
+                      {!list.length && canManage && <span className="m-auto text-base text-muted-foreground/40">+</span>}
+                      {picker === cellKey && (
+                        <div className="absolute inset-x-1 top-1 z-20 rounded-lg border bg-background p-1 shadow-xl" onClick={(e) => e.stopPropagation()}>
+                          {types.map((t) => (
+                            <button key={t.id} type="button" className="block w-full rounded px-2 py-1 text-left text-xs hover:bg-muted"
+                              onClick={() => { setPicker(null); void place(p.id, d, t.id); }}>{t.label} {t.start_time}–{t.end_time}</button>
+                          ))}
+                          <button type="button" className="block w-full rounded px-2 py-1 text-left text-xs text-muted-foreground hover:bg-muted" onClick={() => setPicker(null)}>Cancel</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+            <div className="grid grid-cols-[150px_repeat(7,minmax(115px,1fr))] bg-muted/40 text-[11px] text-muted-foreground">
+              <div className="border-r px-2.5 py-1.5">On shift</div>
+              {weekDays.map((d) => <div key={d} className="border-r py-1.5 text-center last:border-r-0"><b className="text-foreground">{shifts.filter((s) => s.work_date === d).length}</b> people</div>)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {view === 'day' && (
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+          {types.map((t) => (
+            <div key={t.id} className="overflow-hidden rounded-xl border">
+              <div className="border-b bg-muted/30 px-2.5 py-2"><b className="text-sm">{t.label}</b> <span className="text-xs text-muted-foreground">{t.start_time}–{t.end_time}</span></div>
+              <ShiftCell workDate={anchor} type={t} tall ctx={ctx} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {view === 'month' && (
+        <div className="overflow-x-auto rounded-xl border">
+          <div className="grid min-w-[700px] grid-cols-7">
+            {Array.from({ length: 42 }, (_, i) => addDays(range.from, i)).map((d) => {
+              const list = shifts.filter((s) => s.work_date === d);
+              const other = d.slice(0, 7) !== anchor.slice(0, 7);
+              return (
+                <button key={d} type="button" onClick={() => { setAnchor(d); setView('day'); }}
+                  className={`min-h-20 border-b border-r p-1.5 text-left text-xs ${other ? 'bg-muted/30 text-muted-foreground/60' : ''} ${d === today ? 'bg-emerald-50' : ''}`}>
+                  <b>{dayLabel(d, { day: 'numeric' })}</b>
+                  {list.length > 0 && <div className="text-[11px] text-muted-foreground">{list.length} on shift</div>}
+                  <div className="mt-1 flex flex-wrap gap-0.5">{list.map((s) => <i key={s.id} title={s.staff_name} className={`inline-block size-2 rounded-full ${DOTS[colorIndex.get(s.staff_id) ?? 0]}`} />)}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        Dashed = draft (managers only). Solid ✓ = published. Moving or changing a published shift makes it a draft again until you publish.
+        Planned shifts only — clock-in and hours come later.
+      </p>
+    </div>
+  );
+}
+
+function Chip({ shift, mode, ctx }: { shift: Shift; mode: Layout; ctx: Ctx }) {
+const { canManage, busy, selected, openChip, setOpenChip, timezone, types, colorIndex, update } = ctx;
+  const type = types.find((t) => t.id === shift.shift_type_id);
+  const start = localTime(shift.starts_at, timezone);
+  const end = localTime(shift.ends_at, timezone);
+  const custom = !type || type.start_time !== start || type.end_time !== end;
+  const open = openChip === shift.id;
+  const [times, setTimes] = useState({ start, end });
+  return (
+    <div draggable={canManage} onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.setData('text/plain', `shift:${shift.id}`); }}
+      onClick={(e) => { e.stopPropagation(); if (!selected) setOpenChip(open ? null : shift.id); }}
+      className={`rounded-md border px-1.5 py-1 text-xs ${COLORS[colorIndex.get(shift.staff_id) ?? 0]} ${shift.status === 'draft' ? 'border-dashed' : ''} ${canManage ? 'cursor-grab' : ''}`}>
+      <div className="flex items-center gap-1.5">
+        <span className="font-semibold">{mode === 'person' ? (type?.label ?? 'Shift') : shift.staff_name}</span>
+        <span className="opacity-70">{mode === 'person' || custom ? `${start}–${end}` : roleLabel(shift.role).charAt(0)}</span>
+        <span className="ml-auto rounded border border-current bg-white/70 px-1 text-[9px]">{shift.status === 'draft' ? 'draft' : '✓'}</span>
+      </div>
+      {open && canManage && (
+        <div className="mt-1.5 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+          <div className="grid grid-cols-[auto_1fr] items-center gap-1">
+            <span className="text-[10px]">From</span>
+            <input type="time" value={times.start} onChange={(e) => setTimes({ ...times, start: e.target.value })} className="min-w-0 rounded border bg-white px-1 py-0.5" aria-label="Start time" />
+            <span className="text-[10px]">To</span>
+            <input type="time" value={times.end} onChange={(e) => setTimes({ ...times, end: e.target.value })} className="min-w-0 rounded border bg-white px-1 py-0.5" aria-label="End time" />
+          </div>
+          <div className="flex flex-wrap gap-1">
+            <button type="button" disabled={busy} className="rounded border bg-white px-1.5 py-0.5" onClick={() => void update(shift, { start_time: times.start, end_time: times.end }, 'Times changed')}>Save times</button>
+            {shift.status === 'draft' && <button type="button" disabled={busy} className="rounded border bg-white px-1.5 py-0.5" onClick={() => void update(shift, { status: 'published' }, 'Published')}>Publish</button>}
+            <button type="button" disabled={busy} className="rounded border bg-white px-1.5 py-0.5 text-red-700" onClick={() => void update(shift, { status: 'cancelled' }, 'Removed')}>Remove</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function roleSummary(list: Shift[]): string {
+  const counts = new Map<string, number>();
+  list.forEach((s) => counts.set(roleLabel(s.role), (counts.get(roleLabel(s.role)) ?? 0) + 1));
+  return Array.from(counts.entries()).map(([role, n]) => `${n} ${role.toLowerCase()}`).join(' · ');
+}
+
+function ShiftCell({ workDate, type, tall, ctx }: { workDate: string; type: ShiftType; tall?: boolean; ctx: Ctx }) {
+const { canManage, selected, shifts, colorIndex, dropCell, place, dropProps } = ctx;
+  const cellKey = `${workDate}|${type.id}`;
+  const list = shifts.filter((s) => s.work_date === workDate && s.shift_type_id === type.id)
+    .sort((a, b) => (colorIndex.get(a.staff_id) ?? 0) - (colorIndex.get(b.staff_id) ?? 0));
+  return (
+    <div {...dropProps(cellKey, workDate, type.id)}
+      onClick={() => { if (selected && canManage) void place(selected, workDate, type.id); }}
+      className={`flex flex-col gap-1 p-1.5 ${tall ? 'min-h-44' : 'min-h-24'} ${dropCell === cellKey ? 'bg-emerald-50 outline-2 outline-dashed outline-emerald-400 -outline-offset-4' : ''} ${selected ? 'cursor-copy hover:bg-emerald-50/60' : ''}`}>
+      {list.length > 0 && (
+        <div className="text-[10px] leading-tight text-muted-foreground"><b className="text-foreground">{list.length} on</b> · {roleSummary(list)}</div>
+      )}
+      {list.map((s) => <Chip key={s.id} shift={s} mode="shift" ctx={ctx} />)}
+      {!list.length && <span className="m-auto text-[11px] text-muted-foreground/50">{canManage ? 'Drop staff here' : '—'}</span>}
+    </div>
+  );
+}
+
+
+function ShiftTimesMenu({ types, onSaved }: { types: ShiftType[]; onSaved: () => Promise<void> }) {
+  const [edits, setEdits] = useState<Record<string, { start_time: string; end_time: string }>>(
+    () => Object.fromEntries(types.map((t) => [t.id, { start_time: t.start_time, end_time: t.end_time }])),
+  );
+  const save = async (id: string) => {
+    try {
+      await api.put(`/schedule/shift-types/${id}`, edits[id]);
+      toast.success('Shift times saved');
+      await onSaved();
+    } catch (error) { toast.error(errorText(error, 'Could not save the shift times')); }
+  };
+  return (
+    <div className="absolute right-0 z-30 mt-1 w-72 space-y-1.5 rounded-lg border bg-background p-2.5 shadow-xl">
+      {types.map((t) => (
+        <div key={t.id} className="flex items-center gap-1.5 text-sm">
+          <b className="w-16">{t.label}</b>
+          <input type="time" value={edits[t.id]?.start_time ?? ''} aria-label={`${t.label} start`} className="w-[5.5rem] rounded border px-1 py-0.5"
+            onChange={(e) => setEdits({ ...edits, [t.id]: { ...edits[t.id], start_time: e.target.value } })} />
+          <input type="time" value={edits[t.id]?.end_time ?? ''} aria-label={`${t.label} end`} className="w-[5.5rem] rounded border px-1 py-0.5"
+            onChange={(e) => setEdits({ ...edits, [t.id]: { ...edits[t.id], end_time: e.target.value } })} />
+          <button type="button" className="rounded border px-1.5 py-0.5 text-xs" onClick={() => void save(t.id)}>Save</button>
+        </div>
+      ))}
+      <p className="pt-1 text-[11px] text-muted-foreground">New shifts use these times. Existing shifts keep their times.</p>
+    </div>
+  );
+}
+
+function TargetsMenu({ staff, onSaved }: { staff: StaffMember[]; onSaved: () => Promise<void> }) {
+  const save = async (id: string, value: string) => {
+    try {
+      await api.put(`/schedule/targets/${id}`, { target_days_per_week: value === '' ? null : Number(value) });
+      await onSaved();
+    } catch (error) { toast.error(errorText(error, 'Could not save the target')); }
+  };
+  return (
+    <div className="absolute right-0 z-30 mt-1 max-h-80 w-60 overflow-y-auto rounded-lg border bg-background p-2.5 shadow-xl">
+      <p className="mb-1.5 text-[11px] text-muted-foreground">How many days a week each person should work.</p>
+      {staff.map((p) => (
+        <div key={p.id} className="flex items-center justify-between py-0.5 text-sm">
+          <span>{p.name}</span>
+          <select className="rounded border px-1 py-0.5 text-sm" value={p.target_days_per_week ?? ''} aria-label={`${p.name} days per week`}
+            onChange={(e) => void save(p.id, e.target.value)}>
+            <option value="">No target</option>
+            {Array.from({ length: 8 }, (_, i) => <option key={i} value={i}>{i} days</option>)}
+          </select>
+        </div>
+      ))}
     </div>
   );
 }

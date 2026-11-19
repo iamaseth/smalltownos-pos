@@ -439,6 +439,25 @@ Mounted at both `/api/staff` and `/api/users` from one router, so a request to e
 | `POST` | `/:id/deactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
 | `POST` | `/:id/reactivate` | `ROLE_ACCESS.ownerManager` | path: `id` | - |
 
+### Staff schedule
+
+Router: `main/routes/schedule.ts`. Full path: `/api/schedule`. Planned shifts only; there is no
+clock-in or attendance. Each shift belongs to a store-local `work_date` and a shift type (row);
+`starts_at` and `ends_at` are canonical UTC timestamps, and an end time at or before the start
+ends the next day. Overlapping active shifts for one person are refused with 409. Removing a shift
+sets it to `cancelled` (never deleted), and every change is written to `scheduled_shift_events`.
+
+| Method | Path | Authorization | Parameters | Response |
+| --- | --- | --- | --- | --- |
+| `GET` | `/` | `staff.view` | query: `from`, `to` (`YYYY-MM-DD`, at most 45 days) | `{ shifts, shift_types, staff, timezone }`. Cancelled shifts are left out; `staff` lists active users with `target_days_per_week`. |
+| `POST` | `/` | `staff.operational.manage` | body: `staff_id`, `work_date`, `shift_type_id`, optional `start_time`, `end_time` (`HH:MM`) | Adds a draft shift. |
+| `PATCH` | `/:id` | `staff.operational.manage` | body: any of `work_date`, `shift_type_id`, `staff_id`, `start_time`, `end_time`, `status` | Moves, reassigns, retimes or publishes/removes a shift. A change other than `status` turns a published shift back into a draft. |
+| `GET` | `/:id/history` | `staff.view` | path: `id` | Change history with the acting user. |
+| `POST` | `/copy-week` | `staff.operational.manage` | body: `week_start`, optional `staff_id` | Copies the previous week's active shifts as drafts; skips inactive staff and anyone already booked. |
+| `POST` | `/publish-week` | `staff.operational.manage` | body: `week_start` | Publishes every draft in that week. |
+| `PUT` | `/shift-types/:id` | `staff.operational.manage` | body: `label`, `start_time`, `end_time` | Changes a shift row's default times; existing shifts keep theirs. |
+| `PUT` | `/targets/:staffId` | `staff.operational.manage` | body: `target_days_per_week` (0–7 or `null`) | Sets how many days a week a person should work. |
+
 ### Printers
 
 Router: `main/routes/printers.ts`. Full path: `/api/printers`.
