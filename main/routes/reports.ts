@@ -45,7 +45,7 @@ function tenantStartTime(): string {
   return tenantBusinessDayStartTime();
 }
 
-function reportToday(): string {
+export function reportToday(): string {
   return localDateInTimezone(new Date(), tenantTimezone(), tenantStartTime());
 }
 
@@ -814,7 +814,7 @@ router.get('/daily-sales/export', requirePermission('reports.daily-sales.export'
 
 const REPORT_MAX_DAYS = 366;
 
-function shiftDate(date: string, days: number): string {
+export function shiftDate(date: string, days: number): string {
   const d = new Date(`${date}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
@@ -833,7 +833,7 @@ function periodRefunds(db: ReturnType<typeof getDatabase>, startDate: string, en
     .map((r) => ({ created_at: r.created_at, amount: new Decimal(r.amount_cents || 0).div(minorFactor) }));
 }
 
-function periodSummary(db: ReturnType<typeof getDatabase>, startDate: string, endDate: string) {
+export function periodSummary(db: ReturnType<typeof getDatabase>, startDate: string, endDate: string) {
   const orders = db.prepare(`
     SELECT id, created_at, subtotal, discount_amount, total
     FROM orders
@@ -970,7 +970,7 @@ router.get('/period', requirePermission('reports.view'), (req: Request, res: Res
   }
 });
 
-function menuUnitCosts(db: ReturnType<typeof getDatabase>): Map<string, number> {
+export function menuUnitCosts(db: ReturnType<typeof getDatabase>): Map<string, number> {
   const costs = new Map<string, number>();
   for (const recipe of listRecipes(db)) {
     if (recipe.cost_complete && Number(recipe.cost_per_serving) > 0) costs.set(String(recipe.product_id), Number(recipe.cost_per_serving));
@@ -981,7 +981,7 @@ function menuUnitCosts(db: ReturnType<typeof getDatabase>): Map<string, number> 
   return costs;
 }
 
-function mondayOf(date: string): string {
+export function mondayOf(date: string): string {
   const d = new Date(`${date}T12:00:00Z`);
   return shiftDate(date, -((d.getUTCDay() + 6) % 7));
 }
@@ -991,7 +991,7 @@ interface WeekDay {
   payments: Map<string, Decimal>; cost: Decimal; costedLines: number;
 }
 
-function weekDays(db: ReturnType<typeof getDatabase>, weekStart: string, paymentNames: Map<number, string>) {
+export function weekDays(db: ReturnType<typeof getDatabase>, weekStart: string, paymentNames: Map<number, string>) {
   const timeZone = tenantTimezone();
   const startTime = tenantStartTime();
   const windowStart = reportDayBounds(weekStart)[0];
@@ -1063,12 +1063,7 @@ function weekDays(db: ReturnType<typeof getDatabase>, weekStart: string, payment
   return { days: [...days.values()], uncostedLines };
 }
 
-router.get('/weekly', requirePermission('reports.view'), (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const weekStart = mondayOf(reportDate(req.query.week_start, reportToday()));
-    const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
-    const canViewFinancials = hasPermission(userId, 'reports.financial.view');
+export function buildWeeklyReport(db: ReturnType<typeof getDatabase>, weekStart: string, canViewFinancials: boolean) {
     const paymentNames = new Map(
       (db.prepare('SELECT id, name FROM payment_methods').all() as { id: number; name: string }[]).map((m) => [m.id, m.name]),
     );
@@ -1106,7 +1101,7 @@ router.get('/weekly', requirePermission('reports.view'), (req: Request, res: Res
     const total = totalOf(current.days);
     const previousTotal = totalOf(previous.days);
 
-    res.json({
+    return {
       weekStart,
       weekEnd: shiftDate(weekStart, 6),
       paymentMethods,
@@ -1120,7 +1115,15 @@ router.get('/weekly', requirePermission('reports.view'), (req: Request, res: Res
       },
       uncostedLines: canViewFinancials ? current.uncostedLines : undefined,
       canViewFinancials,
-    });
+    };
+}
+
+router.get('/weekly', requirePermission('reports.view'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const weekStart = mondayOf(reportDate(req.query.week_start, reportToday()));
+    const userId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    res.json(buildWeeklyReport(db, weekStart, hasPermission(userId, 'reports.financial.view')));
   } catch (error) {
     console.error('[API] Internal error:', error);
     const { statusCode, message } = error as { statusCode?: number; message?: string };
@@ -1130,7 +1133,7 @@ router.get('/weekly', requirePermission('reports.view'), (req: Request, res: Res
 
 interface CogsItem { productId: string; name: string; category: string | null; quantity: number; net: number; unitCost: number | null; cost: number | null; profit: number | null; previousMargin: number | null }
 
-function cogsItems(db: ReturnType<typeof getDatabase>, startDate: string, endDate: string, unitCosts: Map<string, number>) {
+export function cogsItems(db: ReturnType<typeof getDatabase>, startDate: string, endDate: string, unitCosts: Map<string, number>) {
   const rows = db.prepare(`
     SELECT oi.product_id, oi.product_name, p.id AS current_product_id, p.category_id,
       SUM(oi.quantity) AS quantity, SUM(oi.total) AS net
@@ -1151,7 +1154,7 @@ function cogsItems(db: ReturnType<typeof getDatabase>, startDate: string, endDat
   });
 }
 
-function cogsTotals(items: { net: number; cost: number | null }[]) {
+export function cogsTotals(items: { net: number; cost: number | null }[]) {
   let sales = new Decimal(0); let costedSales = new Decimal(0); let cost = new Decimal(0); let uncostedItems = 0;
   for (const item of items) {
     sales = sales.plus(item.net);
@@ -1174,14 +1177,7 @@ function monthStart(date: string, monthsBack: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-router.get('/cogs', requirePermission('reports.financial.view'), (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const today = reportToday();
-    let startDate = reportDate(req.query.start_date, today);
-    let endDate = reportDate(req.query.end_date, today);
-    if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
-    const trendBy = req.query.trend === 'month' ? 'month' : 'week';
+export function buildCogsReport(db: ReturnType<typeof getDatabase>, startDate: string, endDate: string, trendBy: 'week' | 'month') {
     const unitCosts = menuUnitCosts(db);
 
     const length = daysBetween(startDate, endDate);
@@ -1229,7 +1225,7 @@ router.get('/cogs', requirePermission('reports.financial.view'), (req: Request, 
       trend.push({ start, end, sales: totals.sales, costedSales: totals.costedSales, cost: totals.cost, costPercent: totals.costPercent, margin: totals.margin });
     }
 
-    res.json({
+    return {
       period: { startDate, endDate, days: length },
       previousPeriod: { startDate: previousStart, endDate: previousEnd },
       totals: cogsTotals(current),
@@ -1237,7 +1233,17 @@ router.get('/cogs', requirePermission('reports.financial.view'), (req: Request, 
       items,
       trendBy,
       trend,
-    });
+    };
+}
+
+router.get('/cogs', requirePermission('reports.financial.view'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const today = reportToday();
+    let startDate = reportDate(req.query.start_date, today);
+    let endDate = reportDate(req.query.end_date, today);
+    if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
+    res.json(buildCogsReport(db, startDate, endDate, req.query.trend === 'month' ? 'month' : 'week'));
   } catch (error) {
     console.error('[API] Internal error:', error);
     const { statusCode, message } = error as { statusCode?: number; message?: string };

@@ -14,6 +14,7 @@ import { setupKdsWebSocket } from './services/kds';
 import expressRateLimit from 'express-rate-limit';
 import { staticRouteRateLimit, corsOptions, getUserAuthStatus, isAllowedPrivateIp, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
+import { startTelegram, stopTelegram } from './services/telegram';
 import { cloudSync } from './services/cloud-sync';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
@@ -342,6 +343,7 @@ export function startServer(): Promise<void> {
         } catch (error) {
           console.error('[Server] WhatsApp startup initialization failed:', error);
         }
+        startTelegram();
 
         resolve();
       };
@@ -378,6 +380,7 @@ export function stopServer(): Promise<void> {
   if (stopPromise) return stopPromise;
 
   stopping = true;
+  stopTelegram();
   const rejectStart = startReject;
   startReject = null;
   rejectStart?.(createShutdownCancellationError('Main server'));

@@ -601,6 +601,23 @@ Router: `main/routes/whatsapp.ts`. Full path: `/api/whatsapp`.
 | `POST` | `/blocklist` | `ROLE_ACCESS.ownerManager` | body: `phone_e164`, `reason` | Body `phone_e164` and `reason`. |
 | `DELETE` | `/blocklist/:phone` | `ROLE_ACCESS.ownerManager` | path: `phone` | Removes a blocked number. |
 
+### Telegram reports
+
+Router: `main/routes/telegram.ts`. Full path: `/api/telegram`. Every endpoint requires both
+`settings.manage` and `reports.financial.view`. No response contains the bot token.
+
+| Method | Path | Authorization | Parameters | Response |
+| --- | --- | --- | --- | --- |
+| `GET` | `/status` | `settings.manage` + `reports.financial.view` | none | Connection status, schedule, recipients, and the 20 latest deliveries. |
+| `POST` | `/connect` | `settings.manage` + `reports.financial.view` | none | Verifies the bot with `getMe`, then enables sending. 400 when `TELEGRAM_BOT_TOKEN` is unset; 502 when the bot is unreachable. |
+| `POST` | `/disconnect` | `settings.manage` + `reports.financial.view` | none | Stops sending and polling. Recipients and settings are kept. |
+| `POST` | `/link-code` | `settings.manage` + `reports.financial.view` | none | Single-use six-digit code, valid for 15 minutes. |
+| `PUT` | `/recipients/:id` | `settings.manage` + `reports.financial.view` | path: `id`; body: `reports`, `is_active`, `display_name` | Updated recipient. Unknown report types are dropped. |
+| `DELETE` | `/recipients/:id` | `settings.manage` + `reports.financial.view` | path: `id` | Removes the recipient. |
+| `PUT` | `/schedule` | `settings.manage` + `reports.financial.view` | body: `weeklyDay`, `weeklyTime`, `dailyFallbackTime`, `pdf`, `csv` | Saved schedule. 400 on an invalid day or time. |
+| `POST` | `/test` | `settings.manage` + `reports.financial.view` | body: `recipient_id` (optional) | Sends a test message to one or all active recipients. |
+| `GET` | `/deliveries` | `settings.manage` + `reports.financial.view` | none | The 50 latest deliveries with status, attempts and last error. |
+
 ### Support tickets
 
 Router: `main/routes/support-ticket.ts`. Full path: `/api/support-ticket`.

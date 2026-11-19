@@ -5711,6 +5711,49 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_supplies_name_km ON supplies(name_km)`);
     },
   },
+  {
+    version: 104,
+    name: 'add_telegram_reporting',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS telegram_recipients (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          chat_id TEXT NOT NULL UNIQUE,
+          display_name TEXT NOT NULL DEFAULT '',
+          username TEXT,
+          reports TEXT NOT NULL DEFAULT '[]',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          linked_by TEXT REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS telegram_link_codes (
+          code TEXT PRIMARY KEY,
+          created_by TEXT REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          used_at TEXT,
+          used_chat_id TEXT
+        );
+        CREATE TABLE IF NOT EXISTS telegram_deliveries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          recipient_id INTEGER REFERENCES telegram_recipients(id) ON DELETE SET NULL,
+          chat_id TEXT NOT NULL,
+          report_type TEXT NOT NULL,
+          dedupe_key TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL DEFAULT '',
+          params TEXT NOT NULL DEFAULT '{}',
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed')),
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          next_attempt_at TEXT,
+          created_at TEXT NOT NULL,
+          sent_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_telegram_deliveries_status ON telegram_deliveries(status, next_attempt_at);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

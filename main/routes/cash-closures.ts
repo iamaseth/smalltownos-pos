@@ -37,6 +37,7 @@ import {
   tenantBusinessDayStartTime,
 } from '../db';
 import { requirePermission } from '../services/authorization';
+import { notifyTelegram } from '../services/telegram';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
 import { getOpenSession, NO_CASH_SESSION_ID, requireOpenSessionForCash } from '../services/shift-session-gate';
@@ -967,6 +968,7 @@ router.post('/', requirePermission('cash.day-close'), (req: Request, res: Respon
     });
 
     res.status(201).json({ zReport: result });
+    notifyTelegram('day_close', { businessDate });
   } catch (error: any) {
     const status = error.statusCode || 500;
     if (status === 500) console.error('[CashClosures] Internal error:', error);

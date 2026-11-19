@@ -79,6 +79,34 @@ shutdown rather than left to fail late.
 is not encrypted at rest, which is a deliberate consequence of the library FloCafe uses for the
 WhatsApp protocol and is a reason the containing filesystem matters.
 
+## Telegram reports
+
+Sends sales, shift, cash, stock and purchasing reports to registered staff over the Telegram Bot
+API. Code lives in `main/services/telegram.ts` (delivery, linking, schedule) and
+`main/services/telegram-reports.ts` (report content, built from the existing report functions in
+`main/routes/reports.ts`, `main/routes/cash-closures.ts` and `main/services/daily-sales-export.ts`).
+
+**Enabled by** setting `TELEGRAM_BOT_TOKEN` in the server environment and pressing Connect in
+Settings → Telegram reports, which verifies the bot and sets `telegram_enabled`. The token is read
+only from the environment and is never stored, returned by the API, or written to delivery errors.
+
+**Recipients** register by sending `/start <code>` to the bot, using a single-use code an
+administrator creates in Settings. The bot uses long polling (`getUpdates`), so no public webhook
+is exposed. Messages from unregistered chats get a refusal; the bot answers no report requests.
+
+**Triggers.** The cashier's day close sends the daily summary. Shift open and close send shift
+reports. A one-minute scheduler sends the daily summary for an unclosed previous business day at
+the backup time (default 10:00), the weekly management and purchasing reports on the weekly day
+and time (default Monday 08:00, covering the previous Monday to Sunday), and low-stock alerts once
+per item per business day.
+
+**Delivery** rows live in `telegram_deliveries`. A unique `dedupe_key` per report, period and chat
+prevents duplicates. Network, 429 and 5xx errors retry after 1, 5 and 15 minutes (four attempts in
+total); other API errors fail at once. Status and the last error are shown in Settings.
+
+**Offline behaviour.** Event hooks only queue rows and never block the POS response. Failed sends
+stay queued for retry, and polling backs off for 15 seconds after a network error.
+
 ## FloAdmin cloud sync
 
 Optional synchronisation with the FloAdmin back office, plus account deletion and recovery.

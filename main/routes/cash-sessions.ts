@@ -18,6 +18,7 @@ import {
   tenantBusinessDayStartTime, nextZNumber,
 } from '../db';
 import { requirePermission } from '../services/authorization';
+import { notifyTelegram } from '../services/telegram';
 import {
   getOpenSession, type CashSessionRow,
 } from '../services/shift-session-gate';
@@ -216,6 +217,7 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
       return db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId);
     });
     res.json(result);
+    notifyTelegram('shift_open', { sessionId: Number((result as { id?: number } | undefined)?.id) });
   } catch (error: unknown) {
     const status = errorStatus(error);
     res.status(status).json({ error: status >= 500 ? 'Failed to open shift' : errorMessage(error, 'Failed to open shift') });
@@ -261,6 +263,7 @@ router.post('/:id/close', requirePermission('cash.shifts.close'), (req: Request,
       return closeSessionTxn(db, session, countedCashCents, closer, notes);
     });
     res.json(result);
+    notifyTelegram('shift_close', { sessionId });
   } catch (error: unknown) {
     const status = errorStatus(error);
     res.status(status).json({ error: status >= 500 ? 'Failed to close shift' : errorMessage(error, 'Failed to close shift') });

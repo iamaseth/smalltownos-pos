@@ -28,6 +28,7 @@ import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
 import { CurrencyResetDialog } from '@/components/settings/CurrencyResetDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
+import { TelegramReportsCard } from '@/components/settings/TelegramReportsCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { GeneralSettingsTab, type BusinessForm, type InvoiceResetPeriod, type OrderNumberForm } from '@/components/settings/GeneralSettingsTab';
@@ -264,6 +265,7 @@ export default function SettingsPage() {
   const isAdmin = tenantCan(currentTenant, 'settings.manage');
   const isOwner = tenantCan(currentTenant, 'cloud.account.manage');
   const canManageDatabase = tenantCan(currentTenant, 'database.manage');
+  const canManageTelegram = tenantCan(currentTenant, 'settings.manage') && tenantCan(currentTenant, 'reports.financial.view');
   const canManageTaxPacks = tenantCan(currentTenant, 'tax-packs.manage');
   const canViewTaxConfiguration = tenantCan(currentTenant, 'tax-packs.view-test');
   const canManageMobileAccess = tenantCan(currentTenant, 'mobile-access.manage');
@@ -2885,6 +2887,9 @@ export default function SettingsPage() {
             {/* WhatsApp opt-in lives under Operations because the receive-bill
                 workflow is what the cashier touches every time a customer pays. */}
             <SettingsNavItem label={t('tabWhatsapp')} value="whatsapp" active={activeTab} onClick={handleSettingsTabChange} />
+            {canManageTelegram && (
+              <SettingsNavItem label={t('tabTelegram')} value="telegram" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
@@ -4002,6 +4007,14 @@ export default function SettingsPage() {
             confirm={confirm}
           />
         </TabsContent>
+
+        {canManageTelegram && (
+          <TabsContent value="telegram">
+            <SettingsTabShell>
+              <TelegramReportsCard />
+            </SettingsTabShell>
+          </TabsContent>
+        )}
 
         {/* Integrations tab — cloud + OrderFlow + More Apps */}
         <TabsContent value="whatsapp">
