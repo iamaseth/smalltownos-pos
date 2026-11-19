@@ -31,7 +31,7 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
   const [actionsOpen, setActionsOpen] = useState(false);
   const router = useRouter();
   // BackStreet: shifts open, close and hand over through the Cash Counter screen.
-  const openCashScreen = () => router.push('/cash');
+  const openCashScreen = () => router.push(shiftHasOpenSession ? '/cash?go=close' : '/cash?go=open');
   void onShowShift;
   const { currentTenant } = useAuthStore();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);

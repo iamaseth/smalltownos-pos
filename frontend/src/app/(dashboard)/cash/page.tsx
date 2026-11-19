@@ -151,10 +151,24 @@ export default function CashPage() {
       toast.error(errorText(error, 'Could not load cash status'));
     }
   }, []);
+  const [fromPos, setFromPos] = useState(false);
   useEffect(() => {
     let active = true;
+    const entry = new URLSearchParams(window.location.search).get('go');
     api.get('/cash-handover/status')
-      .then((res) => { if (active) setStatus(res.data); })
+      .then((res) => {
+        if (!active) return;
+        const st = res.data as Status;
+        setStatus(st);
+        const s = st.open_session;
+        if (entry === 'open' && !s && st.awaiting_incoming.length === 0) {
+          setFromPos(true);
+          setView({ name: 'open' });
+        } else if (entry === 'close' && s && (s.is_mine || st.can_resolve)) {
+          setFromPos(true);
+          setView({ name: 'close', sessionId: s.id });
+        }
+      })
       .catch((error) => toast.error(errorText(error, 'Could not load cash status')));
     return () => { active = false; };
   }, []);
@@ -181,7 +195,8 @@ export default function CashPage() {
     <div className="mb-4 flex items-center justify-between">
       <h1 className="text-xl font-bold">{title}</h1>
       {view.name !== 'home' && (
-        <button type="button" className="text-sm text-muted-foreground underline" onClick={() => { go({ name: 'home' }); void load(); }}>Back</button>
+        <button type="button" className="text-sm text-muted-foreground underline"
+          onClick={() => { if (fromPos) { router.push('/pos'); return; } go({ name: 'home' }); void load(); }}>Back</button>
       )}
     </div>
   );
@@ -336,7 +351,7 @@ export default function CashPage() {
   if (view.name === 'close' && status.open_session) {
     body = (
       <SimpleClose header={header} sessionId={view.sessionId} rate={rate} openingFloat={status.open_session.opening_float}
-        onClosed={() => { go({ name: 'home' }); void load(); }} />
+        onClosed={() => { if (fromPos) { router.push('/pos'); return; } go({ name: 'home' }); void load(); }} />
     );
   }
 
