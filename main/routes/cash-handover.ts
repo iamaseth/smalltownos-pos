@@ -412,7 +412,13 @@ router.get('/status', requirePermission('cash.shifts.view'), (req: AuthedRequest
       SELECT h.id, h.from_session_id, h.cutoff_at, s.opened_by_name AS from_cashier
       FROM cash_handovers h JOIN cash_sessions s ON s.id = h.from_session_id
       WHERE h.status = 'awaiting_incoming' ORDER BY h.id
-    `).all();
+    `).all() as { id: number }[];
+    const ticketsFor = db.prepare(`
+      SELECT i.order_id, i.order_number, i.table_label, i.total, i.balance
+      FROM ticket_handover_items i JOIN ticket_handovers th ON th.id = i.ticket_handover_id
+      WHERE th.cash_handover_id = ? ORDER BY i.order_number
+    `);
+    const awaitingWithTickets = awaitingIncoming.map((h) => ({ ...h, tickets: ticketsFor.all(h.id) }));
     res.json({
       rate_khr_per_usd: exchangeRate(),
       standard_float: standardFloat(),
@@ -423,7 +429,7 @@ router.get('/status', requirePermission('cash.shifts.view'), (req: AuthedRequest
         is_mine: open.opened_by === me.id,
       } : null,
       pending_counts: pendingCounts,
-      awaiting_incoming: awaitingIncoming,
+      awaiting_incoming: awaitingWithTickets,
     });
   } catch (error) { sendError(res, error, 'Failed to read cash status'); }
 });

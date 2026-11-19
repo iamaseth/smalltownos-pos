@@ -367,6 +367,30 @@ Router: `main/routes/cash-sessions.ts`. Full path: `/api/cash-sessions`.
 | `GET` | `/current` | `ROLE_ACCESS.ownerManagerCashier` | none | The open shift, or `null` when none is open. |
 | `POST` | `/:id/close` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `notes` | Closes the shift with optional `notes`. |
 
+### Cash handover
+
+Router: `main/routes/cash-handover.ts`. Full path: `/api/cash-handover`. Counts carry USD and KHR
+separately (`count`: `{ method: 'denominations', denominations }` or
+`{ method: 'manual', usd_cents, khr_riel }`); the server recomputes all totals. Each shift still
+writes the `cash_sessions` and session-scope `cash_closures` rows that day close and reports read.
+
+| Method | Path | Authorization | Parameters | Response |
+| --- | --- | --- | --- | --- |
+| `GET` | `/status` | `cash.shifts.view` | none | Open shift, shifts waiting for a takings count, and handovers waiting to be received with their open tickets. Never includes expected cash. |
+| `POST` | `/open` | `cash.shifts.open` | body: `count`, `device` | Opens a shift from a counted float. |
+| `POST` | `/sessions/:id/closing-count` | `cash.shifts.close` | path: `id`; body: `count`, `float_retained`, `device` | Blind closing count. 409 when unpaid tickets remain; use `handover-now`. |
+| `POST` | `/sessions/:id/handover-now` | `cash.shifts.close` | path: `id`; body: `float_left`, `device` | Freezes the shift at a cutoff, records the declared float and snapshots open tickets. |
+| `POST` | `/handovers/:id/receive` | `cash.shifts.open` | path: `id`; body: `count`, `device`, `disputed_orders` | The incoming cashier's float count opens their shift; a difference from the declared float is flagged. `disputed_orders` is `[{ order_id, reason }]`; other tickets are accepted. 409 if already received. |
+| `POST` | `/sessions/:id/takings-count` | `cash.shifts.close` | path: `id`; body: `count`, `device` | Counts the takings after a handover and writes the closure for the cutoff window. |
+| `GET` | `/sessions/:id/reconciliation` | `cash.shifts.view` | path: `id` | Expected, actual and variance per currency, revealed only after the count and only to the permitted viewers. |
+| `POST` | `/reconciliations/:id/notes` | `cash.shifts.view` | path: `id`; body: `kind`, `body` | Appends a note. `cashier_explanation` is for the shift's cashier; `manager_explanation`, `manager_acknowledgement` and `correction` need `cash.reconciliation.resolve`. Acknowledgement resolves the difference after the count. |
+| `POST` | `/media` | `cash.shifts.view` | header: `Idempotency-Key`; body: image | Stores an original photo under the data directory (12 MB limit). |
+| `GET` | `/media/:id` | `cash.shifts.view` | path: `id` | Returns a stored photo to its uploader, `cash.reconciliation.resolve` or `cash.history.view`. |
+| `POST` | `/sessions/:id/envelope` | `cash.shifts.close` | path: `id`; body: envelope USD and KHR amounts, `media_id` | Records the cash envelope and its optional photo. |
+| `POST` | `/purchase-receipts` | `cash.shifts.view` | body: `media_id`, `purchase_date`, `currency`, amount and supplier fields | Records a supplier receipt photo. Does not change stock. |
+| `GET` | `/review` | `cash.reconciliation.resolve` | none | Differences, flagged handovers, disputed tickets and overdue counts for managers. |
+| `GET` | `/open-tickets` | `cash.shifts.view` | none | Unpaid tickets that would pass to the next cashier. |
+
 ### Cash closures
 
 Router: `main/routes/cash-closures.ts`. Full path: `/api/cash-closures`.

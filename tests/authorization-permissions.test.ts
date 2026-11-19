@@ -18,7 +18,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, now } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS, now } = require('../main/db');
 const {
   PERMISSION_DEFINITIONS,
   PERMISSION_IDS,
@@ -54,7 +54,7 @@ function main(): void {
   initDatabase();
   const db = getDatabase();
 
-  assert.equal(getCurrentSchemaVersion(), 94, 'latest schema is migration v94');
+  assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].version, 'fresh database migrates to the latest schema');
   for (const table of ['role_permission_overrides', 'user_permission_overrides', 'authorization_audit_log']) {
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table), `${table} exists`);
   }

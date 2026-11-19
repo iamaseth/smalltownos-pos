@@ -95,6 +95,8 @@ An owner can flip any configurable cell for a role, or for one user, from the in
 | Payments | Print bills and kitchen tickets | ✓ | ✓ | ✓ | — | — |
 | Payments | Open a cash shift | ✓ | ✓ | ✓ | — | — |
 | Payments | Close own cash shift (owner/manager can close any) | ✓ | ✓ | ✓ | — | — |
+| Payments | Review and resolve cash count differences | ✓ | ✓ | — | — | — |
+| Payments | View any shift's cash counts and envelope photos | ✓ | — | — | — | — |
 | Customers | View, search, and create customers | ✓ | ✓ | ✓ | ✓ | — |
 | Customers | Edit customers | ✓ | ✓ | ✓ | — | — |
 | Customers | Repair customer phone records | ✓ | ✓ | — | — | — |
@@ -148,6 +150,12 @@ session, and the closing actor is recorded on the closure row. The route is
 `POST /api/cash-sessions/:id/close`; the own-session rule is enforced inside the close transaction,
 where the stored session and the actor are read together. This is a context policy, not a
 permission — see [the authentication and authorization page](../architecture/authentication-and-authorization.md).
+
+**Blind cash counts.** A cashier counting a drawer through `/api/cash-handover` never sees the
+expected amount before submitting the count. Expected cash, the reconciliation and envelope photos
+are visible to the cashier who opened the shift once counted, to holders of
+`cash.reconciliation.resolve`, and to holders of `cash.history.view`. A manager acknowledgement
+resolves a difference without a second PIN, and the recorded variance is never erased.
 
 **Order cancellation.** Cashiers can cancel a whole order while it is pending. If the order or any
 item has advanced to `preparing` or later, an owner or manager approval PIN is required. The rule

@@ -2045,8 +2045,8 @@ function applyPaymentBatch(
     const isCash = isCashTender(db, line.payment);
     const tenderedMajor = (line.tenderedCents || 0) / minorFactor;
     const changeMajor = (line.changeCents || 0) / minorFactor;
-    const { cash_usd_in: _usdIn, cash_khr_in: _khrIn, change_usd_out: _usdOut, change_khr_out: _khrOut, ...paymentRest } =
-      line.payment as unknown as Record<string, unknown>;
+    const paymentRest: Record<string, unknown> = { ...(line.payment as unknown as Record<string, unknown>) };
+    for (const field of [...CASH_SPLIT_USD_FIELDS, ...CASH_SPLIT_KHR_FIELDS]) delete paymentRest[field];
     return {
       ...paymentRest,
       cash_session_id: activeSessionId,

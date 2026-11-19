@@ -49,9 +49,11 @@ export function cashCountPayload(value: CashCountValue) {
 
 const LONG_PRESS_MS = 500;
 
+const noteLabel = (currency: CashCurrency, note: number) => (currency === 'USD' ? `$${note}` : `${note.toLocaleString('en-US')}៛`);
+
 function NoteTile({
-  currency, note, quantity, onGesture,
-}: { currency: CashCurrency; note: number; quantity: number; onGesture: (g: TileGesture) => void }) {
+  currency, note, quantity, onGesture, onHold,
+}: { currency: CashCurrency; note: number; quantity: number; onGesture: (g: TileGesture) => void; onHold: () => void }) {
   const start = useRef<{ x: number; y: number; t: number } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressed = useRef(false);
@@ -61,12 +63,11 @@ function NoteTile({
 
   const askExact = () => {
     longPressed.current = true;
-    const raw = window.prompt(`${currency === 'USD' ? `$${note}` : `${note.toLocaleString('en-US')}៛`} — how many notes?`, String(quantity));
-    if (raw != null && /^\d+$/.test(raw.trim())) onGesture({ type: 'set', quantity: Number(raw.trim()) });
+    onHold();
   };
 
   const usd = currency === 'USD';
-  const label = usd ? `$${note}` : `${note.toLocaleString('en-US')}៛`;
+  const label = noteLabel(currency, note);
   return (
     <button
       type="button"
@@ -116,6 +117,31 @@ function NoteTile({
   );
 }
 
+function ExactQuantitySheet({
+  currency, note, initial, onSet, onCancel,
+}: { currency: CashCurrency; note: number; initial: number; onSet: (quantity: number) => void; onCancel: () => void }) {
+  const [text, setText] = useState(initial > 0 ? String(initial) : '');
+  const valid = /^\d{1,4}$/.test(text);
+  const usd = currency === 'USD';
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" role="dialog" aria-modal="true"
+      aria-label={`${noteLabel(currency, note)} — how many notes?`} onClick={onCancel}>
+      <form className="w-full max-w-sm rounded-t-2xl bg-card p-5 shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => { e.preventDefault(); if (valid) onSet(Number(text)); }}>
+        <p className={`text-lg font-semibold ${usd ? 'text-emerald-700' : 'text-orange-600'}`}>{noteLabel(currency, note)}</p>
+        <label className="mt-1 block text-sm text-muted-foreground" htmlFor="exact-quantity">How many notes?</label>
+        <input id="exact-quantity" autoFocus inputMode="numeric" pattern="[0-9]*" value={text}
+          onChange={(e) => setText(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          className={`mt-2 w-full rounded-xl border px-4 py-3 text-2xl tabular-nums ${usd ? 'border-emerald-200 bg-emerald-50' : 'border-orange-200 bg-orange-50'}`} />
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <button type="button" onClick={onCancel} className="rounded-xl border px-4 py-3 font-semibold">Cancel</button>
+          <button type="submit" disabled={!valid} className="rounded-xl bg-foreground px-4 py-3 font-semibold text-background disabled:opacity-50">Set</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export function CashCounter({
   value, onChange, rate, title, allowManual = true,
 }: {
@@ -126,6 +152,7 @@ export function CashCounter({
   allowManual?: boolean;
 }) {
   const totals = useMemo(() => cashCountTotals(value, rate), [value, rate]);
+  const [exact, setExact] = useState<{ currency: CashCurrency; note: number } | null>(null);
   const setQty = useCallback((currency: CashCurrency, note: number, gesture: TileGesture) => {
     const current = value.denominations[currency][String(note)] || 0;
     onChange({
@@ -167,7 +194,7 @@ export function CashCounter({
             <div className="grid grid-cols-2 gap-3">
               {CASH_DENOMINATIONS.USD.map((note) => (
                 <NoteTile key={note} currency="USD" note={note} quantity={value.denominations.USD[String(note)] || 0}
-                  onGesture={(g) => setQty('USD', note, g)} />
+                  onGesture={(g) => setQty('USD', note, g)} onHold={() => setExact({ currency: 'USD', note })} />
               ))}
             </div>
           </section>
@@ -176,7 +203,7 @@ export function CashCounter({
             <div className="grid grid-cols-2 gap-3">
               {CASH_DENOMINATIONS.KHR.map((note) => (
                 <NoteTile key={note} currency="KHR" note={note} quantity={value.denominations.KHR[String(note)] || 0}
-                  onGesture={(g) => setQty('KHR', note, g)} />
+                  onGesture={(g) => setQty('KHR', note, g)} onHold={() => setExact({ currency: 'KHR', note })} />
               ))}
             </div>
           </section>
@@ -196,6 +223,13 @@ export function CashCounter({
               className="w-full rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-lg tabular-nums" />
           </label>
         </div>
+      )}
+
+      {exact && (
+        <ExactQuantitySheet currency={exact.currency} note={exact.note}
+          initial={value.denominations[exact.currency][String(exact.note)] || 0}
+          onCancel={() => setExact(null)}
+          onSet={(quantity) => { setQty(exact.currency, exact.note, { type: 'set', quantity }); setExact(null); }} />
       )}
 
       <div className="rounded-xl border bg-card p-4">

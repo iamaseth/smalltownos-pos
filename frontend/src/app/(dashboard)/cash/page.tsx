@@ -19,7 +19,10 @@ interface Status {
   can_resolve: boolean;
   open_session: { id: number; opened_by_name: string; opened_at: string; is_mine: boolean } | null;
   pending_counts: { id: number; opened_by: string; opened_by_name: string; cutoff_at: string }[];
-  awaiting_incoming: { id: number; from_session_id: number; cutoff_at: string; from_cashier: string }[];
+  awaiting_incoming: {
+    id: number; from_session_id: number; cutoff_at: string; from_cashier: string;
+    tickets: { order_id: number; order_number: string; table_label: string | null; total: number; balance: number }[];
+  }[];
 }
 
 interface Reconciliation {
@@ -134,6 +137,7 @@ export default function CashPage() {
   const [count, setCount] = useState<CashCountValue>(emptyCashCount());
   const [floatRetained, setFloatRetained] = useState({ usd: '', khr: '' });
   const [explanation, setExplanation] = useState('');
+  const [disputes, setDisputes] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const rate = status?.rate_khr_per_usd ?? 4100;
 
@@ -156,6 +160,7 @@ export default function CashPage() {
   const go = (next: View) => {
     setCount(emptyCashCount());
     setExplanation('');
+    setDisputes({});
     if (status) {
       setFloatRetained({
         usd: (status.standard_float.usd_cents / 100).toString(),
@@ -250,6 +255,9 @@ export default function CashPage() {
   }
 
   if (view.name === 'receive') {
+    const tickets = status.awaiting_incoming.find((h) => h.id === view.handoverId)?.tickets ?? [];
+    const disputedOrders = Object.entries(disputes).map(([orderId, reason]) => ({ order_id: Number(orderId), reason: reason.trim() }));
+    const missingReason = disputedOrders.some((d) => !d.reason);
     body = (
       <div className="space-y-4">
         {header('Receive drawer')}
@@ -257,9 +265,48 @@ export default function CashPage() {
           Count the float {view.fromCashier} left in the drawer. Count it yourself — your count becomes your opening float.
         </p>
         <CashCounter value={count} onChange={setCount} rate={rate} title="Float in the drawer" />
-        <BigButton tone="primary" disabled={busy || countIsEmpty} onClick={() => submit(async () => {
+        {tickets.length > 0 && (
+          <section className="rounded-xl border bg-card p-4">
+            <h3 className="font-semibold">Open tickets from {view.fromCashier} ({tickets.length})</h3>
+            <p className="mb-2 text-xs text-muted-foreground">Check each ticket. Tick Dispute and say why if one is wrong; the rest are accepted.</p>
+            <ul className="divide-y">
+              {tickets.map((ticket) => {
+                const disputed = ticket.order_id in disputes;
+                return (
+                  <li key={ticket.order_id} className="py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm">
+                        <span className="font-medium">{ticket.order_number}</span>
+                        {ticket.table_label ? ` · ${ticket.table_label}` : ''}
+                        <span className="text-muted-foreground"> · {formatUsdCents(Math.round(ticket.balance * 100))} due</span>
+                      </span>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" className="size-5" checked={disputed}
+                          onChange={(e) => setDisputes((current) => {
+                            const next = { ...current };
+                            if (e.target.checked) next[ticket.order_id] = ''; else delete next[ticket.order_id];
+                            return next;
+                          })} />
+                        Dispute
+                      </label>
+                    </div>
+                    {disputed && (
+                      <input value={disputes[ticket.order_id]} placeholder="What is wrong with this ticket?" maxLength={200}
+                        onChange={(e) => setDisputes((current) => ({ ...current, [ticket.order_id]: e.target.value }))}
+                        className="mt-2 w-full rounded-lg border px-3 py-2 text-sm" />
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            {missingReason && <p className="mt-2 text-xs text-red-600">Add a reason for each disputed ticket.</p>}
+          </section>
+        )}
+        <BigButton tone="primary" disabled={busy || countIsEmpty || missingReason} onClick={() => submit(async () => {
           try {
-            const res = await api.post(`/cash-handover/handovers/${view.handoverId}/receive`, { count: cashCountPayload(count), device: 'pos' });
+            const res = await api.post(`/cash-handover/handovers/${view.handoverId}/receive`, {
+              count: cashCountPayload(count), device: 'pos', disputed_orders: disputedOrders,
+            });
             const h = res.data.handover;
             if (h.status === 'flagged') {
               toast(`Difference vs ${view.fromCashier}: ${formatUsdCents(h.diff.usd_cents)} · ${formatKhr(h.diff.khr_riel)} — flagged for the manager`, { icon: '⚠️', duration: 8000 });

@@ -163,13 +163,19 @@ async function main() {
   const recM = await request(app).get(`/api/cash-handover/sessions/${sessionId}/reconciliation`).set('Authorization', M);
   assert(recM.body.reconciliation.expected?.usd_cents === 46300, 'manager may see expected');
 
+  const statusB = await request(app).get('/api/cash-handover/status').set('Authorization', B);
+  const waiting = (statusB.body.awaiting_incoming || []).find((h: { id: number }) => h.id === hand.body.handover_id);
+  assert(waiting?.tickets?.length === 1 && waiting.tickets[0].order_number === 'T-5', 'incoming cashier sees the handed-over ticket list');
+  const disputedOrderId = waiting.tickets[0].order_id;
   const receive = await request(app).post(`/api/cash-handover/handovers/${hand.body.handover_id}/receive`).set('Authorization', B)
-    .send({ count: { method: 'manual', usd_cents: 9000, khr_riel: 400000 }, device: 'phone' });
+    .send({ count: { method: 'manual', usd_cents: 9000, khr_riel: 400000 }, device: 'phone', disputed_orders: [{ order_id: disputedOrderId, reason: 'Table already paid' }] });
   assert(receive.status === 200, `incoming cashier B receives drawer (${receive.status} ${receive.body.error || ''})`);
   assert(receive.body.handover.status === 'flagged' && receive.body.handover.diff.usd_cents === -1000, 'declared $100 vs counted $90 → flagged −$10');
   assert(receive.body.session.opening_float_cents === 9000 + Math.round(40000000 / 4100), 'B opens with own counted float');
   const ticket = db.prepare(`SELECT status, accepted_by FROM ticket_handovers`).get() as any;
-  assert(ticket.status === 'accepted' && ticket.accepted_by === 'cashier-b', 'tickets accepted by incoming cashier');
+  assert(ticket.status === 'disputed' && ticket.accepted_by === 'cashier-b', 'ticket handover recorded as disputed by the incoming cashier');
+  const disputedItem = db.prepare(`SELECT item_status, dispute_reason FROM ticket_handover_items WHERE order_id = ?`).get(disputedOrderId) as any;
+  assert(disputedItem.item_status === 'disputed' && disputedItem.dispute_reason === 'Table already paid', 'disputed ticket keeps its reason');
   const again = await request(app).post(`/api/cash-handover/handovers/${hand.body.handover_id}/receive`).set('Authorization', B)
     .send({ count: { method: 'manual', usd_cents: 9000, khr_riel: 400000 } });
   assert(again.status === 409, 'handover cannot be received twice');
