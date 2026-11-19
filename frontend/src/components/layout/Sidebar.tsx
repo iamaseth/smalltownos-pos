@@ -23,6 +23,7 @@ import {
   Monitor,
   Boxes,
   BarChart3,
+  CalendarDays,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -62,6 +63,7 @@ type NavKey = keyof AppConfig['Messages']['nav'];
 interface NavItem {
   href: string;
   labelKey: NavKey;
+  label?: string;
   icon: LucideIcon;
   permission: PermissionId;
   businessTypes: string[] | null;
@@ -80,6 +82,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, permission: 'kitchen.stations.manage', businessTypes: ['restaurant'] },
   { href: '/customers', labelKey: 'customers', icon: Users, permission: 'customers.view', businessTypes: null },
   { href: '/staff', labelKey: 'staff', icon: UserCog, permission: 'staff.view', businessTypes: null },
+  { href: '/schedule', labelKey: 'staff', label: 'Staff schedule', icon: CalendarDays, permission: 'staff.view', businessTypes: null },
   { href: '/settings', labelKey: 'settings', icon: Settings, permission: 'settings.view', businessTypes: null },
 ];
 
@@ -197,7 +200,7 @@ export default function AppSidebar() {
                 const isActive = !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                    <SidebarMenuButton asChild isActive={isActive} tooltip={item.label || t(item.labelKey)}>
                       <Link href={item.href} onClick={closeMobile}>
                         <span className="relative flex size-4 shrink-0 items-center justify-center">
                           <item.icon className="size-4 shrink-0" />
@@ -205,7 +208,7 @@ export default function AppSidebar() {
                             <span aria-label="Email verification required" className="absolute -end-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
                           )}
                         </span>
-                        <span>{t(item.labelKey)}</span>
+                        <span>{item.label || t(item.labelKey)}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

@@ -5928,6 +5928,30 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSetting.run('cash_change_policy', 'usd_whole_khr_rest');
     },
   },
+  {
+    version: 106,
+    name: 'add_staff_scheduled_shifts',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS scheduled_shifts (
+          id TEXT PRIMARY KEY,
+          staff_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+          role TEXT NOT NULL CHECK (role IN ('owner', 'manager', 'cashier', 'server', 'chef')),
+          starts_at TEXT NOT NULL,
+          ends_at TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'cancelled')),
+          notes TEXT,
+          created_by TEXT NOT NULL REFERENCES users(id),
+          updated_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          CHECK (starts_at < ends_at)
+        );
+        CREATE INDEX IF NOT EXISTS idx_scheduled_shifts_starts_at ON scheduled_shifts(starts_at, status);
+        CREATE INDEX IF NOT EXISTS idx_scheduled_shifts_staff_starts ON scheduled_shifts(staff_id, starts_at, ends_at);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
