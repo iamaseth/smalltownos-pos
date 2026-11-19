@@ -391,6 +391,20 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         if (existingCash) existingCash.amount += khrCashUsd;
         else splitLines.push({ method: 'cash', amount: khrCashUsd });
       }
+      // BackStreet drawer: record USD and KHR received and change given separately so
+      // shift closing can reconcile each currency. Change policy: whole dollars in USD,
+      // the cents remainder in riel (rounded to 100៛). The backend re-validates.
+      const cashLine = splitLines.find((line) => line.method === 'cash') as (typeof splitLines[number] & Record<string, number>) | undefined;
+      if (cashLine) {
+        const usdIn = cashIndex >= 0 ? toStoredUnit(parseFloat(payments[cashIndex].amount) || 0) : 0;
+        const changeMinor = Math.max(0, totalPaymentMinor - remainingMinor);
+        const changeUsd = changeMinor / minorFactor;
+        const changeUsdWhole = Math.floor(changeUsd + 1e-9);
+        cashLine.cash_usd_in = usdIn;
+        cashLine.cash_khr_in = khrAmount;
+        cashLine.change_usd_out = changeUsdWhole;
+        cashLine.change_khr_out = Math.round(((changeUsd - changeUsdWhole) * khrRate) / 100) * 100;
+      }
       if (walletAmt > 0) splitLines.push({ method: 'wallet', amount: walletAmt });
 
       // Atomic call ensures all split payment lines succeed together

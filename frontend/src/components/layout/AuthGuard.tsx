@@ -38,6 +38,7 @@ const PAGE_PERMISSIONS = [
   ['/customers', 'customers.view'],
   ['/whatsapp', 'whatsapp.use'],
   ['/support', 'support.use'],
+  ['/cash', 'cash.shifts.view'],
 ] as const;
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {

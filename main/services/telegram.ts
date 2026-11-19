@@ -225,7 +225,7 @@ function buildReport(db: Db, reportType: string, params: Record<string, unknown>
   switch (reportType) {
     case 'daily': return reports.buildDailyReport(db, String(params.businessDate), options);
     case 'weekly': return reports.buildWeeklyManagementReport(db, String(params.weekStart), options);
-    case 'shift': return reports.buildShiftReport(db, Number(params.sessionId), params.event === 'open' ? 'open' : 'close');
+    case 'shift': return reports.buildShiftReport(db, Number(params.sessionId), params.event === 'open' ? 'open' : params.event === 'envelope' ? 'envelope' : 'close');
     case 'low_stock': return reports.buildLowStockAlert(db, (params.names as string[]) ?? []);
     case 'purchasing': return reports.buildPurchasingReport(db, String(params.startDate), String(params.endDate), options);
     case 'period': return reports.buildPeriodReport(db, String(params.startDate), String(params.endDate), options);
@@ -352,12 +352,17 @@ export async function sendReportNow(startDate: string, endDate: string, recipien
 
 // ---- Events and schedule ----
 
-export function notifyTelegram(event: 'day_close' | 'shift_open' | 'shift_close', params: { businessDate?: string; sessionId?: number }): void {
+export function notifyTelegram(event: 'day_close' | 'shift_open' | 'shift_close' | 'shift_envelope', params: { businessDate?: string; sessionId?: number }): void {
   try {
     const db = getDatabase();
     if (!isEnabled(db) || !botToken()) return;
     if (event === 'day_close' && params.businessDate) {
       enqueueReport('daily', { businessDate: params.businessDate }, `daily|${params.businessDate}`, `Daily summary ${params.businessDate}`, db);
+    } else if (event === 'shift_envelope' && params.sessionId) {
+      // Only needed when the closing report already went out without the photo.
+      const sent = db.prepare(`SELECT 1 FROM telegram_deliveries WHERE dedupe_key LIKE ? AND status = 'sent' LIMIT 1`)
+        .get(`shift|${params.sessionId}|close%`);
+      if (sent) enqueueReport('shift', { sessionId: params.sessionId, event: 'envelope' }, `shift|${params.sessionId}|envelope`, 'Envelope photo', db);
     } else if ((event === 'shift_open' || event === 'shift_close') && params.sessionId) {
       const kind = event === 'shift_open' ? 'open' : 'close';
       enqueueReport('shift', { sessionId: params.sessionId, event: kind }, `shift|${params.sessionId}|${kind}`, `Shift ${kind}`, db);

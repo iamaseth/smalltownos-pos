@@ -2,6 +2,7 @@
 
 import PrinterStatus from './PrinterStatus';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
@@ -28,6 +29,10 @@ interface Props {
 export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen, searchSlotRef }: Props) {
   const cart = useCartStore();
   const [actionsOpen, setActionsOpen] = useState(false);
+  const router = useRouter();
+  // BackStreet: shifts open, close and hand over through the Cash Counter screen.
+  const openCashScreen = () => router.push('/cash');
+  void onShowShift;
   const { currentTenant } = useAuthStore();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
   const t = useTranslations('pos');
@@ -39,7 +44,7 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
     <div className="pos-reference-font relative flex shrink-0 items-center justify-between gap-3 border-b border-[#1e293b] bg-[#0d1527] px-3 py-1.5 text-slate-100">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <SidebarTrigger className="hidden size-9 shrink-0 md:inline-flex" aria-label="Show or hide menu" />
-        {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={onShowShift} className="hidden md:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
+        {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={openCashScreen} className="hidden md:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
           {shiftHasOpenSession ? <Lock size={15} className="text-emerald-400" /> : <LockOpen size={15} className="text-amber-400" />}
           <span>{shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}</span>
         </button>}
@@ -60,7 +65,7 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
               <LayoutGrid size={16}/>{cart.tableId ? t('tableLabel',{name:tables.find(table=>table.id===cart.tableId)?.name||cart.tableId}) : t('selectTable')}
             </button>}
             <button type="button" onClick={() => {setActionsOpen(false);onShowCashMovement();}} className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-slate-700"><Banknote size={16}/>{tDashboard('cashMovement')}</button>
-            {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={() => {setActionsOpen(false);onShowShift();}} className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-slate-700 disabled:opacity-50">
+            {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={() => {setActionsOpen(false);openCashScreen();}} className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-sm hover:bg-slate-700 disabled:opacity-50">
               {shiftHasOpenSession ? <Lock size={16}/> : <LockOpen size={16}/>}
               {shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
             </button>}

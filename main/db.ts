@@ -5754,6 +5754,180 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 105,
+    name: 'add_cash_counts_reconciliation_handover',
+    up: () => {
+      // Additive only: dual-currency counts, blind-close reconciliation,
+      // busy-time handover, media evidence and purchase receipts. Existing
+      // cash_sessions / cash_closures keep their USD-equivalent columns so
+      // day close, Z reports and reports are unchanged.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS cash_counts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER NOT NULL REFERENCES cash_sessions(id),
+          kind TEXT NOT NULL CHECK (kind IN ('opening', 'closing', 'handover_float_declared', 'handover_float_verified', 'handover_takings')),
+          method TEXT NOT NULL CHECK (method IN ('denominations', 'manual')),
+          usd_cents INTEGER NOT NULL CHECK (usd_cents >= 0),
+          khr_riel INTEGER NOT NULL CHECK (khr_riel >= 0),
+          rate_khr_per_usd INTEGER NOT NULL CHECK (rate_khr_per_usd > 0),
+          combined_usd_cents INTEGER NOT NULL,
+          denominations_json TEXT,
+          counted_by TEXT NOT NULL REFERENCES users(id),
+          device TEXT,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cash_counts_session ON cash_counts(session_id, kind);
+
+        CREATE TABLE IF NOT EXISTS cash_reconciliations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER NOT NULL UNIQUE REFERENCES cash_sessions(id),
+          cutoff_at TEXT NOT NULL,
+          rate_khr_per_usd INTEGER NOT NULL,
+          expected_usd_cents INTEGER NOT NULL,
+          expected_khr_riel INTEGER NOT NULL,
+          expected_combined_usd_cents INTEGER NOT NULL,
+          untracked_cash_lines INTEGER NOT NULL DEFAULT 0,
+          actual_usd_cents INTEGER,
+          actual_khr_riel INTEGER,
+          variance_usd_cents INTEGER,
+          variance_khr_riel INTEGER,
+          variance_combined_usd_cents INTEGER,
+          float_retained_usd_cents INTEGER,
+          float_retained_khr_riel INTEGER,
+          envelope_usd_cents INTEGER,
+          envelope_khr_riel INTEGER,
+          other_removals_json TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL DEFAULT 'awaiting_count'
+            CHECK (status IN ('awaiting_count', 'balanced', 'pending_review', 'resolved')),
+          submitted_by TEXT REFERENCES users(id),
+          submitted_at TEXT,
+          resolved_by TEXT REFERENCES users(id),
+          resolved_at TEXT,
+          closure_id INTEGER REFERENCES cash_closures(id),
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cash_reconciliations_status ON cash_reconciliations(status);
+
+        CREATE TABLE IF NOT EXISTS cash_reconciliation_notes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          reconciliation_id INTEGER NOT NULL REFERENCES cash_reconciliations(id),
+          kind TEXT NOT NULL CHECK (kind IN ('cashier_explanation', 'manager_explanation', 'manager_acknowledgement', 'correction')),
+          body TEXT NOT NULL,
+          author_id TEXT NOT NULL REFERENCES users(id),
+          author_role TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cash_reconciliation_notes_rec ON cash_reconciliation_notes(reconciliation_id);
+
+        CREATE TABLE IF NOT EXISTS cash_handovers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          from_session_id INTEGER NOT NULL UNIQUE REFERENCES cash_sessions(id),
+          to_session_id INTEGER REFERENCES cash_sessions(id),
+          mode TEXT NOT NULL DEFAULT 'busy' CHECK (mode IN ('busy', 'standard')),
+          cutoff_at TEXT NOT NULL,
+          declared_count_id INTEGER REFERENCES cash_counts(id),
+          verified_count_id INTEGER REFERENCES cash_counts(id),
+          diff_usd_cents INTEGER,
+          diff_khr_riel INTEGER,
+          status TEXT NOT NULL DEFAULT 'awaiting_incoming'
+            CHECK (status IN ('awaiting_incoming', 'clean', 'flagged', 'resolved')),
+          initiated_by TEXT NOT NULL REFERENCES users(id),
+          accepted_by TEXT REFERENCES users(id),
+          accepted_at TEXT,
+          comment TEXT,
+          created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS ticket_handovers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cash_handover_id INTEGER REFERENCES cash_handovers(id),
+          from_session_id INTEGER NOT NULL REFERENCES cash_sessions(id),
+          initiated_by TEXT NOT NULL REFERENCES users(id),
+          initiated_at TEXT NOT NULL,
+          accepted_by TEXT REFERENCES users(id),
+          accepted_at TEXT,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'disputed'))
+        );
+        CREATE TABLE IF NOT EXISTS ticket_handover_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ticket_handover_id INTEGER NOT NULL REFERENCES ticket_handovers(id),
+          order_id INTEGER NOT NULL REFERENCES orders(id),
+          order_number TEXT NOT NULL,
+          table_label TEXT,
+          total REAL NOT NULL DEFAULT 0,
+          balance REAL NOT NULL DEFAULT 0,
+          order_status TEXT,
+          original_user_id TEXT,
+          item_status TEXT NOT NULL DEFAULT 'pending' CHECK (item_status IN ('pending', 'accepted', 'disputed')),
+          dispute_reason TEXT,
+          UNIQUE (ticket_handover_id, order_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS media_uploads (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          kind TEXT NOT NULL CHECK (kind IN ('envelope', 'purchase_receipt')),
+          idempotency_key TEXT UNIQUE,
+          file_path TEXT NOT NULL,
+          mime TEXT NOT NULL,
+          bytes INTEGER NOT NULL,
+          sha256 TEXT NOT NULL,
+          session_id INTEGER REFERENCES cash_sessions(id),
+          uploaded_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS cash_envelopes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id INTEGER NOT NULL REFERENCES cash_sessions(id),
+          usd_cents INTEGER NOT NULL CHECK (usd_cents >= 0),
+          khr_riel INTEGER NOT NULL CHECK (khr_riel >= 0),
+          media_id INTEGER REFERENCES media_uploads(id),
+          created_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS purchase_receipts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          media_id INTEGER NOT NULL REFERENCES media_uploads(id),
+          vendor_id INTEGER,
+          vendor_name TEXT,
+          purchase_date TEXT NOT NULL,
+          total_minor INTEGER NOT NULL CHECK (total_minor >= 0),
+          currency TEXT NOT NULL CHECK (currency IN ('USD', 'KHR')),
+          notes TEXT,
+          session_id INTEGER REFERENCES cash_sessions(id),
+          created_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL
+        );
+      `);
+      const sessionColumns = getColumns(db, 'cash_sessions');
+      const addSessionColumn = (name: string, definition: string) => {
+        if (!sessionColumns.includes(name)) db.exec(`ALTER TABLE cash_sessions ADD COLUMN ${name} ${definition}`);
+      };
+      // Workflow flags (brief §12). 'handover_state' marks a session that
+      // stopped selling at handover but still owes its count from a phone.
+      addSessionColumn('handover_state', "TEXT DEFAULT NULL CHECK (handover_state IS NULL OR handover_state IN ('pending_count', 'counted'))");
+      addSessionColumn('cutoff_at', 'TEXT DEFAULT NULL');
+      addSessionColumn('opening_count_id', 'INTEGER DEFAULT NULL');
+      addSessionColumn('opening_khr_riel', 'INTEGER NOT NULL DEFAULT 0');
+      addSessionColumn('review_required', 'INTEGER NOT NULL DEFAULT 0');
+      addSessionColumn('tickets_transferred_at', 'TEXT DEFAULT NULL');
+      addSessionColumn('telegram_delivered_at', 'TEXT DEFAULT NULL');
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_sessions_handover_state ON cash_sessions(handover_state)`);
+
+      const movementColumns = getColumns(db, 'cash_drawer_movements');
+      if (!movementColumns.includes('amount_khr_riel')) {
+        db.exec(`ALTER TABLE cash_drawer_movements ADD COLUMN amount_khr_riel INTEGER NOT NULL DEFAULT 0`);
+      }
+
+      const insertSetting = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`);
+      insertSetting.run('cash_standard_float_usd_cents', '10000');
+      insertSetting.run('cash_standard_float_khr_riel', '0');
+      insertSetting.run('cash_pending_count_alert_hours', '4');
+      insertSetting.run('cash_change_policy', 'usd_whole_khr_rest');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

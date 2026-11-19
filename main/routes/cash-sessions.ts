@@ -76,15 +76,18 @@ function daysAgoUtc(days: number): string {
  * Human closes are blocked by unpaid in-window bills; system auto-close
  * skips that guard (cleanup path — the bills stay for day close).
  */
-function closeSessionTxn(
+export function closeSessionTxn(
   db: ReturnType<typeof getDatabase>,
   session: CashSessionRow,
   countedCashCents: number,
   closerId: string,
   notes: string | null,
   skipUnpaidBlock = false,
+  options: { periodEnd?: string; alreadyClosed?: boolean } = {},
 ): { closure_id: number; variance_cents: number; expected_cash_cents: number; counted_cash_cents: number } {
-  const closedAt = now();
+  // A busy-time handover freezes the session at its cutoff; the closure is
+  // written later (from a phone) for the cutoff window, not for "now".
+  const closedAt = options.periodEnd ?? now();
   if (!skipUnpaidBlock) {
     // 'partial' counts: a short tender leaves an outstanding balance
     // (bills.ts settles to 'paid' only at zero balance).
@@ -148,8 +151,12 @@ function closeSessionTxn(
     zNumber, closerId, notes, closedAt,
   );
   const closureId = Number(insert.lastInsertRowid);
-  db.prepare(`UPDATE cash_sessions SET status = 'closed', closed_at = ?, closed_by = ?, closure_id = ? WHERE id = ?`)
-    .run(closedAt, closerId, closureId, session.id);
+  if (options.alreadyClosed) {
+    db.prepare(`UPDATE cash_sessions SET closure_id = ? WHERE id = ?`).run(closureId, session.id);
+  } else {
+    db.prepare(`UPDATE cash_sessions SET status = 'closed', closed_at = ?, closed_by = ?, closure_id = ? WHERE id = ?`)
+      .run(closedAt, closerId, closureId, session.id);
+  }
   return { closure_id: closureId, variance_cents: varianceCents, expected_cash_cents: expectedCashCents, counted_cash_cents: countedCashCents };
 }
 
@@ -158,64 +165,7 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
     const openingFloatCents = validateCents((req.body || {}).opening_float_cents ?? 0, 'opening_float_cents');
     const db = getDatabase();
     const openedBy = actorId(req);
-    const openedByRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(openedBy) as { name: string } | undefined;
-    const result = withTxn(() => {
-      // Stale auto-close: an open session older than the threshold with no
-      // store activity since is system-closed (zero count, flagged) so a new
-      // shift can open. Matches Square's stale-drawer rule.
-      const thresholdDays = Math.max(1, parseInt(getSettingValue('stale_session_days') || '7', 10) || 7);
-      const cutoff = daysAgoUtc(thresholdDays);
-      const stale = db.prepare(`SELECT * FROM cash_sessions WHERE status = 'open' AND opened_at < ?`).all(cutoff) as CashSessionRow[];
-      if (stale.length > 0) {
-        const activity = db.prepare(`
-          SELECT
-            EXISTS(SELECT 1 FROM bills WHERE paid_at >= ?)
-            OR EXISTS(
-              SELECT 1 FROM bills b
-              JOIN json_each(CASE
-                WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
-                WHEN json_valid(b.payment_details) THEN json_array(b.payment_details)
-                ELSE '[]'
-              END) je
-              WHERE json_type(je.value) = 'object'
-                AND datetime(COALESCE(NULLIF(json_extract(je.value, '$.timestamp'), ''), b.paid_at, b.created_at)) >= datetime(?)
-            )
-            OR EXISTS(SELECT 1 FROM cash_drawer_movements WHERE created_at >= ?)
-            OR EXISTS(SELECT 1 FROM refunds WHERE created_at >= ?) AS active
-        `).get(cutoff, cutoff, cutoff, cutoff) as { active: number };
-        if (!activity.active) {
-          for (const s of stale) {
-            closeSessionTxn(db, s, 0, openedBy, 'System auto-close: stale session, flagged for manager review', true);
-          }
-        }
-      }
-      if (getOpenSession(db)) throw httpError('A shift is already open', 409);
-      const openedAt = now();
-      const insert = db.prepare(`
-        INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
-        VALUES (?, ?, ?, ?, 'open')
-      `).run(openedBy, openedByRow?.name ?? openedBy, openedAt, openingFloatCents);
-      const sessionId = Number(insert.lastInsertRowid);
-      // Keep day close reconciling the same physical drawer: mirror the
-      // float as the day's opening_float movement. Session math ignores
-      // in-window float movements (openingFloatOverride), so this cannot
-      // double-count there. One movement per day (schema constraint): a
-      // second shift reuses the first float for day-close purposes.
-      if (openingFloatCents > 0) {
-        const openBusinessDate = localDateInTimezone(new Date(), tenantTimezone(), tenantBusinessDayStartTime(db));
-        const existingFloat = db.prepare(
-          `SELECT id FROM cash_drawer_movements WHERE business_date = ? AND movement_type = 'opening_float' AND voided_at IS NULL LIMIT 1`,
-        ).get(openBusinessDate);
-        if (!existingFloat) {
-          db.prepare(`
-            INSERT INTO cash_drawer_movements (
-              business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id
-            ) VALUES (?, 'opening_float', ?, 'Shift opening float', ?, ?, ?)
-          `).run(openBusinessDate, openingFloatCents, openedBy, openedAt, sessionId);
-        }
-      }
-      return db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId);
-    });
+    const result = withTxn(() => openSessionTxn(db, openedBy, openingFloatCents));
     res.json(result);
     notifyTelegram('shift_open', { sessionId: Number((result as { id?: number } | undefined)?.id) });
   } catch (error: unknown) {
@@ -223,6 +173,70 @@ router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: 
     res.status(status).json({ error: status >= 500 ? 'Failed to open shift' : errorMessage(error, 'Failed to open shift') });
   }
 });
+
+/**
+ * Opens a shift inside the caller's transaction (stale auto-close, single
+ * open session rule, day float mirror). Shared by the classic open endpoint
+ * and the dual-currency Cash Counter flows in cash-handover.ts.
+ */
+export function openSessionTxn(db: ReturnType<typeof getDatabase>, openedBy: string, openingFloatCents: number): CashSessionRow {
+  const openedByRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(openedBy) as { name: string } | undefined;
+  // Stale auto-close: an open session older than the threshold with no
+  // store activity since is system-closed (zero count, flagged) so a new
+  // shift can open. Matches Square's stale-drawer rule.
+  const thresholdDays = Math.max(1, parseInt(getSettingValue('stale_session_days') || '7', 10) || 7);
+  const cutoff = daysAgoUtc(thresholdDays);
+  const stale = db.prepare(`SELECT * FROM cash_sessions WHERE status = 'open' AND opened_at < ?`).all(cutoff) as CashSessionRow[];
+  if (stale.length > 0) {
+    const activity = db.prepare(`
+      SELECT
+        EXISTS(SELECT 1 FROM bills WHERE paid_at >= ?)
+        OR EXISTS(
+          SELECT 1 FROM bills b
+          JOIN json_each(CASE
+            WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
+            WHEN json_valid(b.payment_details) THEN json_array(b.payment_details)
+            ELSE '[]'
+          END) je
+          WHERE json_type(je.value) = 'object'
+            AND datetime(COALESCE(NULLIF(json_extract(je.value, '$.timestamp'), ''), b.paid_at, b.created_at)) >= datetime(?)
+        )
+        OR EXISTS(SELECT 1 FROM cash_drawer_movements WHERE created_at >= ?)
+        OR EXISTS(SELECT 1 FROM refunds WHERE created_at >= ?) AS active
+    `).get(cutoff, cutoff, cutoff, cutoff) as { active: number };
+    if (!activity.active) {
+      for (const s of stale) {
+        closeSessionTxn(db, s, 0, openedBy, 'System auto-close: stale session, flagged for manager review', true);
+      }
+    }
+  }
+  if (getOpenSession(db)) throw httpError('A shift is already open', 409);
+  const openedAt = now();
+  const insert = db.prepare(`
+    INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
+    VALUES (?, ?, ?, ?, 'open')
+  `).run(openedBy, openedByRow?.name ?? openedBy, openedAt, openingFloatCents);
+  const sessionId = Number(insert.lastInsertRowid);
+  // Keep day close reconciling the same physical drawer: mirror the
+  // float as the day's opening_float movement. Session math ignores
+  // in-window float movements (openingFloatOverride), so this cannot
+  // double-count there. One movement per day (schema constraint): a
+  // second shift reuses the first float for day-close purposes.
+  if (openingFloatCents > 0) {
+    const openBusinessDate = localDateInTimezone(new Date(), tenantTimezone(), tenantBusinessDayStartTime(db));
+    const existingFloat = db.prepare(
+      `SELECT id FROM cash_drawer_movements WHERE business_date = ? AND movement_type = 'opening_float' AND voided_at IS NULL LIMIT 1`,
+    ).get(openBusinessDate);
+    if (!existingFloat) {
+      db.prepare(`
+        INSERT INTO cash_drawer_movements (
+          business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id
+        ) VALUES (?, 'opening_float', ?, 'Shift opening float', ?, ?, ?)
+      `).run(openBusinessDate, openingFloatCents, openedBy, openedAt, sessionId);
+    }
+  }
+  return db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId) as CashSessionRow;
+}
 
 router.get('/current', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
   try {

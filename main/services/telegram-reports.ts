@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { dayBoundsInTimezone, getDatabase, localDateInTimezone, tenantBusinessDayStartTime } from '../db';
 import { buildDailySalesExportDataset } from './daily-sales-export';
 import { serializeDailySalesExportCsv } from './daily-sales-export-files';
@@ -206,12 +207,23 @@ export function buildPeriodReport(db: Db, startDate: string, endDate: string, op
   return { title, html, attachments };
 }
 
-export function buildShiftReport(db: Db, sessionId: number, event: 'open' | 'close'): TelegramReport {
+export function buildShiftReport(db: Db, sessionId: number, event: 'open' | 'close' | 'envelope'): TelegramReport {
   const { cents } = moneyFormatter(db);
   const session = db.prepare('SELECT * FROM cash_sessions WHERE id = ?').get(sessionId) as {
     id: number; opened_by_name: string; opened_at: string; opening_float_cents: number; closed_at: string | null; closure_id: number | null;
   } | undefined;
   if (!session) throw new Error(`shift ${sessionId} not found`);
+  if (event === 'envelope') {
+    // Follow-up when the sealed-envelope photo arrives after the closing report was sent.
+    const env = db.prepare(`
+      SELECT e.usd_cents, e.khr_riel, m.file_path, m.mime FROM cash_envelopes e JOIN media_uploads m ON m.id = e.media_id
+      WHERE e.session_id = ? ORDER BY e.id DESC LIMIT 1`).get(sessionId) as { usd_cents: number; khr_riel: number; file_path: string; mime: string } | undefined;
+    const title = `Envelope photo (${session.opened_by_name || 'staff'})`;
+    const attachments = env && fs.existsSync(env.file_path)
+      ? [{ filename: `envelope-shift-${sessionId}.${env.mime.split('/')[1]}`, contentType: env.mime, data: fs.readFileSync(env.file_path) }]
+      : [];
+    return { title, attachments, html: `<b>${escapeHtml(businessName(db))} - ${escapeHtml(title)}</b>\n${pre([`Shift      ${session.opened_at}`, `Envelope   ${env ? `${usd(env.usd_cents)} + ${khr(env.khr_riel)}` : '-'}`])}` };
+  }
   if (event === 'open') {
     const title = `Shift opened by ${session.opened_by_name || 'staff'}`;
     return { title, attachments: [], html: `<b>${escapeHtml(businessName(db))} - ${escapeHtml(title)}</b>\n${pre([`Opened   ${session.opened_at}`, `Float    ${cents(session.opening_float_cents)}`])}` };
@@ -222,8 +234,75 @@ export function buildShiftReport(db: Db, sessionId: number, event: 'open' | 'clo
     : undefined;
   const title = `Shift closed (${session.opened_by_name || 'staff'})`;
   const rows = [`Opened     ${session.opened_at}`, `Closed     ${session.closed_at ?? '-'}`];
-  if (closure) rows.push(`Bills      ${closure.bill_count}`, `Collected  ${cents(closure.net_collected_cents)}`, `Expected   ${cents(closure.expected_cash_cents)}`, `Counted    ${cents(closure.counted_cash_cents)}`, `Difference ${cents(closure.variance_cents)}`);
-  return { title, attachments: [], html: `<b>${escapeHtml(businessName(db))} - ${escapeHtml(title)}</b>\n${pre(rows)}` };
+  const cashDetail = event === 'close' ? buildCashReconciliationSection(db, session.id) : null;
+  if (closure && !cashDetail) rows.push(`Bills      ${closure.bill_count}`, `Collected  ${cents(closure.net_collected_cents)}`, `Expected   ${cents(closure.expected_cash_cents)}`, `Counted    ${cents(closure.counted_cash_cents)}`, `Difference ${cents(closure.variance_cents)}`);
+  if (closure && cashDetail) rows.push(`Bills      ${closure.bill_count}`, `Collected  ${cents(closure.net_collected_cents)}`);
+  const html = [`<b>${escapeHtml(businessName(db))} - ${escapeHtml(title)}</b>`, pre(rows), ...(cashDetail?.blocks ?? [])].join('\n');
+  return { title: cashDetail?.alert ? `⚠️ ${title}` : title, attachments: cashDetail?.attachments ?? [], html };
+}
+
+/* BackStreet dual-currency closing detail (cash-handover.ts tables, migration 105). */
+function usd(c: number | null | undefined): string {
+  const v = Number(c || 0);
+  return `${v < 0 ? '-' : ''}$${(Math.abs(v) / 100).toFixed(2)}`;
+}
+function khr(r: number | null | undefined): string {
+  const v = Number(r || 0);
+  return `${v < 0 ? '-' : ''}${Math.abs(v).toLocaleString('en-US')}៛`;
+}
+
+function buildCashReconciliationSection(db: Db, sessionId: number):
+  { blocks: string[]; attachments: TelegramAttachment[]; alert: boolean } | null {
+  const hasTable = db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'cash_reconciliations'`).get();
+  if (!hasTable) return null;
+  const rec = db.prepare(`SELECT * FROM cash_reconciliations WHERE session_id = ?`).get(sessionId) as Record<string, number | string | null> | undefined;
+  if (!rec || rec.actual_usd_cents == null) return null;
+  const opening = db.prepare(`SELECT c.usd_cents, c.khr_riel FROM cash_sessions s JOIN cash_counts c ON c.id = s.opening_count_id WHERE s.id = ?`).get(sessionId) as { usd_cents: number; khr_riel: number } | undefined;
+  const handover = db.prepare(`
+    SELECT h.status, h.diff_usd_cents, h.diff_khr_riel, u.name AS incoming FROM cash_handovers h
+    LEFT JOIN cash_sessions s2 ON s2.id = h.to_session_id LEFT JOIN users u ON u.id = s2.opened_by
+    WHERE h.from_session_id = ?`).get(sessionId) as { status: string; diff_usd_cents: number | null; diff_khr_riel: number | null; incoming: string | null } | undefined;
+  const tickets = db.prepare(`
+    SELECT COUNT(i.id) AS n, COALESCE(SUM(i.balance), 0) AS value, MAX(th.status) AS status
+    FROM ticket_handovers th LEFT JOIN ticket_handover_items i ON i.ticket_handover_id = th.id WHERE th.from_session_id = ?`).get(sessionId) as { n: number; value: number; status: string | null };
+  const notes = db.prepare(`SELECT kind, body, author_role FROM cash_reconciliation_notes WHERE reconciliation_id = ? ORDER BY id`).all(rec.id) as { kind: string; body: string; author_role: string }[];
+  const envelope = db.prepare(`
+    SELECT e.usd_cents, e.khr_riel, m.file_path, m.mime FROM cash_envelopes e LEFT JOIN media_uploads m ON m.id = e.media_id
+    WHERE e.session_id = ? ORDER BY e.id DESC LIMIT 1`).get(sessionId) as { usd_cents: number; khr_riel: number; file_path: string | null; mime: string | null } | undefined;
+  const varianceUsd = Number(rec.variance_usd_cents || 0);
+  const varianceKhr = Number(rec.variance_khr_riel || 0);
+  const alert = varianceUsd !== 0 || varianceKhr !== 0;
+  const recon = [
+    `Opening float ${opening ? `${usd(opening.usd_cents)} + ${khr(opening.khr_riel)}` : '-'}`,
+    `Expected USD  ${usd(Number(rec.expected_usd_cents))}`,
+    `Actual USD    ${usd(Number(rec.actual_usd_cents))}`,
+    `Diff USD      ${usd(varianceUsd)}${varianceUsd ? '  <<' : ''}`,
+    `Expected KHR  ${khr(Number(rec.expected_khr_riel))}`,
+    `Actual KHR    ${khr(Number(rec.actual_khr_riel))}`,
+    `Diff KHR      ${khr(varianceKhr)}${varianceKhr ? '  <<' : ''}`,
+    `Diff combined ${usd(Number(rec.variance_combined_usd_cents))} @ ${rec.rate_khr_per_usd}៛/$`,
+    `Float left    ${usd(Number(rec.float_retained_usd_cents))} + ${khr(Number(rec.float_retained_khr_riel))}`,
+    `Envelope      ${usd(Number(rec.envelope_usd_cents))} + ${khr(Number(rec.envelope_khr_riel))}`,
+  ];
+  if (Number(rec.untracked_cash_lines || 0) > 0) recon.push(`Note: ${rec.untracked_cash_lines} cash payment(s) without USD/KHR split counted as USD`);
+  const blocks = [
+    alert ? '<b>⚠️ CASH DIFFERENCE</b>' : '<b>Cash balanced ✓</b>',
+    pre(recon),
+    `<b>Status:</b> ${escapeHtml(String(rec.status).replace('_', ' '))}`,
+  ];
+  for (const n of notes) blocks.push(`<i>${escapeHtml(n.kind.replace(/_/g, ' '))}</i>: ${escapeHtml(n.body)}`);
+  if (handover) {
+    blocks.push(`<b>Handover:</b> ${escapeHtml(handover.incoming ?? 'waiting for incoming cashier')} · ${escapeHtml(handover.status)}`
+      + (handover.diff_usd_cents || handover.diff_khr_riel ? ` · float diff ${usd(handover.diff_usd_cents)} / ${khr(handover.diff_khr_riel)}` : ''));
+  }
+  blocks.push(`<b>Open tickets:</b> ${tickets?.n ?? 0} (${usd(Math.round(Number(tickets?.value || 0) * 100))})${tickets?.status ? ` · ${escapeHtml(tickets.status)}` : ''}`);
+  const attachments: TelegramAttachment[] = [];
+  if (envelope?.file_path && fs.existsSync(envelope.file_path)) {
+    attachments.push({ filename: `envelope-shift-${sessionId}.${(envelope.mime || 'image/jpeg').split('/')[1]}`, contentType: envelope.mime || 'image/jpeg', data: fs.readFileSync(envelope.file_path) });
+  } else {
+    blocks.push('<b>⚠️ Envelope photo missing</b>');
+  }
+  return { blocks, attachments, alert: alert || !attachments.length };
 }
 
 export function buildLowStockAlert(db: Db, supplyNames: string[]): TelegramReport {

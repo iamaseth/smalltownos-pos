@@ -79,6 +79,8 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'cash.movements.manage', area: 'cash', defaultRoles: OWNER_MANAGER_CASHIER, configurable: true, risk: 'sensitive' },
   { id: 'cash.movements.void', area: 'cash', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
   { id: 'cash.day-close', area: 'cash', defaultRoles: OWNER, configurable: true, risk: 'sensitive' },
+  { id: 'cash.reconciliation.resolve', area: 'cash', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
+  { id: 'cash.history.view', area: 'cash', defaultRoles: OWNER, configurable: true, risk: 'sensitive' },
 
   { id: 'customers.view', area: 'customers', defaultRoles: SALES, configurable: true, risk: 'sensitive' },
   { id: 'customers.create', area: 'customers', defaultRoles: SALES, configurable: true, risk: 'sensitive' },

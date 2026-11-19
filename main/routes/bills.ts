@@ -1751,6 +1751,58 @@ function validatePaymentFields(payment: PaymentInput, index: number, currency: s
   if (payment.amount !== undefined && payment.amount !== null) {
     paymentAmountMinorUnits(payment.amount, currency);
   }
+  validateCashCurrencySplit(payment as unknown as Record<string, unknown>, index);
+}
+
+/**
+ * Optional dual-currency cash split (BackStreet USD/KHR drawer). USD fields are
+ * decimal dollars with at most 2 decimals; KHR fields are whole riel. Consistency
+ * with the backend-computed tender/change is checked in cashSplitFields().
+ */
+const CASH_SPLIT_USD_FIELDS = ['cash_usd_in', 'change_usd_out'] as const;
+const CASH_SPLIT_KHR_FIELDS = ['cash_khr_in', 'change_khr_out'] as const;
+
+function validateCashCurrencySplit(payment: Record<string, unknown>, index: number): void {
+  for (const field of CASH_SPLIT_USD_FIELDS) {
+    const value = payment[field];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 10_000_000
+      || Math.abs(Math.round(value * 100) - value * 100) > 1e-6) {
+      throw Object.assign(new Error(`${field} at line ${index + 1} must be a non-negative USD amount`), { statusCode: 400 });
+    }
+  }
+  for (const field of CASH_SPLIT_KHR_FIELDS) {
+    const value = payment[field];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+      throw Object.assign(new Error(`${field} at line ${index + 1} must be whole riel`), { statusCode: 400 });
+    }
+  }
+}
+
+/** Keeps the USD/KHR split only on cash lines and only when it matches the tender and change. */
+export function cashSplitFields(
+  payment: Record<string, unknown>,
+  isCash: boolean,
+  tenderedMajor: number,
+  changeMajor: number,
+): Record<string, number> {
+  const present = [...CASH_SPLIT_USD_FIELDS, ...CASH_SPLIT_KHR_FIELDS].some((field) => payment[field] != null);
+  if (!present || !isCash) return {};
+  const rate = Number.parseInt(getSettingValue('usd_khr_exchange_rate') || '4100', 10) || 4100;
+  const usdIn = Number(payment.cash_usd_in || 0);
+  const khrIn = Number(payment.cash_khr_in || 0);
+  const usdOut = Number(payment.change_usd_out || 0);
+  const khrOut = Number(payment.change_khr_out || 0);
+  // One 100-riel note of rounding either way is tolerated (≈ $0.03 at 4,100).
+  const tolerance = 100 / rate + 0.005;
+  if (Math.abs(usdIn + khrIn / rate - tenderedMajor) > tolerance) {
+    throw Object.assign(new Error('Cash USD/KHR received does not match the cash tendered'), { statusCode: 400 });
+  }
+  if (Math.abs(usdOut + khrOut / rate - changeMajor) > tolerance) {
+    throw Object.assign(new Error('Change USD/KHR given does not match the change due'), { statusCode: 400 });
+  }
+  return { cash_usd_in: usdIn, cash_khr_in: khrIn, change_usd_out: usdOut, change_khr_out: khrOut, cash_split_rate: rate };
 }
 
 function paymentTransactionKey(payment: unknown): string | null {
@@ -1989,15 +2041,23 @@ function applyPaymentBatch(
   const newPaidCents = oldPaidCents + totalAppliedCents;
   const newBalanceCents = Math.max(0, totalCents - newPaidCents);
   const paymentStatus = newBalanceCents === 0 ? 'paid' : 'partial';
-  const newPayments = prepared.map((line) => ({
-    ...line.payment,
-    cash_session_id: activeSessionId,
-    amount: line.amountCents / minorFactor,
-    requested_amount: (line.tenderedCents || line.amountCents) / minorFactor,
-    amount_omitted: Boolean(line.amountOmitted),
-    ...(isCashTender(db, line.payment) ? { tendered_amount: (line.tenderedCents || 0) / minorFactor, change_amount: (line.changeCents || 0) / minorFactor } : {}),
-    timestamp: now(),
-  }));
+  const newPayments = prepared.map((line) => {
+    const isCash = isCashTender(db, line.payment);
+    const tenderedMajor = (line.tenderedCents || 0) / minorFactor;
+    const changeMajor = (line.changeCents || 0) / minorFactor;
+    const { cash_usd_in: _usdIn, cash_khr_in: _khrIn, change_usd_out: _usdOut, change_khr_out: _khrOut, ...paymentRest } =
+      line.payment as unknown as Record<string, unknown>;
+    return {
+      ...paymentRest,
+      cash_session_id: activeSessionId,
+      amount: line.amountCents / minorFactor,
+      requested_amount: (line.tenderedCents || line.amountCents) / minorFactor,
+      amount_omitted: Boolean(line.amountOmitted),
+      ...(isCash ? { tendered_amount: tenderedMajor, change_amount: changeMajor } : {}),
+      ...cashSplitFields(line.payment as unknown as Record<string, unknown>, isCash, tenderedMajor, changeMajor),
+      timestamp: now(),
+    };
+  });
   let walletDebited = false;
   for (const line of prepared) {
     if (line.payment.method !== 'wallet' || line.amountCents <= 0) continue;

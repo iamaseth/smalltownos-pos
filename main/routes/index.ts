@@ -10,6 +10,7 @@ import { billRoutes } from './bills';
 import { refundRoutes } from './refunds';
 import { cashClosureRoutes } from './cash-closures';
 import { cashSessionRoutes } from './cash-sessions';
+import { cashHandoverRoutes } from './cash-handover';
 import { inventoryRoutes } from './inventory';
 import { supplyRoutes } from './supplies';
 import { vendorRoutes } from './vendors';
@@ -82,6 +83,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/refunds', refundRoutes);
   app.use('/api/cash-closures', cashClosureRoutes);
   app.use('/api/cash-sessions', cashSessionRoutes);
+  app.use('/api/cash-handover', cashHandoverRoutes);
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/supplies', supplyRoutes);
   app.use('/api/vendors', vendorRoutes);
