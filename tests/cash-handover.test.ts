@@ -139,7 +139,7 @@ async function main() {
 
   const quietClose = await request(app).post(`/api/cash-handover/sessions/${sessionId}/closing-count`).set('Authorization', A)
     .send({ count: { method: 'manual', usd_cents: 1000, khr_riel: 0 } });
-  assert(quietClose.status === 409 && /Hand over now/.test(quietClose.body.error), 'normal close blocked by unpaid ticket, points to handover');
+  assert(quietClose.status === 409 && /unpaid bill/.test(quietClose.body.error), 'normal close blocked by unpaid ticket');
 
   const otherCashier = await request(app).post(`/api/cash-handover/sessions/${sessionId}/handover-now`).set('Authorization', B)
     .send({ float_left: { method: 'manual', usd_cents: 10000, khr_riel: 400000 } });
@@ -180,12 +180,12 @@ async function main() {
     .send({ count: { method: 'manual', usd_cents: 9000, khr_riel: 400000 } });
   assert(again.status === 409, 'handover cannot be received twice');
 
-  // Phone: A counts the takings bag. USD balances, KHR is 1,000 short, combined hides nothing.
+  // Phone: A counts the takings bag. USD balances, KHR is 10,000 short (more than $1).
   const takings = await request(app).post(`/api/cash-handover/sessions/${sessionId}/takings-count`).set('Authorization', A)
-    .send({ count: { method: 'manual', usd_cents: 46300 - 9000, khr_riel: 741000 - 400000 - 1000 }, device: 'phone' });
+    .send({ count: { method: 'manual', usd_cents: 46300 - 9000, khr_riel: 741000 - 400000 - 10000 }, device: 'phone' });
   assert(takings.status === 200, `takings counted from phone (${takings.status} ${takings.body.error || ''})`);
   const rec = takings.body.reconciliation;
-  assert(rec.variance.usd_cents === 0 && rec.variance.khr_riel === -1000, 'USD balanced, KHR −1,000 recorded separately');
+  assert(rec.variance.usd_cents === 0 && rec.variance.khr_riel === -10000, 'USD balanced, KHR −10,000 recorded separately');
   assert(rec.status === 'pending_review' && takings.body.needs_explanation === true, 'variance → pending review, explanation requested');
   assert(rec.envelope.usd_cents === 37300 && rec.float_retained.usd_cents === 9000, 'envelope = takings, float = verified count');
   const closed = db.prepare(`SELECT s.handover_state, c.period_end, c.counted_cash_cents FROM cash_sessions s JOIN cash_closures c ON c.id = s.closure_id WHERE s.id = ?`).get(sessionId) as any;
@@ -195,12 +195,12 @@ async function main() {
     .send({ kind: 'manager_acknowledgement', body: 'ok' });
   assert(cashierAck.status === 403, 'cashier cannot approve their own discrepancy');
   const explain = await request(app).post(`/api/cash-handover/reconciliations/${rec.id}/notes`).set('Authorization', A)
-    .send({ kind: 'cashier_explanation', body: 'Gave 1,000៛ too much change at table 7' });
+    .send({ kind: 'cashier_explanation', body: 'Gave 10,000៛ too much change at table 7' });
   assert(explain.status === 200, 'cashier adds explanation');
   const ack = await request(app).post(`/api/cash-handover/reconciliations/${rec.id}/notes`).set('Authorization', M)
     .send({ kind: 'manager_acknowledgement', body: 'Checked with table 7, accepted' });
   assert(ack.status === 200 && ack.body.reconciliation.status === 'resolved', 'logged-in manager resolves without a second PIN');
-  assert(ack.body.reconciliation.variance.khr_riel === -1000, 'acknowledgement does not erase the variance');
+  assert(ack.body.reconciliation.variance.khr_riel === -10000, 'acknowledgement does not erase the variance');
   assert(ack.body.notes.length >= 2, 'notes are kept (append-only)');
 
   console.log('Section 4: evidence uploads');
@@ -219,7 +219,7 @@ async function main() {
   const { buildShiftReport } = require('../main/services/telegram-reports');
   const report = buildShiftReport(db, sessionId, 'close');
   assert(report.html.includes('CASH DIFFERENCE') && report.html.includes('Diff KHR'), 'Telegram closing report shows per-currency difference');
-  assert(report.html.includes('Gave 1,000') && report.html.includes('manager acknowledgement'), 'Telegram report includes cashier and manager notes');
+  assert(report.html.includes('Gave 10,000') && report.html.includes('manager acknowledgement'), 'Telegram report includes cashier and manager notes');
   assert(report.attachments.length === 1 && report.attachments[0].contentType === 'image/png', 'Telegram report attaches the envelope photo');
   assert(report.html.includes('Handover:') && report.html.includes('Dara'), 'Telegram report names the incoming cashier');
   const bad = await request(app).post('/api/cash-handover/media').set('Authorization', A).send({ kind: 'envelope', data: 'data:text/plain;base64,aGk=' });
@@ -234,6 +234,58 @@ async function main() {
   assert(quiet.body.reconciliation.envelope.usd_cents === 0, 'envelope = counted − float retained');
   const legacy = await request(app).post('/api/cash-sessions/open').set('Authorization', A).send({ opening_float_cents: 5000 });
   assert(legacy.status === 200, 'classic open endpoint still works');
+
+  console.log('Section 5b: simple close — float out, count, cash spent, result');
+  const simpleStatus = await request(app).get('/api/cash-handover/status').set('Authorization', A);
+  const s7 = simpleStatus.body.open_session;
+  assert(s7?.opening_float?.usd_cents === 5000 && s7.opening_float.khr_riel === 0, 'status gives the opening float for the "float out" default');
+  addBill([{ method: 'cash', amount: 20, cash_session_id: s7.id, cash_usd_in: 20, cash_khr_in: 0, change_usd_out: 0, change_khr_out: 0, timestamp: now() }]);
+  addBill([{ method: 'cash', amount: 10, cash_session_id: s7.id, cash_usd_in: 0, cash_khr_in: 41000, change_usd_out: 0, change_khr_out: 0, timestamp: now() }]);
+  addBill([{ method: 'custom', payment_method_id: 1, amount: 12, cash_session_id: s7.id, timestamp: now() }]);
+  const spentUrl = `/api/cash-handover/sessions/${s7.id}/cash-spent`;
+  const ice = await request(app).post(spentUrl).set('Authorization', A).send({ currency: 'USD', amount_minor: 300, what: 'Ice' });
+  assert(ice.status === 201 && ice.body.item.amount_cents === 300 && ice.body.item.reason === 'Ice', 'cash spent in USD recorded');
+  const receiptMedia = await request(app).post('/api/cash-handover/media').set('Authorization', A)
+    .send({ kind: 'purchase_receipt', data: 'data:image/png;base64,iVBORw0KGgo=', session_id: s7.id });
+  const veg = await request(app).post(spentUrl).set('Authorization', A).send({ currency: 'KHR', amount_minor: 8200, what: 'Vegetables', media_id: receiptMedia.body.media?.id });
+  assert(veg.status === 201 && veg.body.item.amount_khr_riel === 8200 && veg.body.item.media_id === receiptMedia.body.media?.id, 'cash spent in KHR recorded with receipt photo');
+  const noWhat = await request(app).post(spentUrl).set('Authorization', A).send({ currency: 'USD', amount_minor: 100, what: ' ' });
+  assert(noWhat.status === 400, 'cash spent needs "what for"');
+  const notMine = await request(app).post(spentUrl).set('Authorization', B).send({ currency: 'USD', amount_minor: 100, what: 'Gas' });
+  assert(notMine.status === 403, 'another cashier cannot add cash spent to A\'s shift');
+  const junk = await request(app).post(spentUrl).set('Authorization', A).send({ currency: 'USD', amount_minor: 999, what: 'Typo' });
+  const removed = await request(app).delete(`${spentUrl}/${junk.body.item.id}`).set('Authorization', A);
+  const listed = await request(app).get(spentUrl).set('Authorization', A);
+  assert(removed.status === 200 && listed.body.items.length === 2, 'a mistaken item can be removed before closing');
+
+  const previewUrl = `/api/cash-handover/sessions/${s7.id}/close-preview`;
+  const floatOut = { usd_cents: 5000, khr_riel: 0 };
+  const exact = await request(app).post(previewUrl).set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 1700, khr_riel: 32800 }, float_out: floatOut });
+  assert(exact.status === 200, `preview ok (${exact.status} ${exact.body.error || ''})`);
+  assert(exact.body.should_have_usd_cents === 7500 && exact.body.counted_usd_cents === 7500, 'should have = float + cash sales − cash spent; counted includes float');
+  assert(exact.body.cash_sales_usd_cents === 3000 && exact.body.cash_spent_usd_cents === 500, 'cash sales $30, cash spent $5 (riel converted)');
+  assert(exact.body.matches === true && exact.body.difference_usd_cents === 0, 'exact count matches');
+  assert(exact.body.non_cash_payments.length === 1 && exact.body.non_cash_payments[0].total_cents === 1200, 'non-cash total shown for checking against the bank app');
+  const near = await request(app).post(previewUrl).set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 1650, khr_riel: 32800 }, float_out: floatOut });
+  assert(near.body.matches === true && near.body.difference_usd_cents === -50, '50¢ short still counts as a match (±$1)');
+  const short = await request(app).post(previewUrl).set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 1500, khr_riel: 32800 }, float_out: floatOut });
+  assert(short.body.matches === false && short.body.difference_usd_cents === -200, '$2 short does not match');
+  const stillOpen = db.prepare(`SELECT status FROM cash_sessions WHERE id = ?`).get(s7.id) as { status: string };
+  assert(stillOpen.status === 'open', 'preview saves nothing, so the cashier can recount');
+
+  const simpleClose = await request(app).post(`/api/cash-handover/sessions/${s7.id}/closing-count`).set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 1650, khr_riel: 32800 }, float_out: floatOut, device: 'pos' });
+  assert(simpleClose.status === 200 && simpleClose.body.reconciliation.status === 'balanced', 'close within ±$1 is recorded as matching');
+  assert(simpleClose.body.reconciliation.actual.usd_cents === 6650 && simpleClose.body.reconciliation.float_retained.usd_cents === 5000,
+    'closing count = takings + float out; float out is kept as the float');
+  const closedS7 = db.prepare(`SELECT status FROM cash_sessions WHERE id = ?`).get(s7.id) as { status: string };
+  assert(closedS7.status === 'closed', 'Close register closes the shift');
+  const simpleReport = buildShiftReport(db, s7.id, 'close');
+  assert(simpleReport.html.includes('Vegetables') && simpleReport.html.includes('Cash matches') && !simpleReport.html.includes('Envelope photo missing'),
+    'Telegram close report lists cash spent and does not demand an envelope photo');
 
   console.log('Section 6: payment USD/KHR split validation');
   db.prepare(`UPDATE settings SET value = '4100' WHERE key = 'usd_khr_exchange_rate'`).run();

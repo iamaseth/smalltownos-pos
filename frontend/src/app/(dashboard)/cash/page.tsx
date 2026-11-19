@@ -1,10 +1,8 @@
 'use client';
 
 /**
- * BackStreet Cash — one screen for the POS touchscreen, desktop and the phone
- * mini-app: open shift, quiet close (blind count), busy "Hand over now",
- * receive drawer (incoming float count), finish a pending takings count,
- * envelope photo, supplier receipt photo and the manager review list.
+ * BackStreet Cash — open shift (count the float) and a four-step close:
+ * float out, count, cash spent, result. Handover and review views stay for older shifts.
  */
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
@@ -17,7 +15,10 @@ interface Status {
   standard_float: { usd_cents: number; khr_riel: number };
   pending_count_alert_hours: number;
   can_resolve: boolean;
-  open_session: { id: number; opened_by_name: string; opened_at: string; is_mine: boolean } | null;
+  open_session: {
+    id: number; opened_by_name: string; opened_at: string; is_mine: boolean;
+    opening_float: { usd_cents: number; khr_riel: number };
+  } | null;
   pending_counts: { id: number; opened_by: string; opened_by_name: string; cutoff_at: string }[];
   awaiting_incoming: {
     id: number; from_session_id: number; cutoff_at: string; from_cashier: string;
@@ -135,7 +136,6 @@ export default function CashPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [view, setView] = useState<View>({ name: 'home' });
   const [count, setCount] = useState<CashCountValue>(emptyCashCount());
-  const [floatRetained, setFloatRetained] = useState({ usd: '', khr: '' });
   const [explanation, setExplanation] = useState('');
   const [disputes, setDisputes] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
@@ -161,12 +161,6 @@ export default function CashPage() {
     setCount(emptyCashCount());
     setExplanation('');
     setDisputes({});
-    if (status) {
-      setFloatRetained({
-        usd: (status.standard_float.usd_cents / 100).toString(),
-        khr: status.standard_float.khr_riel.toString(),
-      });
-    }
     setView(next);
   };
 
@@ -215,10 +209,7 @@ export default function CashPage() {
         )}
         {s && (s.is_mine || status.can_resolve) && (
           <>
-            <BigButton tone="warning" onClick={() => go({ name: 'handover', sessionId: s.id })}>
-              Hand over now (busy) — leave the float, take the rest
-            </BigButton>
-            <BigButton onClick={() => go({ name: 'close', sessionId: s.id })}>Close shift — count the whole drawer</BigButton>
+            <BigButton onClick={() => go({ name: 'close', sessionId: s.id })}>Close shift</BigButton>
           </>
         )}
         {myPending.length > 0 && (
@@ -231,8 +222,6 @@ export default function CashPage() {
             ))}
           </div>
         )}
-        <BigButton onClick={() => go({ name: 'receipt' })}>Photograph a supplier receipt</BigButton>
-        {status.can_resolve && <BigButton onClick={() => go({ name: 'review' })}>Manager review</BigButton>}
       </div>
     );
   }
@@ -344,37 +333,26 @@ export default function CashPage() {
     );
   }
 
-  if (view.name === 'close' || view.name === 'takings') {
-    const isTakings = view.name === 'takings';
+  if (view.name === 'close' && status.open_session) {
+    body = (
+      <SimpleClose header={header} sessionId={view.sessionId} rate={rate} openingFloat={status.open_session.opening_float}
+        onClosed={() => { go({ name: 'home' }); void load(); }} />
+    );
+  }
+
+  if (view.name === 'takings') {
     body = (
       <div className="space-y-4">
-        {header(isTakings ? `Count takings — ${view.cashier}` : 'Close shift')}
+        {header(`Count takings — ${view.cashier}`)}
         <p className="text-sm text-muted-foreground">
           Count first. The expected amount is shown after you submit.
         </p>
-        <CashCounter value={count} onChange={setCount} rate={rate} title={isTakings ? 'Takings in the bag' : 'All cash in the drawer'} />
-        {!isTakings && (
-          <div className="grid grid-cols-2 gap-3 rounded-xl border p-4">
-            <div className="col-span-2 text-sm font-semibold">Float staying in the drawer</div>
-            <input inputMode="decimal" value={floatRetained.usd} onChange={(e) => setFloatRetained({ ...floatRetained, usd: e.target.value.replace(/[^\d.]/g, '') })}
-              className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2" aria-label="Float USD" />
-            <input inputMode="numeric" value={floatRetained.khr} onChange={(e) => setFloatRetained({ ...floatRetained, khr: e.target.value.replace(/\D/g, '') })}
-              className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2" aria-label="Float KHR" />
-          </div>
-        )}
+        <CashCounter value={count} onChange={setCount} rate={rate} title="Takings in the bag" />
         <textarea value={explanation} onChange={(e) => setExplanation(e.target.value)} rows={2} placeholder="Explanation (if the cash is short or over)"
           className="w-full rounded-xl border px-4 py-3 text-sm" />
         <BigButton tone="primary" disabled={busy || countIsEmpty} onClick={() => submit(async () => {
           try {
-            const res = isTakings
-              ? await api.post(`/cash-handover/sessions/${view.sessionId}/takings-count`, { count: cashCountPayload(count), explanation, device: 'phone' })
-              : await api.post(`/cash-handover/sessions/${view.sessionId}/closing-count`, {
-                count: cashCountPayload(count), explanation, device: 'pos',
-                float_retained: {
-                  usd_cents: Math.round((Number.parseFloat(floatRetained.usd) || 0) * 100),
-                  khr_riel: Number.parseInt(floatRetained.khr || '0', 10) || 0,
-                },
-              });
+            const res = await api.post(`/cash-handover/sessions/${view.sessionId}/takings-count`, { count: cashCountPayload(count), explanation, device: 'phone' });
             setView({ name: 'result', sessionId: view.sessionId, reconciliation: res.data.reconciliation, needsExplanation: res.data.needs_explanation });
             await load();
           } catch (error) { toast.error(errorText(error, 'Could not submit the count')); }
@@ -429,6 +407,240 @@ export default function CashPage() {
   if (view.name === 'review') body = <ReviewView header={header} />;
 
   return <div className="mx-auto w-full max-w-xl p-4 pb-24">{body}</div>;
+}
+
+interface SpentItem { id: number; reason: string | null; amount_cents: number; amount_khr_riel: number; media_id: number | null }
+
+interface ClosePreview {
+  rate_khr_per_usd: number;
+  opening_float_usd_cents: number;
+  cash_sales_usd_cents: number;
+  cash_spent_usd_cents: number;
+  should_have_usd_cents: number;
+  counted_usd_cents: number;
+  difference_usd_cents: number;
+  matches: boolean;
+  tolerance_usd_cents: number;
+  non_cash_payments: { method: string; total_cents: number }[];
+  untracked_cash_lines: number;
+}
+
+const STEPS = ['Float out', 'Count', 'Cash spent', 'Result'] as const;
+
+function StepDots({ step }: { step: number }) {
+  return (
+    <ol className="mb-4 grid grid-cols-4 gap-1 text-center text-xs">
+      {STEPS.map((label, i) => (
+        <li key={label} className={`rounded-lg px-1 py-2 ${i === step ? 'bg-emerald-600 font-semibold text-white' : i < step ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-muted-foreground'}`}>
+          {i + 1}. {label}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className={`flex justify-between py-1 ${strong ? 'text-base font-bold' : 'text-sm'}`}>
+      <span>{label}</span><span className="tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function signedUsd(cents: number): string {
+  return cents > 0 ? `+${formatUsdCents(cents)}` : formatUsdCents(cents);
+}
+
+function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
+  header: (t: string) => React.ReactNode;
+  sessionId: number;
+  rate: number;
+  openingFloat: { usd_cents: number; khr_riel: number };
+  onClosed: () => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [floatOut, setFloatOut] = useState({ usd: (openingFloat.usd_cents / 100).toString(), khr: openingFloat.khr_riel.toString() });
+  const [count, setCount] = useState<CashCountValue>(emptyCashCount());
+  const [spent, setSpent] = useState<SpentItem[]>([]);
+  const [noneSpent, setNoneSpent] = useState(false);
+  const [draft, setDraft] = useState({ amount: '', currency: 'USD', what: '', mediaId: null as number | null, photoKey: 0 });
+  const [preview, setPreview] = useState<ClosePreview | null>(null);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    api.get(`/cash-handover/sessions/${sessionId}/cash-spent`)
+      .then((res) => { if (active) setSpent(res.data.items); })
+      .catch((error) => toast.error(errorText(error, 'Could not load cash spent')));
+    return () => { active = false; };
+  }, [sessionId]);
+
+  const floatPayload = {
+    usd_cents: Math.round((Number.parseFloat(floatOut.usd) || 0) * 100),
+    khr_riel: Number.parseInt(floatOut.khr || '0', 10) || 0,
+  };
+  const countIsEmpty = cashCountTotals(count, rate).combined === 0;
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try { await fn(); } finally { setBusy(false); }
+  };
+
+  const addSpent = () => run(async () => {
+    const amount = Number.parseFloat(draft.amount) || 0;
+    try {
+      const res = await api.post(`/cash-handover/sessions/${sessionId}/cash-spent`, {
+        currency: draft.currency,
+        amount_minor: draft.currency === 'USD' ? Math.round(amount * 100) : Math.round(amount),
+        what: draft.what,
+        media_id: draft.mediaId,
+      });
+      setSpent((items) => [...items, res.data.item]);
+      setNoneSpent(false);
+      setDraft({ amount: '', currency: draft.currency, what: '', mediaId: null, photoKey: draft.photoKey + 1 });
+    } catch (error) { toast.error(errorText(error, 'Could not add cash spent')); }
+  });
+
+  const removeSpent = (id: number) => run(async () => {
+    try {
+      await api.delete(`/cash-handover/sessions/${sessionId}/cash-spent/${id}`);
+      setSpent((items) => items.filter((item) => item.id !== id));
+    } catch (error) { toast.error(errorText(error, 'Could not remove item')); }
+  });
+
+  const checkResult = () => run(async () => {
+    try {
+      const res = await api.post(`/cash-handover/sessions/${sessionId}/close-preview`, { count: cashCountPayload(count), float_out: floatPayload });
+      setPreview(res.data);
+      setStep(3);
+    } catch (error) { toast.error(errorText(error, 'Could not check the count')); }
+  });
+
+  const closeRegister = () => run(async () => {
+    try {
+      await api.post(`/cash-handover/sessions/${sessionId}/closing-count`, {
+        count: cashCountPayload(count), float_out: floatPayload, explanation: reason.trim() || undefined, device: 'pos',
+      });
+      toast.success('Register closed');
+      onClosed();
+    } catch (error) { toast.error(errorText(error, 'Could not close the register')); }
+  });
+
+  const draftValid = (Number.parseFloat(draft.amount) || 0) > 0 && draft.what.trim().length > 0;
+
+  return (
+    <div className="space-y-4">
+      {header('Close shift')}
+      <StepDots step={step} />
+
+      {step === 0 && (
+        <>
+          <p className="text-sm text-muted-foreground">Take the float out of the drawer and put it aside for tomorrow.</p>
+          <div className="grid grid-cols-2 gap-3 rounded-xl border p-4">
+            <label className="text-sm">USD
+              <input inputMode="decimal" value={floatOut.usd} onChange={(e) => setFloatOut({ ...floatOut, usd: e.target.value.replace(/[^\d.]/g, '') })}
+                className="mt-1 w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-lg" aria-label="Float out USD" />
+            </label>
+            <label className="text-sm">KHR
+              <input inputMode="numeric" value={floatOut.khr} onChange={(e) => setFloatOut({ ...floatOut, khr: e.target.value.replace(/\D/g, '') })}
+                className="mt-1 w-full rounded-lg border border-orange-200 bg-orange-50 px-3 py-3 text-lg" aria-label="Float out KHR" />
+            </label>
+          </div>
+          <BigButton tone="primary" onClick={() => setStep(1)}>Float is out — next</BigButton>
+        </>
+      )}
+
+      {step === 1 && (
+        <>
+          <p className="text-sm text-muted-foreground">Count all the money left in the drawer (without the float).</p>
+          <CashCounter value={count} onChange={setCount} rate={rate} title="Money left in the drawer" />
+          <BigButton tone="primary" disabled={countIsEmpty} onClick={() => setStep(2)}>Next — cash spent</BigButton>
+          <button type="button" className="text-sm underline" onClick={() => setStep(0)}>Back</button>
+        </>
+      )}
+
+      {step === 2 && (
+        <>
+          <p className="text-sm text-muted-foreground">Did anyone pay for something with money from the drawer today?</p>
+          {spent.length > 0 && (
+            <ul className="divide-y rounded-xl border">
+              {spent.map((item) => (
+                <li key={item.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
+                  <span>
+                    <b className="tabular-nums">{item.amount_khr_riel ? formatKhr(item.amount_khr_riel) : formatUsdCents(item.amount_cents)}</b>
+                    {' · '}{item.reason}{item.media_id ? ' · 📷' : ''}
+                  </span>
+                  <button type="button" disabled={busy} className="text-red-600 underline" onClick={() => removeSpent(item.id)}>Remove</button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="space-y-3 rounded-xl border p-4">
+            <div className="text-sm font-semibold">Add cash spent</div>
+            <div className="flex gap-2">
+              <input inputMode="decimal" placeholder="Amount" value={draft.amount}
+                onChange={(e) => setDraft({ ...draft, amount: e.target.value.replace(/[^\d.]/g, '') })}
+                className="min-w-0 flex-1 rounded-lg border px-3 py-3 text-lg" aria-label="Amount spent" />
+              <select value={draft.currency} onChange={(e) => setDraft({ ...draft, currency: e.target.value })} className="shrink-0 rounded-lg border px-3 text-lg" aria-label="Currency">
+                <option value="USD">USD</option><option value="KHR">KHR</option>
+              </select>
+            </div>
+            <input placeholder="What was it for? (ice, gas, vegetables…)" value={draft.what} maxLength={120}
+              onChange={(e) => setDraft({ ...draft, what: e.target.value })} className="w-full rounded-lg border px-3 py-3" aria-label="What for" />
+            <PhotoCapture key={draft.photoKey} kind="purchase_receipt" sessionId={sessionId} label="Receipt photo (optional)"
+              onUploaded={(mediaId) => setDraft((d) => ({ ...d, mediaId }))} />
+            <BigButton disabled={busy || !draftValid} onClick={addSpent}>+ Add</BigButton>
+          </div>
+          {spent.length === 0 && (
+            <label className="flex items-center gap-3 rounded-xl border p-4 text-base">
+              <input type="checkbox" className="size-6" checked={noneSpent} onChange={(e) => setNoneSpent(e.target.checked)} />
+              No cash spent today
+            </label>
+          )}
+          <BigButton tone="primary" disabled={busy || (spent.length === 0 && !noneSpent)} onClick={checkResult}>See result</BigButton>
+          <button type="button" className="text-sm underline" onClick={() => setStep(1)}>Back</button>
+        </>
+      )}
+
+      {step === 3 && preview && (
+        <>
+          <div className={`rounded-xl border p-4 ${preview.matches ? 'border-emerald-300 bg-emerald-50' : 'border-red-300 bg-red-50'}`}>
+            <div className="mb-2 text-xl font-bold">
+              {preview.matches ? 'Matches ✓' : preview.difference_usd_cents < 0 ? `Short ${formatUsdCents(-preview.difference_usd_cents)}` : `Over ${formatUsdCents(preview.difference_usd_cents)}`}
+            </div>
+            <Row label="Cash sales" value={formatUsdCents(preview.cash_sales_usd_cents)} />
+            <Row label="− Cash spent" value={formatUsdCents(preview.cash_spent_usd_cents)} />
+            <Row label="+ Float" value={formatUsdCents(preview.opening_float_usd_cents)} />
+            <Row label="Should have" value={formatUsdCents(preview.should_have_usd_cents)} strong />
+            <Row label="Counted (incl. float)" value={formatUsdCents(preview.counted_usd_cents)} strong />
+            <Row label="Difference" value={signedUsd(preview.difference_usd_cents)} strong />
+            <p className="mt-2 text-xs text-muted-foreground">
+              Riel converted at {preview.rate_khr_per_usd.toLocaleString()}៛ = $1. Within ±{formatUsdCents(preview.tolerance_usd_cents)} counts as a match.
+            </p>
+            {preview.untracked_cash_lines > 0 && (
+              <p className="mt-1 text-xs text-muted-foreground">{preview.untracked_cash_lines} older cash payment(s) had no USD/KHR split and were counted as USD.</p>
+            )}
+          </div>
+          {preview.non_cash_payments.length > 0 && (
+            <div className="rounded-xl border p-4">
+              <div className="mb-1 text-sm font-semibold">Check these against the bank app / card machine</div>
+              {preview.non_cash_payments.map((p) => <Row key={p.method} label={p.method} value={formatUsdCents(p.total_cents)} />)}
+            </div>
+          )}
+          {!preview.matches && (
+            <>
+              <BigButton tone="warning" onClick={() => { setStep(1); setPreview(null); }}>Recount</BigButton>
+              <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500}
+                placeholder="Reason for the difference (optional)" className="w-full rounded-xl border px-4 py-3 text-sm" />
+            </>
+          )}
+          <BigButton tone="primary" disabled={busy} onClick={closeRegister}>Close register</BigButton>
+          <button type="button" className="text-sm underline" onClick={() => setStep(2)}>Back to cash spent</button>
+        </>
+      )}
+    </div>
+  );
 }
 
 function ReceiptView({ header, onDone }: { header: (t: string) => React.ReactNode; onDone: () => void }) {

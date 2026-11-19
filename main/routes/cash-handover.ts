@@ -18,12 +18,12 @@ import { app } from 'electron';
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { getDatabase, getSettingValue, now, withTxn } from '../db';
+import { getDatabase, getSettingValue, localDateInTimezone, now, tenantBusinessDayStartTime, withTxn } from '../db';
 import { requirePermission, hasPermission } from '../services/authorization';
 import { notifyTelegram } from '../services/telegram';
 import { getOpenSession, type CashSessionRow } from '../services/shift-session-gate';
 import { closeSessionTxn, openSessionTxn } from './cash-sessions';
-import { listCashDrawerMovementsForSession, sessionExpectedCash } from './cash-closures';
+import { listCashDrawerMovementsForSession, sessionExpectedCash, tenantTimezone } from './cash-closures';
 import {
   normalizeCashCount, combinedUsdCents, CashCountError, type CashCountTotals,
 } from '../../shared/cash-counter';
@@ -67,6 +67,8 @@ interface HandoverRow {
 }
 
 const router = Router();
+
+export const MATCH_TOLERANCE_USD_CENTS = 100;
 
 /* ── small helpers ────────────────────────────────────────────────────── */
 
@@ -330,8 +332,8 @@ function completeReconciliation(
   const varianceKhr = actual.khr_riel - rec.expected_khr_riel;
   const varianceCombined = combinedUsdCents(actual.usd_cents, actual.khr_riel, rec.rate_khr_per_usd)
     - rec.expected_combined_usd_cents;
-  // Currencies are reconciled separately: a USD surplus never hides a KHR shortage.
-  const balanced = varianceUsd === 0 && varianceKhr === 0;
+  // Change is given in both currencies, so the match is judged on the combined USD total.
+  const balanced = Math.abs(varianceCombined) <= MATCH_TOLERANCE_USD_CENTS;
   const status = balanced ? 'balanced' : 'pending_review';
   const actualCombined = combinedUsdCents(actual.usd_cents, actual.khr_riel, rec.rate_khr_per_usd);
   const closure = closeSessionTxn(db, session, actualCombined, actorId,
@@ -427,6 +429,10 @@ router.get('/status', requirePermission('cash.shifts.view'), (req: AuthedRequest
       open_session: open ? {
         id: open.id, opened_by: open.opened_by, opened_by_name: open.opened_by_name, opened_at: open.opened_at,
         is_mine: open.opened_by === me.id,
+        opening_float: (() => {
+          const c = loadCount(db, (open as SessionRow).opening_count_id);
+          return c ? { usd_cents: c.usd_cents, khr_riel: c.khr_riel } : { usd_cents: Number(open.opening_float_cents || 0), khr_riel: 0 };
+        })(),
       } : null,
       pending_counts: pendingCounts,
       awaiting_incoming: awaitingWithTickets,
@@ -462,7 +468,15 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
     const me = actor(req);
     const sessionId = parseId(req.params.id, 'session id');
     const totals = normalizeCashCount((req.body || {}).count, exchangeRate());
-    const floatRetained = parseAmountPair((req.body || {}).float_retained, 'float_retained');
+    const floatOut = (req.body || {}).float_out == null ? null : parseAmountPair((req.body || {}).float_out, 'float_out');
+    if (floatOut) {
+      totals.usd_cents += floatOut.usd_cents;
+      totals.khr_riel += floatOut.khr_riel;
+      totals.combined_usd_cents = combinedUsdCents(totals.usd_cents, totals.khr_riel, totals.rate_khr_per_usd);
+      totals.method = 'manual';
+      totals.denominations = null;
+    }
+    const floatRetained = floatOut ?? parseAmountPair((req.body || {}).float_retained, 'float_retained');
     const explanation = optionalText((req.body || {}).explanation);
     const result = withTxn(() => {
       const session = loadSession(db, sessionId);
@@ -478,7 +492,7 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
           AND COALESCE(b.balance, b.total, 0) > 0 AND b.created_at >= ?
       `).get(session.opened_at) as { c: number };
       if (Number(unpaid.c) > 0) {
-        throw httpError(`Cannot close: ${unpaid.c} unpaid bill(s). Use "Hand over now" to pass open tickets to the next cashier.`, 409);
+        throw httpError(`Cannot close: ${unpaid.c} unpaid bill(s). Take payment or cancel them first.`, 409);
       }
       const cutoff = now();
       insertCount(db, session.id, 'closing', totals, me.id, deviceOf(req));
@@ -832,6 +846,151 @@ router.get('/review', requirePermission('cash.reconciliation.resolve'), (_req: A
 });
 
 /** Open tickets the outgoing cashier hands over (same list the handover snapshots). */
+/* ── simple close: cash spent, preview, then the existing closing count ── */
+
+const SPENT_RECEIPT_TAG = 'drawer-movement:';
+
+interface SpentRow { id: number; reason: string | null; amount_cents: number; amount_khr_riel: number; created_at: string; media_id: number | null }
+
+function cashSpentFor(db: Db, session: SessionRow, end: string): SpentRow[] {
+  return db.prepare(`
+    SELECT m.id, m.reason, m.amount_cents, m.amount_khr_riel, m.created_at,
+      (SELECT r.media_id FROM purchase_receipts r WHERE r.session_id = ? AND r.notes = '${SPENT_RECEIPT_TAG}' || m.id LIMIT 1) AS media_id
+    FROM cash_drawer_movements m
+    WHERE m.movement_type = 'pay_out' AND m.voided_at IS NULL
+      AND (m.cash_session_id = ? OR (m.cash_session_id IS NULL AND m.created_at >= ? AND m.created_at < ?))
+    ORDER BY m.id
+  `).all(session.id, session.id, session.opened_at, end) as SpentRow[];
+}
+
+function nonCashPaymentsFor(db: Db, session: SessionRow, end: string): { method: string; total_cents: number }[] {
+  const rows = db.prepare(`
+    WITH lines AS (
+      SELECT je.value AS line, COALESCE(datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')), datetime(NULLIF(b.paid_at, '')), datetime(b.created_at)) AS t
+      FROM bills b JOIN json_each(CASE WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details ELSE '[]' END) je
+      WHERE json_type(je.value) = 'object'
+    )
+    SELECT COALESCE(pm.name, NULLIF(json_extract(l.line, '$.method'), ''), 'other') AS method,
+      SUM(CAST(json_extract(l.line, '$.amount') AS REAL)) AS total
+    FROM lines l
+    LEFT JOIN payment_methods pm ON pm.id = CAST(json_extract(l.line, '$.payment_method_id') AS INTEGER)
+    WHERE (CAST(json_extract(l.line, '$.cash_session_id') AS INTEGER) = ?
+        OR (json_extract(l.line, '$.cash_session_id') IS NULL AND l.t >= datetime(?) AND l.t < datetime(?)))
+      AND lower(COALESCE(pm.name, json_extract(l.line, '$.method'), '')) != 'cash'
+    GROUP BY 1 ORDER BY 2 DESC
+  `).all(session.id, session.opened_at, end) as { method: string; total: number }[];
+  return rows.map((r) => ({ method: r.method, total_cents: Math.round(Number(r.total || 0) * 100) }));
+}
+
+function ownOpenSession(db: Db, sessionId: number, me: { id: string; role: string }): SessionRow {
+  const session = loadSession(db, sessionId);
+  if (session.status !== 'open') throw httpError('Shift is already closed', 409);
+  if (me.role === 'cashier' && session.opened_by !== me.id) throw httpError('Cashiers can only close their own shift', 403);
+  return session;
+}
+
+router.get('/sessions/:id/cash-spent', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), actor(req));
+    res.json({ items: cashSpentFor(db, session, now()) });
+  } catch (error) { sendError(res, error, 'Failed to load cash spent'); }
+});
+
+router.post('/sessions/:id/cash-spent', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const me = actor(req);
+    const body = req.body || {};
+    const currency = body.currency === 'KHR' ? 'KHR' : body.currency === 'USD' ? 'USD' : null;
+    if (!currency) throw httpError("currency must be 'USD' or 'KHR'", 400);
+    const amount = body.amount_minor;
+    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount <= 0) throw httpError('amount_minor must be whole cents/riel above 0', 400);
+    const what = optionalText(body.what, 120);
+    if (!what) throw httpError('Say what the money was spent on', 400);
+    const mediaId = body.media_id == null ? null : parseId(body.media_id, 'media id');
+    const item = withTxn(() => {
+      const session = ownOpenSession(db, parseId(req.params.id, 'session id'), me);
+      if (mediaId != null) {
+        const media = db.prepare(`SELECT kind FROM media_uploads WHERE id = ?`).get(mediaId) as { kind: string } | undefined;
+        if (!media || media.kind !== 'purchase_receipt') throw httpError('Receipt photo not found', 400);
+      }
+      const businessDate = localDateInTimezone(new Date(), tenantTimezone(), tenantBusinessDayStartTime(db));
+      if (db.prepare(`SELECT 1 FROM cash_closures WHERE business_date = ? AND scope = 'day'`).get(businessDate)) throw httpError('This day is already closed', 409);
+      const at = now();
+      const movementId = Number(db.prepare(`
+        INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, amount_khr_riel, reason, created_by, created_at, cash_session_id)
+        VALUES (?, 'pay_out', ?, ?, ?, ?, ?, ?)
+      `).run(businessDate, currency === 'USD' ? amount : 0, currency === 'KHR' ? amount : 0, what, me.id, at, session.id).lastInsertRowid);
+      if (mediaId != null) {
+        db.prepare(`
+          INSERT INTO purchase_receipts (media_id, vendor_id, vendor_name, purchase_date, total_minor, currency, notes, session_id, created_by, created_at)
+          VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(mediaId, what, businessDate, amount, currency, `${SPENT_RECEIPT_TAG}${movementId}`, session.id, me.id, at);
+      }
+      return cashSpentFor(db, session, now()).find((row) => row.id === movementId);
+    });
+    res.status(201).json({ item });
+  } catch (error) { sendError(res, error, 'Failed to record cash spent'); }
+});
+
+router.delete('/sessions/:id/cash-spent/:movementId', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const me = actor(req);
+    const movementId = parseId(req.params.movementId, 'movement id');
+    withTxn(() => {
+      const session = ownOpenSession(db, parseId(req.params.id, 'session id'), me);
+      const result = db.prepare(`
+        UPDATE cash_drawer_movements SET voided_at = ?, voided_by = ?, void_reason = 'Removed before closing'
+        WHERE id = ? AND cash_session_id = ? AND movement_type = 'pay_out' AND voided_at IS NULL
+      `).run(now(), me.id, movementId, session.id);
+      if (result.changes === 0) throw httpError('Cash spent item not found', 404);
+      db.prepare(`DELETE FROM purchase_receipts WHERE session_id = ? AND notes = ?`).run(session.id, `${SPENT_RECEIPT_TAG}${movementId}`);
+    });
+    res.json({ ok: true });
+  } catch (error) { sendError(res, error, 'Failed to remove cash spent'); }
+});
+
+/**
+ * Shows "should have" against "counted" before anything is saved, so the cashier can recount.
+ * count is what is left after the float is taken out; float_out is the float put aside.
+ */
+router.post('/sessions/:id/close-preview', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const me = actor(req);
+    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), me);
+    const rate = exchangeRate();
+    const takings = normalizeCashCount((req.body || {}).count, rate);
+    const floatOut = parseAmountPair((req.body || {}).float_out, 'float_out');
+    const end = now();
+    const expected = expectedByCurrency(db, session, end);
+    const opening = loadCount(db, session.opening_count_id);
+    const openingCombined = combinedUsdCents(opening ? opening.usd_cents : Number(session.opening_float_cents || 0), opening ? opening.khr_riel : Number(session.opening_khr_riel || 0), rate);
+    const spent = cashSpentFor(db, session, end);
+    const spentCombined = spent.reduce((sum, row) => sum + combinedUsdCents(row.amount_cents, row.amount_khr_riel, rate), 0);
+    const countedUsd = takings.usd_cents + floatOut.usd_cents;
+    const countedKhr = takings.khr_riel + floatOut.khr_riel;
+    const countedCombined = combinedUsdCents(countedUsd, countedKhr, rate);
+    const difference = countedCombined - expected.expected_combined_usd_cents;
+    res.json({
+      rate_khr_per_usd: rate,
+      opening_float_usd_cents: openingCombined,
+      cash_sales_usd_cents: expected.expected_combined_usd_cents - openingCombined + spentCombined,
+      cash_spent_usd_cents: spentCombined,
+      should_have_usd_cents: expected.expected_combined_usd_cents,
+      counted_usd_cents: countedCombined,
+      counted: { usd_cents: countedUsd, khr_riel: countedKhr },
+      difference_usd_cents: difference,
+      matches: Math.abs(difference) <= MATCH_TOLERANCE_USD_CENTS,
+      tolerance_usd_cents: MATCH_TOLERANCE_USD_CENTS,
+      non_cash_payments: nonCashPaymentsFor(db, session, end),
+      untracked_cash_lines: expected.untracked_cash_lines,
+    });
+  } catch (error) { sendError(res, error, 'Failed to check the count'); }
+});
+
 router.get('/open-tickets', requirePermission('cash.shifts.view'), (_req: AuthedRequest, res: Response) => {
   try {
     res.json({ tickets: openTickets(getDatabase()) });

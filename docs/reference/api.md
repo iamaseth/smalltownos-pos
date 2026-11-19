@@ -373,12 +373,18 @@ Router: `main/routes/cash-handover.ts`. Full path: `/api/cash-handover`. Counts 
 separately (`count`: `{ method: 'denominations', denominations }` or
 `{ method: 'manual', usd_cents, khr_riel }`); the server recomputes all totals. Each shift still
 writes the `cash_sessions` and session-scope `cash_closures` rows that day close and reports read.
+A count matches when the combined USD difference (riel converted at the configured rate) is within
+±$1; otherwise the reconciliation waits for manager review.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/status` | `cash.shifts.view` | none | Open shift, shifts waiting for a takings count, and handovers waiting to be received with their open tickets. Never includes expected cash. |
+| `GET` | `/status` | `cash.shifts.view` | none | Open shift with its opening float, shifts waiting for a takings count, and handovers waiting to be received with their open tickets. Never includes expected cash. |
 | `POST` | `/open` | `cash.shifts.open` | body: `count`, `device` | Opens a shift from a counted float. |
-| `POST` | `/sessions/:id/closing-count` | `cash.shifts.close` | path: `id`; body: `count`, `float_retained`, `device` | Blind closing count. 409 when unpaid tickets remain; use `handover-now`. |
+| `GET` | `/sessions/:id/cash-spent` | `cash.shifts.close` | path: `id` | Cash paid out of the drawer during the open shift, with any receipt photo id. |
+| `POST` | `/sessions/:id/cash-spent` | `cash.shifts.close` | path: `id`; body: `currency`, `amount_minor`, `what`, optional `media_id` | Records a `pay_out` drawer movement on the shift (subtracted from expected cash). A `purchase_receipt` photo is linked through `purchase_receipts`. Cashiers can only use their own shift. |
+| `DELETE` | `/sessions/:id/cash-spent/:movementId` | `cash.shifts.close` | path: `id`, `movementId` | Voids a cash spent item before closing and removes its receipt link. |
+| `POST` | `/sessions/:id/close-preview` | `cash.shifts.close` | path: `id`; body: `count` (money left after the float), `float_out` | Returns cash sales, cash spent, should have, counted, difference, `matches` and non-cash payment totals in USD. Saves nothing, so the cashier can recount. |
+| `POST` | `/sessions/:id/closing-count` | `cash.shifts.close` | path: `id`; body: `count`, `float_out` or `float_retained`, `explanation`, `device` | Closes the shift. With `float_out`, the closing count is `count` plus `float_out` and `float_out` stays as the float. 409 when unpaid bills remain. |
 | `POST` | `/sessions/:id/handover-now` | `cash.shifts.close` | path: `id`; body: `float_left`, `device` | Freezes the shift at a cutoff, records the declared float and snapshots open tickets. |
 | `POST` | `/handovers/:id/receive` | `cash.shifts.open` | path: `id`; body: `count`, `device`, `disputed_orders` | The incoming cashier's float count opens their shift; a difference from the declared float is flagged. `disputed_orders` is `[{ order_id, reason }]`; other tickets are accepted. 409 if already received. |
 | `POST` | `/sessions/:id/takings-count` | `cash.shifts.close` | path: `id`; body: `count`, `device` | Counts the takings after a handover and writes the closure for the cutoff window. |

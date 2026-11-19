@@ -271,7 +271,10 @@ function buildCashReconciliationSection(db: Db, sessionId: number):
     WHERE e.session_id = ? ORDER BY e.id DESC LIMIT 1`).get(sessionId) as { usd_cents: number; khr_riel: number; file_path: string | null; mime: string | null } | undefined;
   const varianceUsd = Number(rec.variance_usd_cents || 0);
   const varianceKhr = Number(rec.variance_khr_riel || 0);
-  const alert = varianceUsd !== 0 || varianceKhr !== 0;
+  const alert = rec.status !== 'balanced';
+  const spent = db.prepare(`
+    SELECT reason, amount_cents, amount_khr_riel FROM cash_drawer_movements
+    WHERE cash_session_id = ? AND movement_type = 'pay_out' AND voided_at IS NULL ORDER BY id`).all(sessionId) as { reason: string | null; amount_cents: number; amount_khr_riel: number }[];
   const recon = [
     `Opening float ${opening ? `${usd(opening.usd_cents)} + ${khr(opening.khr_riel)}` : '-'}`,
     `Expected USD  ${usd(Number(rec.expected_usd_cents))}`,
@@ -284,9 +287,10 @@ function buildCashReconciliationSection(db: Db, sessionId: number):
     `Float left    ${usd(Number(rec.float_retained_usd_cents))} + ${khr(Number(rec.float_retained_khr_riel))}`,
     `Envelope      ${usd(Number(rec.envelope_usd_cents))} + ${khr(Number(rec.envelope_khr_riel))}`,
   ];
+  for (const item of spent) recon.push(`Spent         ${item.amount_khr_riel ? khr(item.amount_khr_riel) : usd(item.amount_cents)}  ${item.reason ?? ''}`);
   if (Number(rec.untracked_cash_lines || 0) > 0) recon.push(`Note: ${rec.untracked_cash_lines} cash payment(s) without USD/KHR split counted as USD`);
   const blocks = [
-    alert ? '<b>⚠️ CASH DIFFERENCE</b>' : '<b>Cash balanced ✓</b>',
+    alert ? '<b>⚠️ CASH DIFFERENCE</b>' : '<b>Cash matches ✓</b>',
     pre(recon),
     `<b>Status:</b> ${escapeHtml(String(rec.status).replace('_', ' '))}`,
   ];
@@ -299,10 +303,8 @@ function buildCashReconciliationSection(db: Db, sessionId: number):
   const attachments: TelegramAttachment[] = [];
   if (envelope?.file_path && fs.existsSync(envelope.file_path)) {
     attachments.push({ filename: `envelope-shift-${sessionId}.${(envelope.mime || 'image/jpeg').split('/')[1]}`, contentType: envelope.mime || 'image/jpeg', data: fs.readFileSync(envelope.file_path) });
-  } else {
-    blocks.push('<b>⚠️ Envelope photo missing</b>');
   }
-  return { blocks, attachments, alert: alert || !attachments.length };
+  return { blocks, attachments, alert };
 }
 
 export function buildLowStockAlert(db: Db, supplyNames: string[]): TelegramReport {
