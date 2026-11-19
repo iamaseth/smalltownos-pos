@@ -24,19 +24,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Flo",
-  description: "Smart Point of Sale for restaurants",
+  title: "BackStreet Riverside POS",
+  description: "BackStreet Riverside restaurant point of sale",
+  applicationName: "BackStreet Riverside POS",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Flo",
+    title: "BackStreet POS",
   },
   icons: {
-    icon: [
-      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
-      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
-    ],
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    shortcut: "/favicon.svg",
     apple: "/apple-touch-icon.png",
   },
 };
