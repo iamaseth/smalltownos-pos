@@ -872,6 +872,26 @@ async function runTests() {
     assert(matchingOverwriteNoPin.status === 403, `matching-schema overwrite import without a PIN is still rejected (got ${matchingOverwriteNoPin.status})`);
   }
 
+  console.log('\nTest 3d: exported generated columns do not break a restore');
+  {
+    const currentVersion = getCurrentSchemaVersion();
+    db.prepare(`INSERT INTO customers (id, name, phone, created_at, updated_at) VALUES ('restore-cust', 'Restore Test', '+855 12-345 678', ?, ?)`).run(now(), now());
+    const exported = await request(app).get('/api/db/export').set('Authorization', `Bearer ${ownerToken}`);
+    assert(exported.status === 200, `export succeeds (got ${exported.status})`);
+    const exportedCustomer = (exported.body.data.customers || []).find((row: { id: string }) => row.id === 'restore-cust');
+    assert(exportedCustomer && 'phone_digits' in exportedCustomer, 'export includes the generated phone_digits column');
+    db.prepare(`DELETE FROM customers WHERE id = 'restore-cust'`).run();
+    const restored = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+      overwrite: true,
+      master_pin: '1234',
+      data: { ...exported.body, schema_version: String(currentVersion) },
+    });
+    assert(restored.status === 200, `full restore with customers succeeds (got ${restored.status}, ${JSON.stringify(restored.body)})`);
+    const row = db.prepare(`SELECT phone, phone_digits FROM customers WHERE id = 'restore-cust'`).get() as { phone: string; phone_digits: string } | undefined;
+    assert(Boolean(row?.phone), `restored customer keeps its phone number (got ${row?.phone})`);
+    assert(row?.phone_digits === String(row?.phone).replace(/\D/g, ''), `phone_digits is recomputed by SQLite after the restore (got ${row?.phone_digits})`);
+  }
+
   // ── Test 4: POST /db-tools/initialize ────────────────────────────────────
   console.log('\nTest 4: POST /db-tools/initialize');
   {

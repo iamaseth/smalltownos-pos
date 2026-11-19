@@ -293,7 +293,8 @@ router.post('/import', requirePermission('database.manage'),
 
         const currentCols = getTableColumns(db, tableName);
         // Validate and filter column names to prevent SQL injection
-        const importCols = Object.keys(rows[0]).filter(isSafeIdentifier);
+        const generatedCols = getGeneratedColumns(db, tableName);
+        const importCols = Object.keys(rows[0]).filter((col) => isSafeIdentifier(col) && !generatedCols.has(col));
         // A normal export intentionally omits password/pin hashes. It must not
         // attempt to recreate users with a NULL required password.
         if (tableName === 'users' && !importCols.includes('password')) continue;
@@ -539,6 +540,17 @@ function getTableColumns(db: Database.Database, tableName: string): string[] {
     return columns.map(col => col.name);
   } catch {
     return [];
+  }
+}
+
+// Generated columns are computed by SQLite and reject explicit INSERT values.
+function getGeneratedColumns(db: Database.Database, tableName: string): Set<string> {
+  if (!isSafeIdentifier(tableName)) return new Set();
+  try {
+    const columns = db.prepare(`PRAGMA table_xinfo(${tableName})`).all() as { name: string; hidden: number }[];
+    return new Set(columns.filter((col) => col.hidden === 2 || col.hidden === 3).map((col) => col.name));
+  } catch {
+    return new Set();
   }
 }
 

@@ -60,7 +60,7 @@ const BUILT_IN_PAYMENT_KEYS = {
 
 const ABA_SETUP_TENDER = -1;
 
-export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUpdate }: Props) {
+export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Props) {
   const remaining = Number(bill.balance);
   const cartCustomerId = useCartStore((s) => s.customerId);
   const cartCustomer = useCartStore((s) => s.customer);
@@ -272,54 +272,6 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       ? { ...payment, amount: restMinor > 0 ? toDisplayUnit(restMinor / minorFactor).toFixed(decimals) : '' }
       : payment));
   };
-
-  const activeAmountValue = amountTarget?.kind === 'payment'
-    ? payments[amountTarget.index]?.amount || ''
-    : amountTarget?.kind === 'wallet'
-      ? walletAmount
-      : amountTarget?.kind === 'discount'
-        ? discountValue
-        : '';
-
-  const updateActiveAmount = (value: string) => {
-    if (!amountTarget) return;
-    if (amountTarget.kind === 'payment') {
-      updatePaymentAmount(amountTarget.index, value);
-      return;
-    }
-    if (amountTarget.kind === 'wallet') {
-      const maxWalletCurrencyStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
-      const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
-      const clamped = parseFloat(value) > maxDisplay ? String(maxDisplay) : value;
-      setWalletAmount(clamped);
-      setPaymentsTouched(true);
-      return;
-    }
-    setDiscountValue(value);
-  };
-
-  const activeAmountMax = amountTarget?.kind === 'discount'
-    ? discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))
-    : amountTarget?.kind === 'wallet'
-      ? toDisplayUnit(Math.min(Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE), remaining))
-      : undefined;
-
-  const activeAmountQuickValues = (() => {
-    if (amountTarget?.kind === 'payment') {
-      const allocatedElsewhere = payments.reduce((sum, payment, index) => (
-        index === amountTarget.index ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0)
-      ), walletAmt);
-      const dueDisplay = toDisplayUnit(Math.max(0, remaining - allocatedElsewhere));
-      return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
-    }
-    if (amountTarget?.kind === 'wallet') {
-      const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
-      const maxWalletStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
-      const dueDisplay = toDisplayUnit(Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere)));
-      return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
-    }
-    return [];
-  })();
 
   const hasCash = khrAmount > 0 || payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
 

@@ -740,6 +740,21 @@ console.log('\n▶ KOT document builder (#443)');
   ok('single-language policy reflected in resolved languages');
 }
 
+console.log('\n▶ Online order banner');
+{
+  const withOrder = (externalOrderId: string, onlinePlatform = '') => {
+    const data = makePrintData();
+    return buildBillDocument({ ...data, order: { ...data.order, externalOrderId, onlinePlatform } }, makeContext());
+  };
+  const messages = (doc: ReturnType<typeof buildBillDocument>) => blockOf(doc, 'message') as { onlineOrderBanner: unknown };
+  assert.notEqual(messages(withOrder('GRAB-123')).onlineOrderBanner, null);
+  ok('a real external order id still prints the online order banner');
+  assert.equal(messages(withOrder('iB4:66213')).onlineOrderBanner, null);
+  ok('sales imported from iB4 do not print the online order banner');
+  assert.notEqual(messages(withOrder('iB4:66213', 'Grab')).onlineOrderBanner, null);
+  ok('an online platform still prints the banner');
+}
+
 // ---------------------------------------------------------------------------
 // 6. Purity: no IO imports in kernel document modules
 // ---------------------------------------------------------------------------

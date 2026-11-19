@@ -743,7 +743,9 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       })),
   });
 
-  const hasOnlineOrderInfo = order.onlinePlatform.length > 0 || order.externalOrderId.length > 0;
+  // Sales history imported from the previous iB4 POS keeps its iB4 reference but is not an online order.
+  const isImportedHistory = /^iB4:/i.test(order.externalOrderId);
+  const hasOnlineOrderInfo = order.onlinePlatform.length > 0 || (order.externalOrderId.length > 0 && !isImportedHistory);
   const messages: MessageBlock = Object.freeze({
     kind: 'message',
     direction: base,

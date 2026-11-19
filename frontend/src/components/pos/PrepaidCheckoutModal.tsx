@@ -78,7 +78,7 @@ interface Payment {
 
 type AmountTarget = { kind: 'payment'; index: number } | { kind: 'khr' } | { kind: 'wallet' } | { kind: 'discount' } | null;
 
-export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: Props) {
+export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const cart = useCartStore();
   const customer = cart.customer;
   const t = useTranslations('pos');
@@ -246,7 +246,6 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const khrAmount = Number(khrTendered) || 0;
   const khrUsd = khrAmount / khrRate;
   const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt) + toMinorUnits(khrUsd);
-  const totalPayment = totalPaymentMinor / minorFactor;
   const remainingMinor = toMinorUnits(remaining);
 
   const updatePaymentAmount = (idx: number, value: string) => {

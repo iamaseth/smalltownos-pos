@@ -317,12 +317,6 @@ export default function ProductsPage() {
     setShowForm(false);
   };
 
-  const openCreate = () => {
-    resetForm();
-    setForm((current) => ({ ...current, tax_category_id: defaultTaxCategoryId }));
-    setShowForm(true);
-  };
-
   const openEdit = (product: Product) => {
     setEditingProduct(product);
     setForm({

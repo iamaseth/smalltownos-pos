@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import toast from 'react-hot-toast';
-import { Plus, Search, UtensilsCrossed, X, Edit, Trash2, Check, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Sparkles, Printer, Download } from 'lucide-react';
+import { Plus, Search, UtensilsCrossed, X, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, PackageMinus, ClipboardList, Scale, Truck, Upload, Download } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { tenantCan } from '@/lib/permissions';
 import { parseCsv, downloadCsv } from '@/lib/csv-table';
-import MenuItemEditor, { SUPPLY_UNITS, type SupplyUnit, type Recipe, type RecipeItem, type MenuProduct as Product, type MenuCategory as Category } from '@/components/products/MenuItemEditor';
+import MenuItemEditor, { SUPPLY_UNITS, type SupplyUnit, type Recipe, type MenuProduct as Product, type MenuCategory as Category } from '@/components/products/MenuItemEditor';
 
 interface Supply {
   id: string;
