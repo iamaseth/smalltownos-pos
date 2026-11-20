@@ -1636,6 +1636,10 @@ export async function resetDatabaseForCurrencyChange(
     return resetDatabaseWithBackupUnlocked(maintenanceSignal, (freshDb) => {
       freshDb.transaction(() => {
         freshDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+        // Fresh migrations install the default menu taxonomy. Currency reset
+        // restores the merchant's saved menu, so remove those fresh defaults
+        // first instead of duplicating them alongside the saved categories.
+        freshDb.prepare('DELETE FROM categories').run();
         restoreCurrencyResetMenu(freshDb, snapshot);
         const writeSetting = freshDb.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
         writeSetting.run('country', regional.country, now());

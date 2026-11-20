@@ -62,6 +62,7 @@ async function main() {
   db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, payment_status, created_at, updated_at)
     VALUES ('INV-1', 1, 250, 250, 250, 'paid', ?, ?)`).run(stamp, stamp);
 
+  const categoriesBeforeReset = (db.prepare('SELECT COUNT(*) AS count FROM categories').get() as { count: number }).count;
   const impact = getCurrencyResetImpact(db);
   assert.equal(impact.currentCurrency, 'INR');
   assert.equal(impact.invoices, 1);
@@ -77,7 +78,7 @@ async function main() {
   assert.equal(count('orders'), 0, 'orders are erased');
   assert.equal(count('bills'), 0, 'invoices are erased');
   assert.equal(count('customers'), 0, 'customers are erased');
-  assert.equal(count('categories'), 1, 'categories are preserved');
+  assert.equal(count('categories'), categoriesBeforeReset, 'all categories are preserved');
   assert.equal(count('products'), 2, 'products are preserved');
   assert.equal(count('addon_groups'), 1, 'add-on groups are preserved');
   assert.equal(count('addons'), 1, 'add-ons are preserved');

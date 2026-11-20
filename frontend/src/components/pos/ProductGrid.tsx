@@ -299,7 +299,7 @@ export default function ProductGrid({
             placeholder="Search products…"
             className="w-full ps-10 pe-10 py-2 bg-[#131d31] border border-[#1e293b] rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
           />
-          {search && <button type="button" aria-label="Clear product search" onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-300 hover:text-white">Clear</button>}
+          {search && <button type="button" aria-label="Clear product search" onClick={() => setSearch('')} className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-300 hover:text-white">Clear</button>}
         </div>
         <button type="button" aria-label={keyboardOpen ? 'Hide on-screen keyboard' : 'Show on-screen keyboard'} aria-pressed={keyboardOpen}
           onClick={() => setKeyboardOpen(v => !v)}
@@ -322,7 +322,7 @@ export default function ProductGrid({
           <button type="button" aria-pressed={favoritesOnly}
             onClick={() => { setFavoritesOnly(!favoritesOnly); setSelectedCategory(null); setSelectedSubcategory(null); setSearch(''); setArranging(false); }}
             className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white ${favoritesOnly ? 'ring-2 ring-white' : ''}`}
-            style={{ backgroundColor: '#CA8A04' }}><Star size={16} className="inline mr-1" />FAV</button>
+            style={{ backgroundColor: '#CA8A04' }}><Star size={16} className="inline me-1" />FAV</button>
           {visibleCategories.map(cat => {
             const selected = !favoritesOnly && selectedCategory === cat.id;
             return <button key={cat.id} type="button" aria-pressed={selected}
@@ -380,8 +380,8 @@ export default function ProductGrid({
               <button type="button" onClick={() => { setIds(ordered.map(p => String(p.id))); setArranging(true); }} className="h-10 rounded-xl border border-[#1e293b] bg-[#131d31] px-3 text-xs font-semibold text-slate-300 hover:bg-[#182234]">Arrange</button>
             ))}
             <div className="flex items-center bg-[#131d31] p-1 rounded-xl border border-[#1e293b] gap-1 shadow-sm">
-              <button type="button" onClick={() => setCatalogView('photo')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'photo' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><LayoutGrid size={12} className="inline-block mr-1.5 align-[-2px]" />Photo View</button>
-              <button type="button" onClick={() => setCatalogView('compact')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'compact' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><Zap size={12} className="inline-block mr-1.5 align-[-2px] text-amber-300 fill-amber-300" />Quick-Tap Grid</button>
+              <button type="button" onClick={() => setCatalogView('photo')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'photo' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><LayoutGrid size={12} className="inline-block me-1.5 align-[-2px]" />Photo View</button>
+              <button type="button" onClick={() => setCatalogView('compact')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'compact' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><Zap size={12} className="inline-block me-1.5 align-[-2px] text-amber-300 fill-amber-300" />Quick-Tap Grid</button>
             </div>
             </div>
           </div>

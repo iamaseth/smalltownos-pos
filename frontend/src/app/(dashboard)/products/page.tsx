@@ -1185,7 +1185,7 @@ export default function ProductsPage() {
       {activeTab === 'categories' && (
         <>
           <div className="flex justify-end items-center gap-2 mb-4">
-            <span className="mr-auto text-sm text-muted-foreground">Drag the handles to arrange POS categories{categoryOrderSaving ? " · Saving…" : ""}</span>
+            <span className="me-auto text-sm text-muted-foreground">Drag the handles to arrange POS categories{categoryOrderSaving ? " · Saving…" : ""}</span>
             <Button variant="outline" onClick={() => openCsvModal('categories')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>

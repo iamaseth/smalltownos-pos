@@ -303,7 +303,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
           return <div className="flex gap-[6px]">{printButton}{actions}{moreButton}</div>;
         })()}
       </div>
-      {moreOpen && <div className="absolute bottom-[68px] right-3 z-40 w-[250px] rounded-xl border-2 border-[#3d4f7c] bg-[#1a2540] p-1.5 shadow-xl">
+      {moreOpen && <div className="absolute bottom-[68px] end-3 z-40 w-[250px] rounded-xl border-2 border-[#3d4f7c] bg-[#1a2540] p-1.5 shadow-xl">
         {editingNote ? (
           <div className="p-1.5">
             <label className="mb-1 block text-[13px] font-bold text-[#8f9bb8]" htmlFor="cart-order-note">Order note</label>
