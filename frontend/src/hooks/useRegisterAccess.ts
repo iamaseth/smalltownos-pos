@@ -7,8 +7,11 @@ export const REGISTER_IDLE_TIMEOUT_MS = 300000;
 
 type Operator = { id: string; name: string; role: string; permissions: string[] };
 
-export function useRegisterAccess(enabled: boolean) {
-  const [locked, setLocked] = useState(enabled);
+export function useRegisterAccess(onRegister: boolean) {
+  // null = not known yet. The lock only applies once staff PINs exist.
+  const [pinLockEnabled, setPinLockEnabled] = useState<boolean | null>(null);
+  const enabled = onRegister && pinLockEnabled === true;
+  const [locked, setLocked] = useState(true);
   const [operator, setOperator] = useState<Operator | null>(null);
   const [error, setError] = useState('');
   const switching = useRef(false);
@@ -24,6 +27,16 @@ export function useRegisterAccess(enabled: boolean) {
       // will handle it normally if that session is no longer valid.
     }
   }, []);
+
+  useEffect(() => {
+    if (!onRegister) return;
+    let active = true;
+    api.get('/register-access/status')
+      .then(({ data }) => { if (active) setPinLockEnabled(Boolean(data?.pin_lock_enabled)); })
+      // Older server or no answer: keep the till usable rather than locking everyone out.
+      .catch(() => { if (active) setPinLockEnabled(false); });
+    return () => { active = false; };
+  }, [onRegister]);
 
   useEffect(() => {
     if (!enabled || locked) return;

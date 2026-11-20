@@ -24,6 +24,22 @@ const pinLimiter = rateLimit({
   message: { error: 'Too many attempts. Try again later.' },
 });
 
+/**
+ * Whether the register PIN lock is in use: only once at least one active
+ * employee has a PIN. A new install (or a shop not using PINs yet) is never
+ * locked out of its own POS.
+ */
+router.get('/status', (_req: Request, res: Response) => {
+  try {
+    const row = getDatabase().prepare(
+      'SELECT COUNT(*) AS n FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL'
+    ).get() as { n: number };
+    res.json({ pin_lock_enabled: row.n > 0 });
+  } catch {
+    res.status(500).json({ error: 'Register status unavailable' });
+  }
+});
+
 router.post('/unlock', pinLimiter, async (req: Request, res: Response) => {
   const pin = req.body?.pin;
   if (typeof pin !== 'string' || !/^\d{4}$/.test(pin)) {

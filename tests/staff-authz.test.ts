@@ -173,11 +173,18 @@ async function main() {
   assertEqual(result.status, 400, 'staff update rejects blank email');
   assertEqual(result.body.error, 'email is required', 'blank email update returns a clear validation error');
 
+  result = await request(app).get('/api/register-access/status').set(managerAuth);
+  assertEqual(result.status, 200, 'register status is available to a logged-in register');
+  const pinsBefore = (db.prepare('SELECT COUNT(*) AS n FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL').get() as any).n;
+  assertEqual(result.body.pin_lock_enabled, pinsBefore > 0, 'register PIN lock follows whether any active staff PIN exists');
+
   result = await request(app).post('/api/staff').set(managerAuth).send({
     name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '2468',
   });
   assertEqual(result.status, 201, 'manager can create a cashier with an individual PIN');
   assertEqual(result.body.staff.has_pin, 1, 'cashier PIN is reported as configured');
+  assertEqual((await request(app).get('/api/register-access/status').set(managerAuth)).body.pin_lock_enabled, true,
+    'register PIN lock turns on once a staff PIN exists');
   const pinnedCashierId = result.body.staff.id;
   const cashierPinHash = (db.prepare('SELECT pin_hash FROM users WHERE id = ?').get(result.body.staff.id) as any).pin_hash;
   assert(bcrypt.compareSync('2468', cashierPinHash), 'cashier PIN is stored as a bcrypt hash');

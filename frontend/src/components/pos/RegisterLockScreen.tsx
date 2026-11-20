@@ -8,10 +8,12 @@ type Props = {
   error?: string;
   busy?: boolean;
   onUnlock: (pin: string) => Promise<boolean>;
+  /** Leave the locked till by signing this browser out (e.g. a manager without a PIN). */
+  onSignOut?: () => void;
 };
 
 /** Full-screen lock overlay. Mount only after server PIN auth is available. */
-export default function RegisterLockScreen({ error, busy = false, onUnlock }: Props) {
+export default function RegisterLockScreen({ error, busy = false, onUnlock, onSignOut }: Props) {
   const [pin, setPin] = useState('');
   const [pending, setPending] = useState(false);
   const waiting = busy || pending;
@@ -53,6 +55,11 @@ export default function RegisterLockScreen({ error, busy = false, onUnlock }: Pr
           <Button type="submit" className="w-full" disabled={waiting || pin.length !== 4}>
             {waiting ? 'Checking…' : 'Unlock register'}
           </Button>
+          {onSignOut && (
+            <Button type="button" variant="ghost" className="w-full" disabled={waiting} onClick={onSignOut}>
+              Sign out of this register
+            </Button>
+          )}
         </form>
       </div>
     </div>

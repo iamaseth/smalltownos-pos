@@ -11,13 +11,17 @@ import TrainingBanner from '@/components/layout/TrainingBanner';
 import { usePrinterStatusSync } from '@/hooks/usePrinter';
 import { useRegisterAccess } from '@/hooks/useRegisterAccess';
 import RegisterLockScreen from '@/components/pos/RegisterLockScreen';
+import { useAuthStore } from '@/store/auth';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const normalizedPath = pathname?.replace(/\/+$/, '') || '/';
   const isPos = normalizedPath === '/pos' || normalizedPath === '/kds';
   const isSettings = normalizedPath === '/settings';
-  const registerAccess = useRegisterAccess(isPos);
+  // The PIN lock guards the till only. The kitchen display must never lock
+  // after idle time, or the kitchen loses sight of open tickets.
+  const isRegister = normalizedPath === '/pos';
+  const registerAccess = useRegisterAccess(isRegister);
   // Sync printer status early so hardware and WebUSB reconnect before first print.
   usePrinterStatusSync();
 
@@ -45,7 +49,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             <StatusBar showUpdateBadge={false} />
           </SidebarInset>
-          {isPos && registerAccess.operator && (
+          {isRegister && registerAccess.operator && (
             <div className="fixed end-3 top-14 z-[90] flex items-center gap-2 rounded-lg border bg-card/95 px-3 py-2 shadow-md">
               <span className="max-w-32 truncate text-xs font-medium">{registerAccess.operator.name}</span>
               <button type="button" onClick={registerAccess.lock}
@@ -55,8 +59,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </button>
             </div>
           )}
-          {isPos && registerAccess.locked && (
-            <RegisterLockScreen error={registerAccess.error} onUnlock={registerAccess.unlock} />
+          {isRegister && registerAccess.locked && (
+            <RegisterLockScreen error={registerAccess.error} onUnlock={registerAccess.unlock}
+              onSignOut={() => useAuthStore.getState().logout()} />
           )}
         </div>
       </SidebarProvider>
