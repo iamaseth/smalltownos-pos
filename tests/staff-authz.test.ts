@@ -221,9 +221,9 @@ async function main() {
 
   result = await request(app).put('/api/staff/manager-target-145').set(ownerAuth).send({ role: 'server' });
   assertEqual(result.status, 200, 'owner can demote a manager to server');
-  assertEqual(result.body.staff.has_pin, 0, 'demoting to an operational role clears has_pin');
+  assertEqual(result.body.staff.has_pin, 1, 'demoting to an operational role preserves the employee PIN');
   const demoted = db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-target-145') as any;
-  assertEqual(demoted.pin_hash, null, 'demoting to an operational role clears pin_hash');
+  assert(Boolean(demoted.pin_hash), 'demoting to an operational role preserves the PIN hash');
 
   const originalPinHash = (db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-145') as any).pin_hash;
   result = await request(app).put('/api/staff/manager-145').set(ownerAuth).send({ name: 'Manager PIN preserved' });
