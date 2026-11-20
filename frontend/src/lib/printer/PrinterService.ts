@@ -349,8 +349,9 @@ class PrinterService {
       ...Array.from(parsed.body.childNodes).map((node) => printWindow.document.importNode(node, true)),
     );
     printWindow.document.close();
+    printWindow.addEventListener('afterprint', () => printWindow.close(), { once: true });
+    printWindow.focus();
     printWindow.print();
-    printWindow.close();
   }
 
   private setStatus(status: PrinterStatus, info?: PrinterInfo): void {
