@@ -88,7 +88,11 @@ async function main() {
 
 assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].version, 'fresh database migrates to latest schema');
   assert.equal(count('users'), 0, 'fresh install starts without users');
-  assert.equal(count('categories'), 0, 'fresh install starts with no sample categories');
+  const initialCategories = getDatabase().prepare('SELECT name FROM categories WHERE deleted_at IS NULL').all() as { name: string }[];
+  const initialCategoryCount = count('categories');
+  assert.ok(initialCategories.length > 0, 'fresh install includes the default menu category taxonomy');
+  assert.ok(initialCategories.some((category) => category.name === 'FOOD'), 'fresh install includes the FOOD root category');
+  assert.ok(initialCategories.some((category) => category.name === 'DRINKS'), 'fresh install includes the DRINKS root category');
   assert.equal(count('products'), 0, 'fresh install starts with no sample products');
   assert.equal(count('tables'), 0, 'fresh install starts with no sample tables');
   assert.equal(count('printers'), 0, 'fresh install starts with no default printer');
@@ -310,7 +314,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(setting('telemetry_scope'), 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
     assert.equal(setting('diagnostics_consent'), 'true', 'store diagnostics are on by default for a new install');
     assert.equal(profileRefreshes, 1, 'setup immediately refreshes the completed store profile in FloAdmin');
-    assert.equal(count('categories'), 2, 'express setup seeds minimal categories');
+    assert.equal(count('categories'), initialCategoryCount + 2, 'express setup adds the two minimal starter categories');
     assert.equal(count('products'), 4, 'express setup seeds minimal products');
     assert.equal(count('tables'), 0, 'qsr express setup does not seed dine-in tables');
     assert.equal(count('customers'), 0, 'express setup does not seed demo customers');

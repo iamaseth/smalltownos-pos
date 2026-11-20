@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { printerService, type PrinterStatus, type PrinterInfo, type PrintMode } from '@/lib/printer/PrinterService';
+import { runPrintJob, itemBatchHash, type PrintTransport } from '@/lib/printer/print-jobs';
 import {
   buildClassicReceiptBytes,
   buildCompactReceiptBytes,
@@ -107,9 +108,15 @@ interface PrinterState {
   refreshHardwarePrinter: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
-  printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
+  /** 'cloud' on the Railway POS (print from this computer only), 'desktop' in the app. */
+  runtime: 'cloud' | 'desktop' | null;
+  printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions & { skipPrintLedger?: boolean }) => Promise<PrintWarning[]>;
+  printBillDirect: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
   printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
-  printKot: (order: Order, opts?: KotOptions & { items?: OrderItem[] }) => Promise<PrintWarning[]>;
+  printKot: (order: Order, opts?: KotOptions & { items?: OrderItem[]; skipPrintLedger?: boolean }) => Promise<PrintWarning[]>;
+  printKotDirect: (order: Order, opts?: KotOptions & { items?: OrderItem[] }) => Promise<PrintWarning[]>;
+  /** Transport the next print would use on this computer. */
+  currentTransport: () => PrintTransport;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;
   setPrintMethod: (method: PrintMode) => void;
@@ -130,8 +137,17 @@ export const usePrinterStore = create<PrinterState>()(
       printMethod: 'escpos',
       hardwarePrinter: null,
       webusbPrinter: null,
+      runtime: null,
 
       refreshHardwarePrinter: async () => {
+        // On the online POS the server cannot reach a printer at the restaurant:
+        // never route prints to it; this computer prints over USB or the Chrome dialog.
+        let runtime: 'cloud' | 'desktop' | null = get().runtime;
+        try {
+          const rt = await api.get('/printers/runtime');
+          runtime = rt.data?.runtime === 'cloud' ? 'cloud' : 'desktop';
+          set({ runtime });
+        } catch { /* older server: keep previous behaviour */ }
         try {
           const res = await api.get('/printers');
           const list: HardwarePrinter[] = res.data.printers || [];
@@ -141,7 +157,7 @@ export const usePrinterStore = create<PrinterState>()(
             null;
           const webusbPrinters = list.filter((p) => p.connection_type === 'webusb');
           const webusbPrinter = webusbPrinters.length === 1 ? webusbPrinters[0] : null;
-          set({ hardwarePrinter: defaultPrinter, webusbPrinter });
+          set({ hardwarePrinter: runtime === 'cloud' ? null : defaultPrinter, webusbPrinter });
         } catch {
           set({ hardwarePrinter: null, webusbPrinter: null });
         }
@@ -160,7 +176,29 @@ export const usePrinterStore = create<PrinterState>()(
         await printerService.disconnect();
       },
 
+      currentTransport: () => {
+        const { hardwarePrinter, printMethod, runtime } = get();
+        if (printMethod === 'browser') return 'browser';
+        if (hardwarePrinter && runtime !== 'cloud') return 'native';
+        if (printerService.isConnected) return 'webusb';
+        return 'browser';
+      },
+
       printBill: async (bill, tenant, opts) => {
+        if (opts?.skipPrintLedger || !(Number(bill.id) > 0)) return get().printBillDirect(bill, tenant, opts);
+        await printerService.awaitPendingReconnect();
+        const isReprint = opts?.isReprint ?? false;
+        const stage = bill.payment_status === 'paid' ? 'paid' : 'check';
+        return runPrintJob({
+          jobKey: isReprint ? `bill:${bill.id}:reprint:${Date.now()}` : `bill:${bill.id}:${stage}`,
+          kind: 'receipt',
+          label: `Receipt ${bill.bill_number ?? bill.id}${isReprint ? ' (reprint)' : ''}`,
+          transport: get().currentTransport(),
+          payload: { billId: bill.id, isReprint },
+        }, () => get().printBillDirect(bill, tenant, opts));
+      },
+
+      printBillDirect: async (bill, tenant, opts) => {
         set({ lastError: null });
         try {
           const {
@@ -215,7 +253,7 @@ export const usePrinterStore = create<PrinterState>()(
             return billTemplateWarning ? [...browserWarnings, billTemplateWarning] : browserWarnings;
           };
 
-          const hw = get().hardwarePrinter;
+          const hw = get().runtime === 'cloud' ? null : get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-bill', { billId: bill.id, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping, isReprint });
@@ -439,6 +477,20 @@ export const usePrinterStore = create<PrinterState>()(
       },
 
       printKot: async (order, opts) => {
+        if (opts?.skipPrintLedger || !(Number(order.id) > 0)) return get().printKotDirect(order, opts);
+        await printerService.awaitPendingReconnect();
+        const station = opts?.stationName ?? 'Kitchen';
+        const items = opts?.items ?? order.items;
+        return runPrintJob({
+          jobKey: `kot:${order.id}:${station}:${itemBatchHash(items)}`,
+          kind: 'kot',
+          label: `Kitchen ticket ${order.order_number ?? order.id}${opts?.stationName ? ` (${opts.stationName})` : ''}`,
+          transport: get().currentTransport(),
+          payload: { orderId: order.id, stationName: opts?.stationName ?? null, items: opts?.items ?? null },
+        }, () => get().printKotDirect(order, opts));
+      },
+
+      printKotDirect: async (order, opts) => {
         set({ lastError: null });
         // Enforce master kot_printing_enabled toggle for all automatic and manual prints.
         const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
@@ -451,7 +503,7 @@ export const usePrinterStore = create<PrinterState>()(
           throw err;
         }
         try {
-          const hw = get().hardwarePrinter;
+          const hw = get().runtime === 'cloud' ? null : get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
               const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, items: opts?.items, stationName: opts?.stationName, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping });
@@ -471,7 +523,8 @@ export const usePrinterStore = create<PrinterState>()(
           // to avoid premature browser print fallbacks.
           await printerService.awaitPendingReconnect();
           if (get().printMethod === 'escpos' && printerService.isConnected) {
-            const { paperWidth } = get();
+            const paperWidth: PaperWidth = opts?.paperWidth
+              ?? (usePosSettingsStore.getState().printerPaperSize === 'thermal80' ? 80 : get().paperWidth);
             const warnings: PrintWarning[] = [];
             const encoderWarnings: PrintWarning[] = [];
             const webusbPrinter = get().webusbPrinter;
@@ -559,7 +612,8 @@ export const usePrinterStore = create<PrinterState>()(
 
           // Browser fallback: render semantic KOT HTML when hardware or WebUSB is unavailable.
           // Ensure target KOT language bundle is loaded to avoid fallback to English labels.
-          const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
+          const paperWidth: 58 | 80 = (opts?.paperWidth
+            ?? (usePosSettingsStore.getState().printerPaperSize === 'thermal80' ? 80 : (get().paperWidth || 80))) === 80 ? 80 : 58;
           const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
           const html = generateKotHtml(orderForPrint, { paperWidth, language: kotLanguage, stationName: opts?.stationName ?? 'Kitchen', timezone: tenantTimezone ?? opts?.timezone });
           await printerService.printViaBrowser(html, paperWidth);

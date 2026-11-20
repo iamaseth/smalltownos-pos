@@ -1636,6 +1636,10 @@ export async function resetDatabaseForCurrencyChange(
     return resetDatabaseWithBackupUnlocked(maintenanceSignal, (freshDb) => {
       freshDb.transaction(() => {
         freshDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+        // Fresh migrations install the default menu taxonomy. Currency reset
+        // restores the merchant's saved menu, so remove those fresh defaults
+        // first instead of duplicating them alongside the saved categories.
+        freshDb.prepare('DELETE FROM categories').run();
         restoreCurrencyResetMenu(freshDb, snapshot);
         const writeSetting = freshDb.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
         writeSetting.run('country', regional.country, now());
@@ -5930,6 +5934,35 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   },
   {
     version: 106,
+    name: 'add_print_jobs_ledger',
+    up: () => {
+      // One row per print attempt group. job_key de-duplicates double taps,
+      // retries and mode switches; failed kitchen tickets stay visible until
+      // printed or dismissed. Printing never blocks orders or payments.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS print_jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_key TEXT NOT NULL UNIQUE,
+          kind TEXT NOT NULL CHECK (kind IN ('receipt', 'kot', 'test', 'other')),
+          label TEXT NOT NULL DEFAULT '',
+          transport TEXT NOT NULL DEFAULT 'unknown' CHECK (transport IN ('webusb', 'browser', 'native', 'unknown')),
+          status TEXT NOT NULL DEFAULT 'printing' CHECK (status IN ('printing', 'printed', 'printed_unconfirmed', 'failed', 'dismissed')),
+          attempts INTEGER NOT NULL DEFAULT 0,
+          payload_json TEXT NOT NULL DEFAULT '{}',
+          last_error_code TEXT,
+          last_error TEXT,
+          device_id TEXT,
+          requested_by TEXT REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          printed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status, updated_at);
+      `);
+    },
+  },
+  {
+    version: 107,
     name: 'add_staff_scheduled_shifts',
     up: () => {
       db.exec(`

@@ -47,6 +47,7 @@ async function main() {
     const before = getTestSalesCounts(db);
     assertOrThrow(before.orders === 2 && before.bills === 1 && before.cash_sessions === 1, `counts before clearing: ${JSON.stringify(before)}`);
     const settingsBefore = (db.prepare('SELECT COUNT(*) AS n FROM settings').get() as any).n;
+    const categoriesBefore = (db.prepare('SELECT COUNT(*) AS n FROM categories').get() as any).n;
 
     const result = await clearTestSalesWithBackup();
     assertOrThrow(fs.existsSync(result.backupPath), 'a backup file was written before deleting');
@@ -56,7 +57,7 @@ async function main() {
     for (const [table, count] of Object.entries(after)) assertEqualOrThrow(count, 0, `${table} is empty after clearing`);
     assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM customers').get() as any).n, 1, 'customers are kept');
     assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM products').get() as any).n, 1, 'menu products are kept');
-    assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM categories').get() as any).n, 1, 'categories are kept');
+    assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM categories').get() as any).n, categoriesBefore, 'all categories are kept');
     assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM users').get() as any).n, 1, 'staff accounts are kept');
     assertEqualOrThrow((db.prepare('SELECT COUNT(*) AS n FROM settings').get() as any).n, settingsBefore, 'settings are kept');
     assertEqualOrThrow((db.prepare("SELECT status FROM tables WHERE id = 't-clear'").get() as any).status, 'available', 'tables are freed');

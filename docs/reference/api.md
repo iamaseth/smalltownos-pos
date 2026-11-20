@@ -467,6 +467,7 @@ Router: `main/routes/printers.ts`. Full path: `/api/printers`.
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `GET` | `/` | any authenticated role | none | `{ printers: [ ... ] }`, default first. |
+| `GET` | `/runtime` | `printing.execute` | none | `{ runtime, server_side_printing, hint }`; cloud runtime prevents backend dispatch to local hardware. |
 | `GET` | `/detect` | any authenticated role | none | - |
 | `GET` | `/supported` | any authenticated role | none | - |
 | `GET` | `/:id` | any authenticated role | path: `id` | Single printer. |
@@ -477,6 +478,11 @@ Router: `main/routes/printers.ts`. Full path: `/api/printers`.
 | `POST` | `/:id/test` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `rasterProbe` | - |
 | `POST` | `/print-bill` | `ROLE_ACCESS.sales` | body: `billId`, `orderId`, `isReprint`, `preview`, `useUnicode`, `arabicShaping` | Body `billId` or `orderId`, plus `isReprint`, `preview`, `useUnicode`, `arabicShaping`. `preview` returns the rendered payload without sending it to the device. |
 | `POST` | `/print-kot` | `ROLE_ACCESS.sales` | body: `orderId`, `stationName`, `items`, `useUnicode`, `arabicShaping` | Body `orderId`, optional `stationName` and `items`, plus `useUnicode` and `arabicShaping`. |
+
+Router: `main/routes/print-jobs.ts`. Full path: `/api/print-jobs`. All routes require
+`printing.execute`. `POST /claim` reserves or de-duplicates a job; `POST /:id/result` records a
+printed, unconfirmed, or failed result; `GET /failed` and `GET /recent` list jobs; `POST /:id/dismiss`
+clears a failed job from the Print Center list.
 
 ### Merchant print templates
 
@@ -842,7 +848,7 @@ The seven routes that are not forwards:
 
 | Method | Path | Authorization | Response |
 | --- | --- | --- | --- |
-| `GET` | `/api/health` | none | none | `{ status, db, service, version, timestamp }`. `503` when the database reports unhealthy. |
+| `GET` | `/api/health` | none | `{ status, db, service, version, timestamp }`. `503` when the database reports unhealthy. |
 | `GET` | `/api/server-app/info` | none | `{ language, country, currency, currency_symbol, currency_position, currency_fraction_digits, kds_enabled }`. `404` when the feature is disabled; `409` with `error: "regional_not_configured"` when the regional snapshot cannot be resolved. |
 | `POST` | `/api/auth/login` | none, `authRateLimit` | Body `email`, `password`, `remember_me`. `{ access_token, user: { id, name, email, role } }`; 24 hours, or 10 days with `remember_me`. `403` for a role outside `ROLE_ACCESS.serverApp`. |
 | `GET` | `/api/auth/me` | `ROLE_ACCESS.serverApp` | `{ user: { id, name, email, role } }` |

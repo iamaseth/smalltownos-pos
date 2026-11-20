@@ -40,30 +40,6 @@ const net = require('net');
 const { EventEmitter } = require('events');
 const { WebSocket } = require('ws');
 
-type MockWindow = {
-  document: { open: () => void; write: (_html: string) => void; close: () => void; readyState: string };
-  closed: boolean;
-  printCalls: number;
-  print: () => void;
-  onload: (() => void) | null;
-};
-
-function createMockWindow(readyState: string): MockWindow {
-  const win: MockWindow = {
-    document: {
-      open: () => {},
-      write: (_html: string) => {},
-      close: () => {},
-      readyState,
-    },
-    closed: false,
-    printCalls: 0,
-    print: () => { win.printCalls += 1; },
-    onload: null,
-  };
-  return win;
-}
-
 const sampleOrder = {
   id: 1,
   order_number: 'ORD-R4-001',
@@ -113,26 +89,33 @@ const sampleTenant = {
   timezone: 'UTC',
 } as any;
 
+/** Minimal DOM for printHtmlInFrame: one hidden iframe whose window counts print() calls. */
+function installFrameDom(opts: { noWindow?: boolean } = {}) {
+  const state = { printCalls: 0, written: '', appended: 0, removed: 0 };
+  const frameWindow = { print: () => { state.printCalls++; }, focus: () => {}, addEventListener: () => {} };
+  const frameDoc = { open: () => {}, write: (h: string) => { state.written += h; }, close: () => {}, images: [], fonts: { ready: Promise.resolve() } };
+  const frame = {
+    style: {} as Record<string, string>, tabIndex: 0, setAttribute: () => {},
+    remove: () => { state.removed++; },
+    contentWindow: opts.noWindow ? null : frameWindow,
+    contentDocument: opts.noWindow ? null : frameDoc,
+  };
+  const prev = { document: (global as any).document, raf: (global as any).requestAnimationFrame };
+  (global as any).document = { createElement: () => frame, body: { appendChild: () => { state.appended++; } } };
+  (global as any).requestAnimationFrame = (cb: () => void) => setTimeout(cb, 0);
+  return { state, restore: () => { (global as any).document = prev.document; (global as any).requestAnimationFrame = prev.raf; } };
+}
+
 async function testWebPrintSingleTrigger(): Promise<void> {
-  console.log('\n─── web-print-once: printWebBill prints once when poll and onload both fire ───');
-  const originalWindow = (global as any).window;
+  console.log('\n─── web-print-once: printWebBill prints once through the hidden frame ───');
+  const dom = installFrameDom();
   try {
-    const mockWindow = createMockWindow('loading');
-    (global as any).window = { open: () => mockWindow };
-
-    const printPromise = printWebBill(sampleBill as any, sampleTenant, { language: 'en' as any });
-
-    await new Promise((r) => setTimeout(r, 80));
-    mockWindow.document.readyState = 'complete';
-    await new Promise((r) => setTimeout(r, 120));
-
-    if (mockWindow.onload) mockWindow.onload();
-    await printPromise;
-    if (mockWindow.onload) mockWindow.onload();
-
-    assertEqual(mockWindow.printCalls, 1, `window.print called once (got ${mockWindow.printCalls})`);
+    await printWebBill(sampleBill as any, sampleTenant, { language: 'en' as any });
+    await new Promise((r) => setTimeout(r, 50));
+    assertEqual(dom.state.printCalls, 1, `frame print called once (got ${dom.state.printCalls})`);
+    assertEqual(dom.state.appended, 1, 'one print frame created');
   } finally {
-    (global as any).window = originalWindow;
+    dom.restore();
   }
 }
 

@@ -61,13 +61,13 @@ export default function ApplicationMenuRow() {
               void window.electronAPI?.getTrainingStatus().then((state) => setDemo(state.demo));
             }}>Training</button>
           {trainingOpen && (
-            <div className="absolute top-full left-0 z-[100] min-w-56 rounded-lg border border-border bg-popover p-2 shadow-xl">
+            <div className="absolute top-full start-0 z-[100] min-w-56 rounded-lg border border-border bg-popover p-2 shadow-xl">
               <div className="px-3 py-2 text-xs font-semibold text-muted-foreground">{demo ? 'DEMO MODE ACTIVE' : 'LIVE MODE'}</div>
-              <button type="button" className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
+              <button type="button" className="block w-full rounded-md px-3 py-2 text-start text-sm hover:bg-accent"
                 onClick={() => { setTrainingOpen(false); void window.electronAPI?.switchTrainingMode(!demo); }}>
                 {demo ? 'Return to Live Mode…' : 'Enter Demo Mode…'}
               </button>
-              <button type="button" className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-accent"
+              <button type="button" className="block w-full rounded-md px-3 py-2 text-start text-sm hover:bg-accent"
                 onClick={() => setTrainingOpen(false)}>Cancel</button>
             </div>
           )}

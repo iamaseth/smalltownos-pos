@@ -77,7 +77,9 @@ async function main() {
     console.log('\n─── Scenario A: category listing batches child loading ───');
     const res = await api(baseUrl, '/api/categories?root=true', { headers: authHeader });
     assertEqual(res.status, 200, 'A: category list succeeds');
-    assertEqual(res.data.categories.length, 3, 'A: root categories are returned');
+    const scenarioRootIds = new Set(['cat-250-a', 'cat-250-b', 'cat-250-c']);
+    const returnedScenarioRoots = res.data.categories.filter((category: any) => scenarioRootIds.has(category.id));
+    assertEqual(returnedScenarioRoots.length, 3, 'A: all scenario root categories are returned');
     assertEqual(childLoadQueries, 1, 'A: children are loaded in one batched query');
     const byId = new Map(res.data.categories.map((category: any) => [category.id, category]));
     assertEqual(byId.get('cat-250-a').children.map((child: any) => child.id).join(','), 'cat-250-a-1', 'A: first parent has its child');

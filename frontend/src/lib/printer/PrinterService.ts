@@ -253,35 +253,19 @@ class PrinterService {
     }
   }
 
-  /** Print using browser's print dialog with thermal-optimized styles. */
+  /**
+   * Print using the browser's print dialog with thermal-optimized styles.
+   *
+   * Uses a hidden same-origin iframe instead of a popup: popups can be blocked,
+   * and closing a popup straight after print() can cancel Chrome's print
+   * preview before anything reaches the printer (nothing prints, no error).
+   * The frame waits for its content (and fonts) to load, prints, and is only
+   * removed after Chrome reports the dialog finished (afterprint) or a safety
+   * timeout. With Chrome started with --kiosk-printing it prints silently to
+   * the Windows default printer.
+   */
   async printViaBrowser(htmlContent: string, paperWidth: 58 | 80): Promise<void> {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      throw new Error('Please allow popups to print');
-    }
-
     const mmWidth = paperWidth === 58 ? '58mm' : '80mm';
-
-    const style = printWindow.document.createElement('style');
-    style.textContent = `
-      @page { size: ${mmWidth} auto; margin: 0; }
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body {
-        font-family: 'Courier New', 'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Noto Sans Thai', 'Leelawadee UI', Thonburi, monospace;
-        font-size: 12px;
-        line-height: 1.2;
-        width: ${mmWidth};
-        max-width: ${mmWidth};
-        margin: 0 auto;
-        padding: 4px;
-        text-align: left;
-      }
-      @media print {
-        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; }
-        @page { size: ${mmWidth} auto; margin: 0; }
-      }
-    `;
-    printWindow.document.head.appendChild(style);
 
     // Parse receipt markup and strip executable/script nodes before printing.
     const parsed = new DOMParser().parseFromString(htmlContent, 'text/html');
@@ -299,12 +283,29 @@ class PrinterService {
         }
       }
     });
-    printWindow.document.body.replaceChildren(
-      ...Array.from(parsed.body.childNodes).map((node) => printWindow.document.importNode(node, true)),
-    );
-    printWindow.document.close();
-    printWindow.print();
-    printWindow.close();
+
+    const css = `
+      @page { size: ${mmWidth} auto; margin: 0; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { background: #fff; color: #000; }
+      body {
+        font-family: 'Courier New', 'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Noto Sans Thai', 'Leelawadee UI', Thonburi, monospace;
+        font-size: 12px;
+        line-height: 1.2;
+        width: ${mmWidth};
+        max-width: ${mmWidth};
+        margin: 0;
+        padding: 4px;
+        text-align: left;
+      }
+      @media print {
+        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; }
+      }
+    `;
+
+    const body = new XMLSerializer().serializeToString(parsed.body).replace(/^<body[^>]*>|<\/body>$/g, '');
+    const { printHtmlInFrame } = await import('./frame-print');
+    await printHtmlInFrame(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Print</title><style>${css}</style></head><body>${body}</body></html>`);
   }
 
   private setStatus(status: PrinterStatus, info?: PrinterInfo): void {

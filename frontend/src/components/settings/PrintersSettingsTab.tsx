@@ -169,6 +169,7 @@ export function PrintersSettingsTab({
   const [detectedPrinters, setDetectedPrinters] = useState<DetectedPrinter[]>([]);
   const [detectingPrinters, setDetectingPrinters] = useState(false);
   const [addingDetectedName, setAddingDetectedName] = useState<string | null>(null);
+  const [cloudPrinterRuntime, setCloudPrinterRuntime] = useState(false);
   const [installedPrintersOpen, setInstalledPrintersOpen] = useState(false);
   const [cashDrawerMethodsOpen, setCashDrawerMethodsOpen] = useState(false);
 
@@ -217,7 +218,16 @@ export function PrintersSettingsTab({
   useEffect(() => {
     if (!isActive) return;
     const controller = new AbortController();
-    void Promise.resolve().then(() => fetchDetectedPrinters(controller.signal));
+    void api.get('/printers/runtime', { signal: controller.signal })
+      .then((res) => {
+        const isCloud = res.data?.runtime === 'cloud';
+        setCloudPrinterRuntime(isCloud);
+        if (!isCloud) void fetchDetectedPrinters(controller.signal);
+      })
+      .catch(() => {
+        setCloudPrinterRuntime(false);
+        void fetchDetectedPrinters(controller.signal);
+      });
     return () => controller.abort();
   }, [fetchDetectedPrinters, isActive]);
 
@@ -347,7 +357,7 @@ export function PrintersSettingsTab({
               <Printer size={20} className="text-muted-foreground" />
               <h2 className="font-semibold text-foreground">{t('printers')}</h2>
             </div>
-            {!showPrinterForm && (
+            {!showPrinterForm && !cloudPrinterRuntime && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => { void fetchDetectedPrinters(); }}
@@ -367,8 +377,17 @@ export function PrintersSettingsTab({
             )}
           </div>
 
+          {cloudPrinterRuntime && !showPrinterForm && (
+            <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-foreground">
+              This online POS cannot scan printers attached to this computer. Return to the POS screen
+              and open <strong>Print Center</strong> to use the Chrome print dialog or connect a
+              compatible USB printer. Printers listed below are server-side configurations and
+              cannot print from Railway.
+            </div>
+          )}
+
           {/* Detected (OS-installed) printers - one-click add */}
-          {!showPrinterForm && (
+          {!showPrinterForm && !cloudPrinterRuntime && (
             <div className="mb-5">
               <button
                 type="button"

@@ -160,6 +160,18 @@ renderer.
 | Windows | `OpenPrinterW` with `pDataType` set to `RAW`. |
 | macOS Mac App Store | IPP over loopback HTTP to CUPS on `127.0.0.1:631`, using the minimal client in `main/printers/ipp-client.ts`, because a sandboxed App Store build cannot shell out to `lp`. |
 | WebUSB | The browser WebUSB API through the frontend bridge. |
+| Chrome dialog | `window.print()` in the browser on the terminal that has access to the OS printer. |
+
+The BackStreet online POS sets `FLO_RUNTIME=cloud`. Its Railway server cannot reach USB devices,
+OS print queues, or printers on the restaurant's LAN. The frontend prints on the cashier's computer
+through WebUSB or the Chrome dialog. Server print endpoints return
+`server_printing_unavailable` instead of routing a job to Railway. The desktop app leaves
+`FLO_RUNTIME` unset and continues to use native transports.
+
+Online POS print attempts use the `print_jobs` ledger through `/api/print-jobs`. It suppresses an
+identical job while one is active and for 120 seconds after a successful print. A failed job keeps
+its payload for retry from Print Center. Chrome dialog jobs are `printed_unconfirmed` because the
+browser cannot confirm that paper came out. A deliberate receipt reprint gets a new job key.
 
 Dispatch failures are classified by `classifyPrintFailure()` into a stable, privacy-safe set:
 `not_configured`, `offline`, `queue_unavailable`, `spooler_error`, `driver_error`,

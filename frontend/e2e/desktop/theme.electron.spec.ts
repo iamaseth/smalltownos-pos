@@ -62,7 +62,7 @@ async function expectNativeSelectTheme(expected: 'light' | 'dark'): Promise<void
     waitUntil: 'domcontentloaded',
   });
   await harness.page.getByRole('button', { name: 'Add Product', exact: true }).click();
-  await harness.page.getByRole('heading', { name: 'Add Product', exact: true }).waitFor({
+  await harness.page.getByRole('heading', { name: 'Create recipe', exact: true }).waitFor({
     state: 'visible',
     timeout: 10_000,
   });

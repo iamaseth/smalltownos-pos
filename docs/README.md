@@ -75,6 +75,16 @@ Procedures for people with release credentials.
 | [mac-app-store.md](maintainers/mac-app-store.md) | The Mac App Store workflow, its secrets, and its release notes. |
 | [upgrade-testing.md](maintainers/upgrade-testing.md) | What an upgrade test proves, and the platforms CI cannot cover. |
 
+## Project-specific notes
+
+Current notes for the named restaurant deployments and SmallTownOS POS work.
+
+| Page | Subject |
+| --- | --- |
+| [BAY-DESIGN-WORKFLOW.md](BAY-DESIGN-WORKFLOW.md) | Launch workflow for The Bay Bar design branch. |
+| [BAY-STAFF-PIN-ACCESS.md](BAY-STAFF-PIN-ACCESS.md) | Staff PIN access design for The Bay Bar. |
+| [SMALLTOWNOS_POS_CHECKPOINT.md](SMALLTOWNOS_POS_CHECKPOINT.md) | SmallTownOS POS project status and architecture notes. |
+
 ## Architecture decisions
 
 Choices made once, with consequences that outlive the change. Each records the alternative that

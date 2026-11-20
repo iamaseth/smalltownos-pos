@@ -1322,6 +1322,12 @@ export function initFromDb(): void {
     hasCredentials: fs.existsSync(credsPath),
     connectedPhone: maskPhone(state.connectedPhone),
   });
+  // FLO_WHATSAPP_AUTOCONNECT=0 (test harnesses only) keeps WhatsApp enabled
+  // for the UI but does not open the live WhatsApp Web socket at startup.
+  if (state.enabled && process.env.FLO_WHATSAPP_AUTOCONNECT === '0') {
+    logWhatsApp('info', 'startup_autoconnect_skipped', { reason: 'FLO_WHATSAPP_AUTOCONNECT=0' });
+    return;
+  }
   if (state.enabled) {
     void startSocket().catch(() => {});
   }

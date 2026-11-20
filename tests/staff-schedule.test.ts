@@ -48,7 +48,7 @@ async function main() {
   }
   const db = getDatabase();
 
-  console.log('Section 1: migration 106');
+  console.log('Section 1: migration 107');
   for (const table of ['schedule_shift_types', 'scheduled_shifts', 'scheduled_shift_events', 'staff_schedule_settings']) {
     assert(!!db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table), `table ${table} exists`);
   }

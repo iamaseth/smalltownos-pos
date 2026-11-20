@@ -103,7 +103,7 @@ export default function TitleBar() {
             top-level application menu is restored here (macOS keeps the native one). */}
         <ApplicationMenuRow />
         {trainingStatusKnown && trainingMode && (
-          <span role="status" className="ml-3 rounded-md bg-amber-500 px-3 py-1 text-xs font-extrabold text-black shadow-sm">DEMO MODE — TRAINING ONLY</span>
+          <span role="status" className="ms-3 rounded-md bg-amber-500 px-3 py-1 text-xs font-extrabold text-black shadow-sm">DEMO MODE — TRAINING ONLY</span>
         )}
 
         {/* Trailing edge: Update badge */}
