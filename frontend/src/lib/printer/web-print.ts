@@ -115,14 +115,7 @@ export async function printWebBill(
 ): Promise<PrintWarning[]> {
   const languages = resolvePrintLanguages(opts);
 
-  // 1. Open popup window synchronously to maintain transient user activation
-  const printWindow = typeof window !== 'undefined' ? window.open('', '_blank', 'width=800,height=600') : null;
-  if (!printWindow) {
-    toast.error('Please allow popups to print bills');
-    throw new Error('Popup window was blocked by browser');
-  }
-
-  // Ensure print languages are loaded before synchronous document build.
+  // Ensure print languages are loaded before building the document.
   const failedLanguages = await ensurePrintLanguagesLoaded(languages);
   const warnings: PrintWarning[] = failedLanguages.map((language) => ({
     field: 'receipt language',
@@ -132,78 +125,17 @@ export async function printWebBill(
   }));
   const html = generateBillHtml(bill, tenant, { ...opts, languages });
 
-  // 3. Write HTML and trigger print
-  if (printWindow.closed) {
-    throw new Error('Print window was closed before receipt could be printed');
+  // Hidden frame instead of a popup: works after the payment await (no popup
+  // blocker) and does not cancel Chrome's print preview.
+  try {
+    const { printHtmlInFrame } = await import('./frame-print');
+    await printHtmlInFrame(html);
+  } catch (err) {
+    console.error('Failed to print receipt:', err);
+    toast.error('Failed to open print dialog');
+    throw err instanceof Error ? err : new Error(String(err));
   }
-
-  return new Promise<void>((resolve, reject) => {
-    let settled = false;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-    const cleanup = () => {
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
-      }
-    };
-
-    const settle = (err?: Error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (err) {
-        reject(err);
-      } else {
-        resolve();
-      }
-    };
-
-    const triggerPrint = () => {
-      if (settled) return;
-      try {
-        if (printWindow.closed) {
-          settle(new Error('Print window was closed before receipt could be printed'));
-          return;
-        }
-        printWindow.print();
-        settle();
-      } catch (err) {
-        console.error('Failed to trigger print on window:', err);
-        toast.error('Failed to open print dialog');
-        settle(err instanceof Error ? err : new Error(String(err)));
-      }
-    };
-
-    try {
-      printWindow.document.open();
-      printWindow.document.write(html);
-      printWindow.document.close();
-
-      if (printWindow.document.readyState === 'complete') {
-        triggerPrint();
-      } else {
-        printWindow.onload = () => {
-          triggerPrint();
-        };
-
-        // Poll window state to prevent hanging promise if user closes popup while loading
-        let elapsed = 0;
-        pollTimer = setInterval(() => {
-          elapsed += 50;
-          if (printWindow.closed) {
-            settle(new Error('Print window was closed before receipt could be printed'));
-          } else if (printWindow.document.readyState === 'complete' || elapsed >= 3000) {
-            triggerPrint();
-          }
-        }, 50);
-      }
-    } catch (err) {
-      console.error('Failed to write receipt to print window:', err);
-      toast.error('Failed to open print dialog');
-      settle(err instanceof Error ? err : new Error(String(err)));
-    }
-  }).then(() => warnings);
+  return warnings;
 }
 
 // Document → HTML rendering
