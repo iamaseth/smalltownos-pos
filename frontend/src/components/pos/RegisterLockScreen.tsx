@@ -30,7 +30,7 @@ export default function RegisterLockScreen({ error, busy = false, onUnlock }: Pr
       <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-xl space-y-5">
         <div className="flex flex-col items-center gap-2 text-center">
           <LockKeyhole className="h-9 w-9" aria-hidden="true" />
-          <h1 className="text-xl font-semibold">The Bay Bar</h1>
+          <h1 className="text-xl font-semibold">Register access</h1>
           <p className="text-sm text-muted-foreground">Register locked. Enter your four-digit staff PIN.</p>
         </div>
         <form onSubmit={e => { e.preventDefault(); void submit(); }} className="space-y-4">
