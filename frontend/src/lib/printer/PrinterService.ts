@@ -308,6 +308,13 @@ class PrinterService {
 
     const mmWidth = paperWidth === 58 ? '58mm' : '80mm';
 
+    // Establish a complete document before adding receipt content. Chrome can
+    // otherwise finish loading the initial about:blank after our DOM changes
+    // and replace them, leaving an empty print preview.
+    printWindow.document.open();
+    printWindow.document.write('<!doctype html><html><head><title>Receipt</title></head><body></body></html>');
+    printWindow.document.close();
+
     const style = printWindow.document.createElement('style');
     style.textContent = `
       @page { size: ${mmWidth} auto; margin: 0; }
@@ -348,9 +355,13 @@ class PrinterService {
     printWindow.document.body.replaceChildren(
       ...Array.from(parsed.body.childNodes).map((node) => printWindow.document.importNode(node, true)),
     );
-    printWindow.document.close();
     printWindow.addEventListener('afterprint', () => printWindow.close(), { once: true });
     printWindow.focus();
+
+    // Let Chrome paint the receipt before it captures the print preview.
+    await new Promise<void>((resolve) => {
+      printWindow.requestAnimationFrame(() => printWindow.requestAnimationFrame(() => resolve()));
+    });
     printWindow.print();
   }
 
