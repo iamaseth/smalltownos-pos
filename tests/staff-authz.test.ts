@@ -37,6 +37,7 @@ const {
   now,
 } = require('./helpers/test-setup');
 const { staffRoutes } = require('../main/routes/staff');
+const { registerAccessRoutes } = require('../main/routes/register-access');
 const { getJWTSecret } = require('../main/routes/auth');
 
 function seedUser(db: any, id: string, role: string, pin = '1234') {
@@ -74,7 +75,7 @@ async function main() {
     VALUES ('station-145', 'Main Kitchen', 1, ?, ?)`
   ).run(now(), now());
 
-  const app = createApp({ '/api/staff': staffRoutes });
+  const app = createApp({ '/api/staff': staffRoutes, '/api/register-access': registerAccessRoutes });
 
   console.log('\n── Manager boundaries ─────────────────────────────────────────');
   let result = await request(app).put('/api/staff/owner-145').set(managerAuth).send({
@@ -179,6 +180,13 @@ async function main() {
   assertEqual(result.body.staff.has_pin, 1, 'cashier PIN is reported as configured');
   const cashierPinHash = (db.prepare('SELECT pin_hash FROM users WHERE id = ?').get(result.body.staff.id) as any).pin_hash;
   assert(bcrypt.compareSync('2468', cashierPinHash), 'cashier PIN is stored as a bcrypt hash');
+  result = await request(app).post('/api/register-access/unlock').set(managerAuth).send({ pin: '2468' });
+  assertEqual(result.status, 200, 'valid cashier PIN identifies the active employee');
+  assertEqual(result.body.operator.id, result.body.operator.id, 'PIN response includes employee identity');
+  assertEqual(result.body.operator.role, 'cashier', 'PIN response includes employee role');
+  assert(Array.isArray(result.body.operator.permissions), 'PIN response includes effective permissions');
+  assert(result.body.operator.permissions.includes('pos.use'), 'cashier receives existing role-based POS permissions');
+
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
     name: 'Duplicate PIN cashier', email: 'duplicate-pin-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '2468',
