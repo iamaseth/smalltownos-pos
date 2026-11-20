@@ -160,7 +160,7 @@ export default function PrintCenter() {
             <div className="grid grid-cols-2 gap-2">
               <button type="button" disabled={busy || !webUsbSupported} onClick={async () => { setPrintMethod('escpos'); await connect(); await refreshHardwarePrinter(); }}
                 className={`rounded-lg px-3 py-2 font-semibold ${printMethod === 'escpos' ? 'bg-emerald-600' : 'bg-slate-700'} disabled:opacity-50`}>
-                {usbConnected ? 'USB connected ✓' : 'Connect USB printer'}
+                {usbConnected ? 'Choose another USB printer' : 'Connect USB printer'}
               </button>
               <button type="button" onClick={() => setPrintMethod(printMethod === 'browser' ? 'escpos' : 'browser')}
                 className={`rounded-lg px-3 py-2 font-semibold ${printMethod === 'browser' ? 'bg-emerald-600' : 'bg-slate-700'}`}>
