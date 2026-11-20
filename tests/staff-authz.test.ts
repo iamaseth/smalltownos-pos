@@ -186,12 +186,13 @@ async function main() {
   assertEqual(result.body.operator.id, pinnedCashierId, 'PIN response identifies the correct employee');
   assertEqual(result.body.operator.role, 'cashier', 'PIN response includes employee role');
   assert(Array.isArray(result.body.operator.permissions), 'PIN response includes effective permissions');
+  const employeePermissions = result.body.operator.permissions as string[];
   const employeeToken = jwt.verify(result.body.access_token, getJWTSecret()) as any;
   assertEqual(employeeToken.userId, pinnedCashierId, 'employee session JWT is scoped to the PIN-matched cashier');
   assertEqual(employeeToken.registerSession, true, 'employee session JWT is marked as a register session');
   result = await request(app).get('/api/staff').set({ Authorization: `Bearer ${result.body.access_token}` });
   assertEqual(result.status, 403, 'employee session cannot use manager-only staff administration APIs');
-  assert(result.body.operator.permissions.includes('pos.use'), 'cashier receives existing role-based POS permissions');
+  assert(employeePermissions.includes('pos.use'), 'cashier receives existing role-based POS permissions');
 
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
