@@ -1,6 +1,7 @@
 # SmalltownOS POS — Durable Project Checkpoint
 
 ## Status
+
 Active.
 
 ## Critical architecture decision
@@ -8,8 +9,9 @@ Active.
 There are TWO codebases with different roles.
 
 ### 1. Actual SmalltownOS POS application
+
 Lovable project:
-https://lovable.dev/projects/d80fe793-ea84-405a-800a-aba630890128
+<https://lovable.dev/projects/d80fe793-ea84-405a-800a-aba630890128>
 
 This existing Lovable POS is the application Seth will see, test, and develop interactively.
 
@@ -19,11 +21,12 @@ Seth tests visually in Lovable -> changes are made to the SmalltownOS POS -> Set
 Do NOT abandon this Lovable project merely because FloCafe cannot be imported directly into Lovable.
 
 ### 2. FloCafe reference / source library
+
 GitHub fork:
-https://github.com/iamaseth/smalltownos-pos
+<https://github.com/iamaseth/smalltownos-pos>
 
 Upstream:
-https://github.com/FreeOpenSourcePOS/FloCafe
+<https://github.com/FreeOpenSourcePOS/FloCafe>
 
 This repository preserves the complete FloCafe open-source code so its proven POS architecture and implementations can be studied and selectively adapted into the actual SmalltownOS POS.
 
@@ -32,7 +35,9 @@ FloCafe is NOT the user-facing SmalltownOS application and does not need to be f
 Preserve FloCafe's MIT license and attribution when reusing applicable code.
 
 ## What to reuse/adapt from FloCafe
+
 Use FloCafe as the blueprint/parts library for:
+
 - local/offline POS operation
 - multiple server/waiter devices
 - shared/open orders and tabs
@@ -50,6 +55,7 @@ Use FloCafe as the blueprint/parts library for:
 Do not copy UI blindly. SmalltownOS should have its own simpler, modern, phone-first interface.
 
 ## First SmalltownOS POS priority
+
 Make order entry extremely fast and easy during busy service.
 
 Initial proof:
@@ -59,6 +65,7 @@ Target server flow:
 PIN -> Open Orders / Tables -> select or create order -> tap products -> Send.
 
 Requirements:
+
 - large touch targets
 - favorites/recent items
 - quick category switching
@@ -73,9 +80,11 @@ Requirements:
 - authorized electronic/KHQR closing later after confirmed payment
 
 ## Accounting boundary
+
 SmalltownOS POS owns operational POS state.
 
 Emerald Ledger remains the accounting system of record for:
+
 - general ledger
 - statements
 - AP
@@ -88,9 +97,11 @@ Emerald Ledger remains the accounting system of record for:
 Do not burden the ordering UI with accounting complexity.
 
 ## Later integration direction
+
 Verified/finalized POS transactions should eventually emit durable idempotent events toward SmalltownOS/Emerald Ledger.
 
 Initial event families:
+
 - sale.finalized
 - payment.captured
 - payment.refunded
@@ -99,6 +110,7 @@ Initial event families:
 - register.cash_movement_recorded
 
 ## Deferred until core ordering works
+
 - Voice Capture ordering
 - deeper KHQR integration
 - Khmer localization enhancements
@@ -107,12 +119,15 @@ Initial event families:
 - advanced multi-location/cloud features
 
 ## Important history
+
 An earlier checkpoint incorrectly described the FloCafe fork as the implementation foundation itself. The decision was clarified on 2026-09-26: the existing visible Lovable POS is the actual SmalltownOS POS application; FloCafe is the open-source reference/source library used to accelerate and strengthen it.
 
 ## Resume command
+
 $continue dev smalltownOS POS
 
 On resume:
+
 1. Restore the existing Lovable POS project above.
 2. Use this FloCafe fork as the reference/source library.
 3. Continue the fast multi-phone server/waiter workflow.
