@@ -229,8 +229,12 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   // The touch keypad and note buttons edit the same controlled inputs as a physical keyboard.
   const cashIndex = payments.findIndex((p) => p.method === 'cash' && p.payment_method_id === undefined);
+  // The bank QR tender is the first switched-on bank method (ABA, ACLEDA…); its own name is shown.
   const abaIndex = payments.findIndex((p) => p.payment_method_id !== undefined
-    && customMethods.find((m) => m.id === p.payment_method_id)?.name.trim().toLowerCase() === 'aba (manual)');
+    && customMethods.some((m) => m.id === p.payment_method_id && m.name.trim().toLowerCase() !== 'prepaid (ib4)'));
+  const bankName = abaIndex >= 0
+    ? (customMethods.find((m) => m.id === payments[abaIndex].payment_method_id)?.name || 'Bank').replace(/\s*\(manual\)\s*$/i, '').trim()
+    : 'Bank';
 
   const updateCashField = (compute: (current: string) => string, currency: 'USD' | 'KHR' = keypadCurrency) => {
     if (cashIndex < 0) return;
@@ -500,7 +504,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     const builtIn = PAYMENT_METHODS.find((method) => method.key === payment?.method && payment?.payment_method_id === undefined);
     if (builtIn?.key === 'card') return '💳 ' + t(BUILT_IN_PAYMENT_KEYS[builtIn.key]);
     if (builtIn) return t(BUILT_IN_PAYMENT_KEYS[builtIn.key]);
-    if (idx === abaIndex) return 'ABA / KHQR';
+    if (idx === abaIndex) return `${bankName} / KHQR`;
     return customMethods.find((method) => method.id === payment?.payment_method_id)?.name || tCommon('unknown');
   };
 
@@ -601,8 +605,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             <div className="grid grid-cols-3 gap-2.5" role="tablist" aria-label="Payment type">
               {tenderButton(null, '💵 Cash', cashTenderedUsd)}
               {abaIndex >= 0
-                ? tenderButton(abaIndex, 'ABA / KHQR', parseFloat(payments[abaIndex].amount) || 0)
-                : tenderButton(ABA_SETUP_TENDER, 'ABA / KHQR', 0)}
+                ? tenderButton(abaIndex, `${bankName} / KHQR`, parseFloat(payments[abaIndex].amount) || 0)
+                : tenderButton(ABA_SETUP_TENDER, 'Bank / KHQR', 0)}
               {payments.map((payment, idx) => idx === cashIndex || idx === abaIndex ? null : tenderButton(idx, tenderLabel(idx), parseFloat(payment.amount) || 0))}
             </div>
 
@@ -653,9 +657,9 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
             {tenderIndex === ABA_SETUP_TENDER && (
               <div className="rounded-2xl border-2 border-yellow-500 bg-neutral-900 p-4 text-white">
-                <p className="text-lg font-bold">ABA is not switched on yet</p>
-                <p className="mt-1 text-base text-neutral-300">An owner can enable it in Settings → Payment Methods → <b>Enable ABA (Manual)</b>. It then appears here as a payment type.</p>
-                <p className="mt-3 rounded-lg bg-yellow-400 px-3 py-2 text-sm font-bold text-black">Never mark a QR payment as paid from a customer&apos;s screenshot. Check the bar&apos;s ABA app.</p>
+                <p className="text-lg font-bold">No bank payment is switched on yet</p>
+                <p className="mt-1 text-base text-neutral-300">An owner can switch one on in Settings → Payments. It then appears here as a payment type.</p>
+                <p className="mt-3 rounded-lg bg-yellow-400 px-3 py-2 text-sm font-bold text-black">Never mark a QR payment as paid from a customer&apos;s screenshot. Check the bar&apos;s bank app.</p>
               </div>
             )}
 
@@ -687,7 +691,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   )}
                 </div>
                 {tenderIndex === abaIndex && (
-                  <p className="mt-3 rounded-lg bg-yellow-400 px-3 py-2 text-base font-bold text-black">Check the payment arrived in the ABA app before pressing Pay.</p>
+                  <p className="mt-3 rounded-lg bg-yellow-400 px-3 py-2 text-base font-bold text-black">Check the payment arrived in the {bankName} app before pressing Pay.</p>
                 )}
               </div>
             )}

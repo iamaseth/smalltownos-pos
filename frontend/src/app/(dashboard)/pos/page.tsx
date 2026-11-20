@@ -136,6 +136,7 @@ export default function POSPage() {
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [payNow, setPayNow] = useState(false);
+  const [payAfterDestination, setPayAfterDestination] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const destination: OrderDestination | null = cart.tableId
     ? 'table'
@@ -652,7 +653,8 @@ export default function POSPage() {
   const handlePlaceOrder = () => placeOrder(false);
 
   // thenPay: send the order, then open the payment screen for its bill.
-  const placeOrder = async (thenPay: boolean) => {
+  // forceToGo: the cashier just chose To Go from the Pay prompt, before the cart state has re-rendered.
+  const placeOrder = async (thenPay: boolean, forceToGo = false) => {
     if (submitting) return;
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
@@ -662,7 +664,8 @@ export default function POSPage() {
       setShowCustomerPrompt(true);
       return;
     }
-    if (destinationMissing()) {
+    if (!forceToGo && destinationMissing()) {
+      setPayAfterDestination(thenPay);
       promptForDestination();
       return;
     }
@@ -717,10 +720,10 @@ export default function POSPage() {
         setPendingOrder(null);
       } else {
         const orderPayload = {
-          table_id: cart.tableId,
-          tab_name: cart.tabName || undefined,
+          table_id: forceToGo ? null : cart.tableId,
+          tab_name: forceToGo ? undefined : cart.tabName || undefined,
           customer_id: cart.customerId,
-          type: cart.orderType,
+          type: forceToGo ? 'takeaway' : cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
           online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
@@ -1457,12 +1460,12 @@ export default function POSPage() {
       )}
 
       {isRestaurant && showDestinationChoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setShowDestinationChoice(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => { setShowDestinationChoice(false); setPayAfterDestination(false); }}>
           <div role="dialog" aria-modal="true" aria-labelledby="destination-choice-title" data-testid="destination-choice"
             className="w-full max-w-md rounded-2xl border-2 border-[#3d4f7c] bg-[#0f1729] p-5 text-[#e5e9f2]" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-start justify-between gap-3">
               <h3 id="destination-choice-title" className="text-[20px] font-black leading-tight text-white">{DESTINATION_PROMPT}</h3>
-              <button type="button" onClick={() => setShowDestinationChoice(false)} aria-label={t('close')}
+              <button type="button" onClick={() => { setShowDestinationChoice(false); setPayAfterDestination(false); }} aria-label={t('close')}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#3d4f7c] bg-[#22325a]"><X size={20} /></button>
             </div>
             <div className="grid grid-cols-3 gap-2">
@@ -1471,7 +1474,12 @@ export default function POSPage() {
                 ['Tab', handleChooseTabMode] as const,
                 ['To Go', handleChooseToGo] as const,
               ]).map(([label, choose]) => (
-                <button key={label} type="button" onClick={() => { setShowDestinationChoice(false); choose(); }}
+                <button key={label} type="button" onClick={() => {
+                  setShowDestinationChoice(false);
+                  choose();
+                  if (label === 'To Go' && payAfterDestination) void placeOrder(true, true);
+                  setPayAfterDestination(false);
+                }}
                   className="flex h-16 items-center justify-center rounded-xl border-2 border-[#4a5f92] bg-[#22325a] text-[18px] font-black uppercase text-white hover:bg-[#2b3d68] active:scale-95">
                   {label}
                 </button>

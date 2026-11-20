@@ -1,7 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Plus, Minus } from 'lucide-react';
+import { X, Plus, Minus, Check } from 'lucide-react';
+
+const SELECTED_ROW = 'border-2 border-brand bg-brand/15 ring-2 ring-brand/30 shadow-sm text-brand dark:text-indigo-300';
+const UNSELECTED_ROW = 'border border-border hover:border-gray-300 hover:bg-muted/50 dark:border-border';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
@@ -99,6 +102,16 @@ export default function AddonModal({
     }
   };
 
+  /** Tapping a row: a pick-one group switches to the tapped option instead of refusing it. */
+  const tapAddonRow = (group: AddonGroup, addon: Addon, qty: number) => {
+    if (qty === 0 && group.max_selection === 1) {
+      setSelected({ ...selected, [group.id]: [{ ...addon, quantity: 1 }] });
+      return;
+    }
+    if (qty === 0) updateAddonQuantity(group, addon, 1);
+    else if (qty === 1) updateAddonQuantity(group, addon, -1);
+  };
+
   const toggleAddonCheckbox = (group: AddonGroup, addon: Addon) => {
     const currentList = selected[group.id] || [];
     const exists = currentList.some((a) => a.id === addon.id);
@@ -194,19 +207,23 @@ export default function AddonModal({
                       return (
                         <div
                           key={addon.id}
-                          className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                            isSel
-                              ? 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
-                              : 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border'
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={isSel}
+                          onClick={() => tapAddonRow(group, addon, addonQty)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tapAddonRow(group, addon, addonQty); } }}
+                          className={`w-full min-h-14 flex cursor-pointer select-none items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors active:scale-[0.99] ${
+                            isSel ? SELECTED_ROW : UNSELECTED_ROW
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="font-medium text-foreground">{addon.name}</span>
+                            {isSel && <Check size={16} className="shrink-0 text-brand dark:text-indigo-300" aria-hidden />}
+                            <span className={`text-foreground ${isSel ? 'font-bold' : 'font-medium'}`}>{addon.name}</span>
                             <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
                               {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                             {isSel ? (
                               <div className="flex items-center gap-1.5 bg-card border border-brand rounded-lg p-0.5">
                                 <button
@@ -242,19 +259,23 @@ export default function AddonModal({
                     return (
                       <div
                         key={addon.id}
-                        className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${
-                          isSel
-                            ? 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
-                            : 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border'
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={isSel}
+                        onClick={() => tapAddonRow(group, addon, addonQty)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tapAddonRow(group, addon, addonQty); } }}
+                        className={`w-full min-h-14 flex cursor-pointer select-none items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors active:scale-[0.99] ${
+                          isSel ? SELECTED_ROW : UNSELECTED_ROW
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-foreground">{addon.name}</span>
+                          {isSel && <Check size={16} className="shrink-0 text-brand dark:text-indigo-300" aria-hidden />}
+                            <span className={`text-foreground ${isSel ? 'font-bold' : 'font-medium'}`}>{addon.name}</span>
                           <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
                             {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                           </span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           {isSel ? (
                             <div className="flex items-center gap-1.5 bg-card border border-brand rounded-lg p-0.5">
                               <button
