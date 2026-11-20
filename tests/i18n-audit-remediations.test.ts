@@ -62,6 +62,23 @@ function assert(label: string, condition: boolean, detail?: string) {
   }
 }
 
+/** Minimal DOM for printHtmlInFrame: one hidden iframe whose window counts print() calls. */
+function installFrameDom(opts: { noWindow?: boolean } = {}) {
+  const state = { printCalls: 0, written: '', appended: 0, removed: 0 };
+  const frameWindow = { print: () => { state.printCalls++; }, focus: () => {}, addEventListener: () => {} };
+  const frameDoc = { open: () => {}, write: (h: string) => { state.written += h; }, close: () => {}, images: [], fonts: { ready: Promise.resolve() } };
+  const frame = {
+    style: {} as Record<string, string>, tabIndex: 0, setAttribute: () => {},
+    remove: () => { state.removed++; },
+    contentWindow: opts.noWindow ? null : frameWindow,
+    contentDocument: opts.noWindow ? null : frameDoc,
+  };
+  const prev = { document: (global as any).document, raf: (global as any).requestAnimationFrame };
+  (global as any).document = { createElement: () => frame, body: { appendChild: () => { state.appended++; } } };
+  (global as any).requestAnimationFrame = (cb: () => void) => setTimeout(cb, 0);
+  return { state, restore: () => { (global as any).document = prev.document; (global as any).requestAnimationFrame = prev.raf; } };
+}
+
 async function run() {
   console.log('================================================================');
   console.log('Test Suite: i18n Audit Remediations Verification & Visual Evidence');
@@ -172,38 +189,27 @@ async function run() {
     );
   }
 
-  // 1.4 printWebBill opens popup synchronously within user gesture turn
+  // 1.4 printWebBill prints through a hidden frame (no popup, so no popup blocker after the payment await)
   const originalWindow = (global as any).window;
-  let windowOpenedSync = false;
-  const openedWindowDoc = {
-    open: () => {},
-    write: (_html: string) => {},
-    close: () => {},
-    readyState: 'complete',
-  };
-  (global as any).window = {
-    open: () => {
-      windowOpenedSync = true;
-      return {
-        document: openedWindowDoc,
-        closed: false,
-        print: () => {},
-      };
-    },
-  };
-  windowOpenedSync = false;
-  await printWebBill(
-    sampleBill,
-    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-    { language: 'fa' as any }
-  );
-  assert('printWebBill opens popup window synchronously to preserve user activation', windowOpenedSync === true);
+  let popupOpened = false;
+  (global as any).window = { open: () => { popupOpened = true; return null; } };
+  const frameDom = installFrameDom();
+  try {
+    await printWebBill(
+      sampleBill,
+      { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+      { language: 'fa' as any }
+    );
+    assert('printWebBill does not open a popup', popupOpened === false);
+    assert('printWebBill prints exactly once through the frame', frameDom.state.printCalls === 1);
+    assert('printWebBill writes the localized receipt into the frame', /<html lang="fa[^"]*" dir="rtl">/.test(frameDom.state.written));
+  } finally {
+    frameDom.restore();
+  }
 
-  // 1.5 printWebBill throws when popup is blocked or closed
-  (global as any).window = {
-    open: () => null,
-  };
-  let blockedErrorThrown = false;
+  // 1.5 printWebBill rejects when the print frame cannot be created
+  const brokenDom = installFrameDom({ noWindow: true });
+  let frameErrorThrown = false;
   try {
     await printWebBill(
       sampleBill,
@@ -211,120 +217,11 @@ async function run() {
       { language: 'en' as any }
     );
   } catch (err: any) {
-    blockedErrorThrown = err.message.includes('Popup window was blocked');
+    frameErrorThrown = String(err.message).includes('print frame');
+  } finally {
+    brokenDom.restore();
   }
-  assert('printWebBill throws error when popup is blocked', blockedErrorThrown === true);
-
-  (global as any).window = {
-    open: () => ({
-      document: openedWindowDoc,
-      closed: true,
-      print: () => {},
-    }),
-  };
-  let closedErrorThrown = false;
-  try {
-    await printWebBill(
-      sampleBill,
-      { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-      { language: 'en' as any }
-    );
-  } catch (err: any) {
-    closedErrorThrown = err.message.includes('Print window was closed');
-  }
-  assert('printWebBill throws error when window is closed before print', closedErrorThrown === true);
-
-  // 1.6 printWebBill awaits deferred onload and rejects if window is closed during loading
-  let deferredPrintTriggered = false;
-  let mockOnloadCallback: (() => void) | null = null;
-  const deferredMockWindow: any = {
-    document: {
-      open: () => {},
-      write: (_html: string) => {},
-      close: () => {},
-      readyState: 'loading',
-    },
-    closed: false,
-    print: () => {
-      deferredPrintTriggered = true;
-    },
-    set onload(cb: () => void) {
-      mockOnloadCallback = cb;
-    },
-    get onload() {
-      return mockOnloadCallback;
-    },
-  };
-
-  (global as any).window = {
-    open: () => deferredMockWindow,
-  };
-
-  const printPromise = printWebBill(
-    sampleBill,
-    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-    { language: 'en' as any }
-  );
-
-  // Trigger onload callback
-  if (mockOnloadCallback) (mockOnloadCallback as any)();
-  await printPromise;
-  assert('printWebBill resolves after deferred onload triggers print', deferredPrintTriggered === true);
-
-  // Test deferred window close rejection
-  let deferredClosedErrorThrown = false;
-  deferredMockWindow.closed = true;
-  mockOnloadCallback = null;
-  const printClosedPromise = printWebBill(
-    sampleBill,
-    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-    { language: 'en' as any }
-  );
-  // Window closed before onload
-  try {
-    if (mockOnloadCallback) (mockOnloadCallback as any)();
-    await printClosedPromise;
-  } catch (err: any) {
-    deferredClosedErrorThrown = err.message.includes('Print window was closed');
-  }
-  assert('printWebBill rejects when deferred window is closed before onload', deferredClosedErrorThrown === true);
-
-  // 1.7 printWebBill rejects via poll timer when onload NEVER fires and window is closed
-  let pollClosedErrorThrown = false;
-  const pollMockWindow: any = {
-    document: {
-      open: () => {},
-      write: (_html: string) => {},
-      close: () => {},
-      readyState: 'loading',
-    },
-    closed: false,
-    print: () => {},
-    onload: null,
-  };
-
-  (global as any).window = {
-    open: () => pollMockWindow,
-  };
-
-  const pollPrintPromise = printWebBill(
-    sampleBill,
-    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
-    { language: 'en' as any }
-  );
-
-  // Close window after 60ms without triggering onload
-  setTimeout(() => {
-    pollMockWindow.closed = true;
-  }, 60);
-
-  try {
-    await pollPrintPromise;
-  } catch (err: any) {
-    pollClosedErrorThrown = err.message.includes('Print window was closed');
-  }
-  assert('printWebBill rejects via polling watcher when window closes during loading', pollClosedErrorThrown === true);
-
+  assert('printWebBill rejects when the print frame cannot open', frameErrorThrown === true);
   (global as any).window = originalWindow;
 
   // ----------------------------------------------------------------

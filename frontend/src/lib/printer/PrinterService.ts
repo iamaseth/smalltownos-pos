@@ -20,13 +20,6 @@ type StatusListener = (status: PrinterStatus, info?: PrinterInfo) => void;
 
 const ESCPOS_USB_CLASS = 0x07;
 const PRINTER_INTERFACE = 0;
-const PREFERRED_DEVICE_STORAGE_KEY = 'backstreet.usb.preferred-printer';
-
-interface PreferredUsbDevice {
-  vendorId: number;
-  productId: number;
-  serialNumber?: string;
-}
 
 class PrinterService {
   private device: USBDevice | null = null;
@@ -36,52 +29,6 @@ class PrinterService {
   private _status: PrinterStatus = 'disconnected';
   private _printMode: PrintMode = 'escpos';
   private listeners: Set<StatusListener> = new Set();
-
-  private readPreferredDevice(): PreferredUsbDevice | null {
-    try {
-      const stored = window.localStorage.getItem(PREFERRED_DEVICE_STORAGE_KEY);
-      if (!stored) return null;
-      const parsed = JSON.parse(stored) as Partial<PreferredUsbDevice>;
-      if (typeof parsed.vendorId !== 'number' || typeof parsed.productId !== 'number') {
-        return null;
-      }
-      return {
-        vendorId: parsed.vendorId,
-        productId: parsed.productId,
-        serialNumber: typeof parsed.serialNumber === 'string' ? parsed.serialNumber : undefined,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  private rememberDevice(device: USBDevice): void {
-    try {
-      window.localStorage.setItem(PREFERRED_DEVICE_STORAGE_KEY, JSON.stringify({
-        vendorId: device.vendorId,
-        productId: device.productId,
-        serialNumber: device.serialNumber ?? undefined,
-      } satisfies PreferredUsbDevice));
-    } catch {
-      // Printing still works when browser storage is unavailable; only silent reconnect is disabled.
-    }
-  }
-
-  private async closeCurrentDevice(): Promise<void> {
-    navigator.usb?.removeEventListener('disconnect', this.handleDisconnect);
-
-    if (this.device) {
-      if (this.interfaceClaimed && this.claimedInterface !== null) {
-        await this.device.releaseInterface(this.claimedInterface).catch(() => {});
-      }
-      await this.device.close().catch(() => {});
-    }
-
-    this.device = null;
-    this.interfaceClaimed = false;
-    this.claimedInterface = null;
-    this.endpointOut = 0x01;
-  }
 
   get isConnected(): boolean {
     return this._status === 'connected';
@@ -140,9 +87,17 @@ class PrinterService {
 
   /** Opens (or re-opens) a device and claims its ESC/POS interface. */
   private async openDevice(device: USBDevice): Promise<void> {
-    // Always reopen and reclaim, even for the same device. A remembered USBDevice
-    // object can survive after the physical printer or its interface has failed.
-    await this.closeCurrentDevice();
+    if (this.device) {
+      // Check if this is the exact same physical device.
+      const sameDevice = this.device.vendorId === device.vendorId
+        && this.device.productId === device.productId
+        && this.device.serialNumber === device.serialNumber;
+      if (sameDevice) {
+        return;
+      }
+      // Release claim/interface on the previously connected device before switching.
+      await this.disconnect();
+    }
     this.device = device;
     try {
       await this.device.open();
@@ -172,7 +127,7 @@ class PrinterService {
         this.claimedInterface = PRINTER_INTERFACE;
       }
     } catch (err) {
-      await this.closeCurrentDevice();
+      await this.disconnect();
       this.setStatus('error');
       throw new Error(`Could not connect to printer: ${(err as Error).message}`);
     }
@@ -203,27 +158,22 @@ class PrinterService {
       );
     }
 
-    await this.runExclusive(async () => {
-      this.setStatus('connecting');
-      // An explicit connect means the operator wants to choose the physical printer.
-      // Clear the prior session first so cancelling cannot leave a stale "connected" state.
-      await this.closeCurrentDevice();
+    this.setStatus('connecting');
 
-      let device: USBDevice;
-      try {
-        device = await navigator.usb!.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
-      } catch (err: unknown) {
-        if (err instanceof DOMException && err.name === 'NotFoundError') {
-          this.setStatus('disconnected');
-          return;
-        }
-        this.setStatus('error');
-        throw new Error(`USB device selection failed: ${(err as Error).message}`);
+    let device: USBDevice;
+    try {
+      device = await navigator.usb.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
+    } catch (err: unknown) {
+      // Don't overwrite an existing connection if this request was cancelled or failed.
+      if (err instanceof DOMException && err.name === 'NotFoundError') {
+        if (!this.device) this.setStatus('disconnected');
+        return;
       }
+      if (!this.device) this.setStatus('error');
+      throw new Error(`USB device selection failed: ${(err as Error).message}`);
+    }
 
-      await this.openDevice(device);
-      this.rememberDevice(device);
-    });
+    await this.runExclusive(() => this.openDevice(device));
   }
 
   private reconnectPromise: Promise<boolean> | null = null;
@@ -239,17 +189,8 @@ class PrinterService {
       // already opened a device while this call was waiting its turn.
       if (this.device) return true;
       try {
-        const preferred = this.readPreferredDevice();
-        if (!preferred) return false;
         const devices = await navigator.usb!.getDevices();
-        const matches = devices.filter((device) =>
-          device.vendorId === preferred.vendorId
-          && device.productId === preferred.productId
-          && (!preferred.serialNumber || device.serialNumber === preferred.serialNumber)
-        );
-        // Without a serial number, reconnect only when the granted device is unambiguous.
-        // This prevents silently selecting the wrong printer when two identical models exist.
-        const previouslyGranted = matches.length === 1 ? matches[0] : undefined;
+        const previouslyGranted = devices[0];
         if (!previouslyGranted) return false;
         this.setStatus('connecting');
         await this.openDevice(previouslyGranted);
@@ -271,7 +212,25 @@ class PrinterService {
   }
 
   async disconnect(): Promise<void> {
-    await this.closeCurrentDevice();
+    navigator.usb?.removeEventListener('disconnect', this.handleDisconnect);
+
+    if (this.device) {
+      try {
+        if (this.interfaceClaimed && this.claimedInterface !== null) {
+          await this.device.releaseInterface(this.claimedInterface).catch(() => {});
+        }
+      } catch {}
+
+      try {
+        await this.device.close();
+      } catch {}
+
+      this.device = null;
+      this.interfaceClaimed = false;
+      this.claimedInterface = null;
+      this.endpointOut = 0x01;
+    }
+
     this.setStatus('disconnected');
   }
 
@@ -288,53 +247,25 @@ class PrinterService {
     try {
       // Copy to fresh ArrayBuffer to avoid subarray view issues.
       const buf = new Uint8Array(data).buffer as ArrayBuffer;
-      const result = await this.device.transferOut(this.endpointOut, buf);
-      if (result.status !== 'ok') {
-        throw new Error(`USB transfer returned ${result.status}`);
-      }
+      await this.device.transferOut(this.endpointOut, buf);
     } catch (err) {
-      await this.closeCurrentDevice();
-      this.setStatus('error');
       throw new Error(`Print failed: ${(err as Error).message}`);
     }
   }
 
-  /** Print using browser's print dialog with thermal-optimized styles. */
+  /**
+   * Print using the browser's print dialog with thermal-optimized styles.
+   *
+   * Uses a hidden same-origin iframe instead of a popup: popups can be blocked,
+   * and closing a popup straight after print() can cancel Chrome's print
+   * preview before anything reaches the printer (nothing prints, no error).
+   * The frame waits for its content (and fonts) to load, prints, and is only
+   * removed after Chrome reports the dialog finished (afterprint) or a safety
+   * timeout. With Chrome started with --kiosk-printing it prints silently to
+   * the Windows default printer.
+   */
   async printViaBrowser(htmlContent: string, paperWidth: 58 | 80): Promise<void> {
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      throw new Error('Please allow popups to print');
-    }
-
     const mmWidth = paperWidth === 58 ? '58mm' : '80mm';
-
-    // Establish a complete document before adding receipt content. Chrome can
-    // otherwise finish loading the initial about:blank after our DOM changes
-    // and replace them, leaving an empty print preview.
-    printWindow.document.open();
-    printWindow.document.write('<!doctype html><html><head><title>Receipt</title></head><body></body></html>');
-    printWindow.document.close();
-
-    const style = printWindow.document.createElement('style');
-    style.textContent = `
-      @page { size: ${mmWidth} auto; margin: 0; }
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body {
-        font-family: 'Courier New', 'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Noto Sans Thai', 'Leelawadee UI', Thonburi, monospace;
-        font-size: 12px;
-        line-height: 1.2;
-        width: ${mmWidth};
-        max-width: ${mmWidth};
-        margin: 0 auto;
-        padding: 4px;
-        text-align: left;
-      }
-      @media print {
-        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; }
-        @page { size: ${mmWidth} auto; margin: 0; }
-      }
-    `;
-    printWindow.document.head.appendChild(style);
 
     // Parse receipt markup and strip executable/script nodes before printing.
     const parsed = new DOMParser().parseFromString(htmlContent, 'text/html');
@@ -352,17 +283,29 @@ class PrinterService {
         }
       }
     });
-    printWindow.document.body.replaceChildren(
-      ...Array.from(parsed.body.childNodes).map((node) => printWindow.document.importNode(node, true)),
-    );
-    printWindow.addEventListener('afterprint', () => printWindow.close(), { once: true });
-    printWindow.focus();
 
-    // Let Chrome paint the receipt before it captures the print preview.
-    await new Promise<void>((resolve) => {
-      printWindow.requestAnimationFrame(() => printWindow.requestAnimationFrame(() => resolve()));
-    });
-    printWindow.print();
+    const css = `
+      @page { size: ${mmWidth} auto; margin: 0; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { background: #fff; color: #000; }
+      body {
+        font-family: 'Courier New', 'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Noto Sans Thai', 'Leelawadee UI', Thonburi, monospace;
+        font-size: 12px;
+        line-height: 1.2;
+        width: ${mmWidth};
+        max-width: ${mmWidth};
+        margin: 0;
+        padding: 4px;
+        text-align: left;
+      }
+      @media print {
+        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; }
+      }
+    `;
+
+    const body = new XMLSerializer().serializeToString(parsed.body).replace(/^<body[^>]*>|<\/body>$/g, '');
+    const { printHtmlInFrame } = await import('./frame-print');
+    await printHtmlInFrame(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Print</title><style>${css}</style></head><body>${body}</body></html>`);
   }
 
   private setStatus(status: PrinterStatus, info?: PrinterInfo): void {
