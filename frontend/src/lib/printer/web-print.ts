@@ -129,7 +129,7 @@ export async function printWebBill(
   // blocker) and does not cancel Chrome's print preview.
   try {
     const { printHtmlInFrame } = await import('./frame-print');
-    await printHtmlInFrame(html);
+    await printHtmlInFrame(html, { receiptPaperWidthMm: paperSize === 'thermal80' ? 80 : 58 });
   } catch (err) {
     console.error('Failed to print receipt:', err);
     toast.error('Failed to open print dialog');
