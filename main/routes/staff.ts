@@ -32,6 +32,13 @@ function isValidPin(pin: unknown): boolean {
   return /^\d{4}$/.test(String(pin));
 }
 
+function pinAlreadyAssigned(db: ReturnType<typeof getDatabase>, pin: string, exceptUserId?: string): boolean {
+  const rows = db.prepare(
+    'SELECT id, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND id != COALESCE(?, \'\')'
+  ).all(exceptUserId || '') as Array<{ id: string; pin_hash: string }>;
+  return rows.some((row) => bcrypt.compareSync(pin, row.pin_hash));
+}
+
 function normalizeStaffEmail(email: unknown): string {
   return String(email || '').trim().toLowerCase();
 }
@@ -135,14 +142,15 @@ router.post('/', requirePermission('staff.operational.manage'), authRateLimit(),
       return res.status(403).json({ error: `This account can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})` });
     }
 
-    if (isOperationalRole(role) && hasNonEmptyPin(pin)) {
-      return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
-    }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
     }
 
     const db = getDatabase();
+
+    if (hasNonEmptyPin(pin) && pinAlreadyAssigned(db, String(pin))) {
+      return res.status(409).json({ error: 'This PIN is already assigned to another active employee' });
+    }
 
     const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
     if (existing) {
@@ -224,11 +232,11 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
     }
 
     const targetRole = role ?? member.role;
-    if (isOperationalRole(targetRole) && hasNonEmptyPin(pin)) {
-      return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
-    }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
+    }
+    if (hasNonEmptyPin(pin) && pinAlreadyAssigned(db, String(pin), req.params.id as string)) {
+      return res.status(409).json({ error: 'This PIN is already assigned to another active employee' });
     }
 
     if (emailProvided && !normalizedEmail) {
@@ -253,19 +261,15 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
       ? bcrypt.hashSync(password, 10)
       : member.password;
 
-    const pinChanged = isOperationalRole(targetRole)
-      ? Boolean(member.pin_hash)
-      : pin !== undefined && (
+    const pinChanged = pin !== undefined && (
           hasNonEmptyPin(pin)
             ? (!member.pin_hash || !bcrypt.compareSync(String(pin), member.pin_hash))
             : Boolean(member.pin_hash)
         );
 
-    const hashedPin = isOperationalRole(targetRole)
-      ? null
-      : pin !== undefined
-        ? (hasNonEmptyPin(pin) ? (pinChanged ? bcrypt.hashSync(String(pin), 10) : member.pin_hash) : null)
-        : member.pin_hash;
+    const hashedPin = pin !== undefined
+      ? (hasNonEmptyPin(pin) ? (pinChanged ? bcrypt.hashSync(String(pin), 10) : member.pin_hash) : null)
+      : member.pin_hash;
 
     // Revoke outstanding sessions only when credentials actually change.
     const credentialsChanged = passwordChanged || pinChanged;
