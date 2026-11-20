@@ -9,12 +9,15 @@ import GlobalNotifications from '@/components/layout/GlobalNotifications';
 import TitleBar from '@/components/layout/TitleBar';
 import TrainingBanner from '@/components/layout/TrainingBanner';
 import { usePrinterStatusSync } from '@/hooks/usePrinter';
+import { useRegisterAccess } from '@/hooks/useRegisterAccess';
+import RegisterLockScreen from '@/components/pos/RegisterLockScreen';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const normalizedPath = pathname?.replace(/\/+$/, '') || '/';
   const isPos = normalizedPath === '/pos' || normalizedPath === '/kds';
   const isSettings = normalizedPath === '/settings';
+  const registerAccess = useRegisterAccess(true);
   // Sync printer status early so hardware and WebUSB reconnect before first print.
   usePrinterStatusSync();
 
@@ -42,6 +45,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             <StatusBar showUpdateBadge={false} />
           </SidebarInset>
+          {registerAccess.operator && (
+            <div className="fixed end-3 top-14 z-[90] flex items-center gap-2 rounded-lg border bg-card/95 px-3 py-2 shadow-md">
+              <span className="max-w-32 truncate text-xs font-medium">{registerAccess.operator.name}</span>
+              <button type="button" onClick={registerAccess.lock}
+                className="rounded-md border px-2 py-1 text-xs font-semibold hover:bg-muted"
+                aria-label="Switch staff member">
+                Switch staff
+              </button>
+            </div>
+          )}
+          {registerAccess.locked && (
+            <RegisterLockScreen error={registerAccess.error} onUnlock={registerAccess.unlock} />
+          )}
         </div>
       </SidebarProvider>
     </AuthGuard>
