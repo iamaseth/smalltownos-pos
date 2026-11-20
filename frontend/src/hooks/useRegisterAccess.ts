@@ -62,11 +62,6 @@ export function useRegisterAccess(enabled: boolean) {
   }, [enabled, restoreAppUser]);
 
   // Leaving the POS always restores the original email/password identity.
-  useEffect(() => {
-    if (enabled) return;
-    if (operator) void restoreAppUser();
-  }, [enabled, operator, restoreAppUser]);
-
   const unlock = useCallback(async (pin: string) => {
     if (!enabled || !/^\d{4}$/.test(pin) || switching.current) return false;
     switching.current = true;
