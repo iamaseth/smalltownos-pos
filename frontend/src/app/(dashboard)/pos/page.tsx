@@ -1295,6 +1295,19 @@ export default function POSPage() {
 
   return (
     <>
+      {registerAccess.operator && (
+        <div className="fixed end-3 top-14 z-[90] flex items-center gap-2 rounded-lg border bg-card/95 px-3 py-2 shadow-md">
+          <span className="max-w-32 truncate text-xs font-medium">{registerAccess.operator.name}</span>
+          <button type="button" onClick={registerAccess.lock}
+            className="rounded-md border px-2 py-1 text-xs font-semibold hover:bg-muted"
+            aria-label="Switch staff member">
+            Switch staff
+          </button>
+        </div>
+      )}
+      {registerAccess.locked && (
+        <RegisterLockScreen error={registerAccess.error} onUnlock={registerAccess.unlock} />
+      )}
       {supportError && (
         <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-card p-4 shadow-xl">
           {sentTicketId ? (
