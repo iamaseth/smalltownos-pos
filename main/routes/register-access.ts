@@ -16,6 +16,9 @@ const router = Router();
 const pinLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 8,
+  // Count only wrong PINs. Successful staff switches must never lock a busy
+  // register out (8 normal switches in 15 minutes is routine at a bar).
+  skipSuccessfulRequests: true,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts. Try again later.' },
