@@ -732,6 +732,7 @@ day-boundary rules.
 | `GET` | `/daily-sales/export` | `ROLE_ACCESS.owner` | query: `?date`, `?format`, `?part` | See [GET `/api/reports/daily-sales/export`](#get-apireportsdaily-salesexport). |
 | `GET` | `/shift-report` | `cash.shifts.view` | query: `session_id` | Read-only shift printout data from `main/services/shift-report.ts`: `kind: "X"` while the cash session is open, `"Z"` once closed. Sales, payments (Cash USD and Cash KHR split from the payment line's cash fields; custom methods by name), tables, unpaid tickets, cash expected/counted per currency, cash spent, reconciliation notes and the shift-close Telegram delivery status. `404` for an unknown session. |
 | `GET` | `/daily-report` | `reports.view` | query: `date` (required) | Business-day printout data: sales, shifts with cash differences, payments, categories, top products, tables and unpaid tickets. |
+| `GET` | `/order-detail` | `cash.shifts.view` | query: `order_id` | Read-only details for one order: items with kitchen status, payment lines, discount, and history from `order_audit_log`. Shift and daily report payloads list every order (`orders[]`) with cashier, payment method and `shiftId`. |
 | `POST` | `/shift-report/telegram` | `cash.shifts.view` | body: `session_id` | Sends the shift printout to every active Telegram recipient as monospace text (`report_type: "printout"`); returns `{ sent, pending, failed }`. `400` when Telegram is not connected or no recipient is active. |
 | `POST` | `/daily-report/telegram` | `reports.view` | body: `date` | As above for the daily report. |
 

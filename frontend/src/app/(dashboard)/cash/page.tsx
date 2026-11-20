@@ -11,6 +11,7 @@ import api from '@/lib/api';
 import { formatKhr, formatUsdCents } from '@shared/cash-counter';
 import { CashCounter, cashCountPayload, cashCountTotals, emptyCashCount, type CashCountValue } from '@/components/cash/CashCounter';
 import { ReportOutputButtons } from '@/components/reports/ReportOutputButtons';
+import { ShiftOrders } from '@/components/reports/OrderList';
 import { printReportReceipt } from '@/lib/printer/shift-report-print';
 import { PrintSkippedError } from '@/lib/printer/print-jobs';
 
@@ -232,6 +233,12 @@ export default function CashPage() {
           <BigButton tone="primary" onClick={() => go({ name: 'open' })}>Open shift — count the float</BigButton>
         )}
         {s && <BigButton tone="primary" onClick={() => router.push('/pos')}>Go to POS</BigButton>}
+        {s && (
+          <details className="rounded-xl border p-4">
+            <summary className="cursor-pointer text-base font-semibold">This shift&apos;s tables and orders</summary>
+            <div className="mt-3"><ShiftOrders sessionId={s.id} /></div>
+          </details>
+        )}
         {s && (s.is_mine || status.can_resolve) && (
           <BigButton onClick={() => go({ name: 'close', sessionId: s.id })}>Close shift</BigButton>
         )}

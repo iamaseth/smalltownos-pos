@@ -13,7 +13,7 @@ import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countrie
 import { computeDayAggregates, paymentMethodBreakdown } from './cash-closures';
 import { getCurrencyFractionDigits } from '../countries';
 import { buildDailySalesExportDataset } from '../services/daily-sales-export';
-import { buildDailyReport, buildShiftReport } from '../services/shift-report';
+import { buildDailyReport, buildOrderDetail, buildShiftReport } from '../services/shift-report';
 import { sendPrintoutNow } from '../services/telegram';
 import {
   dailySalesExportFilename,
@@ -1273,6 +1273,14 @@ router.get('/daily-report', requirePermission('reports.view'), (req: Request, re
     const date = String(req.query.date || '');
     if (!DAY_RE.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     res.json(buildDailyReport(date));
+  } catch (error) { sendReportError(res, error); }
+});
+
+router.get('/order-detail', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
+  try {
+    const id = Number(req.query.order_id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'order_id is required' });
+    res.json(buildOrderDetail(id));
   } catch (error) { sendReportError(res, error); }
 });
 

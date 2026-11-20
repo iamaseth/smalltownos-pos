@@ -125,6 +125,13 @@ async function main() {
   assertEqualOrThrow(xr.cash.expectedKhrRiel, 82000, 'expected KHR = float + riel sales');
   assertEqualOrThrow(xr.cash.countedUsdCents, null, 'X-report has no count yet');
   assertEqualOrThrow(xr.spent[0]?.label, 'Ice', 'cash spent listed');
+  assertEqualOrThrow(xr.orders.length, 6, 'X-report lists every order of the shift on its own line');
+  const togo = xr.orders.find((o: any) => o.label === 'To Go');
+  assertOrThrow(togo?.cashier === 'Thida' && togo.paidWith === 'Cash KHR' && togo.shiftId === sid, 'order line carries cashier, payment and shift');
+  const unpaidLine = xr.orders.find((o: any) => o.status === 'unpaid');
+  const detail = await request(app).get(`/api/reports/order-detail?order_id=${unpaidLine.id}`).set('Authorization', C);
+  assertEqualOrThrow(detail.status, 200, 'cashier can open an order\'s details');
+  assertOrThrow(detail.body.items.length === 1 && detail.body.payments.length === 0 && detail.body.history.length >= 1, 'details show items, no payment yet, and history');
 
   const before = JSON.stringify(db.prepare(`SELECT COUNT(*) a, (SELECT COUNT(*) FROM cash_reconciliations) b, (SELECT status FROM cash_sessions WHERE id = ?) c FROM bills`).get(sid));
   await request(app).get(`/api/reports/shift-report?session_id=${sid}`).set('Authorization', C);
@@ -169,6 +176,7 @@ async function main() {
   assertEqualOrThrow(day.body.sales.netCents, z.sales.netCents, 'day net matches the closed shift');
   assertEqualOrThrow(z.sales.netCents, 6900, 'Z net includes the bill paid before closing');
   assertOrThrow(day.body.categories.some((c: any) => c.label === 'Beer'), 'sales grouped by menu category');
+  assertOrThrow(day.body.orders.length === 6 && day.body.orders.every((o: any) => o.shiftId === sid), 'daily orders are tagged with their shift');
   const dLines = text.renderDailyReport(day.body, 42, 'Asia/Phnom_Penh');
   assertOrThrow(Math.max(...dLines.map((l: string) => displayCellWidth(l))) <= 42, 'daily report fits 42 columns');
   const bad = await request(app).get(`/api/reports/daily-report?date=nope`).set('Authorization', tok('owner-r', 'owner'));

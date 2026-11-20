@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
-import { usd, khr, type DailyReportData, type ReportTableRow } from '@print/shift-report-text';
+import { usd, khr, type DailyReportData } from '@print/shift-report-text';
+import { OrderList } from './OrderList';
 import { ReportOutputButtons } from './ReportOutputButtons';
 
 export type DayView = 'daily' | 'shifts' | 'tables' | 'payments' | 'items';
@@ -12,13 +13,12 @@ function localToday(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function clock(utc: string | null, timezone: string): string {
+export function clock(utc: string | null, timezone: string): string {
   if (!utc) return '—';
   const date = new Date(`${utc.replace(' ', 'T')}Z`);
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: timezone });
 }
 
-const STATUS_LABEL: Record<ReportTableRow['status'], string> = { paid: 'Closed · paid', open: 'Open · part paid', unpaid: 'Open · unpaid' };
 const card = 'rounded-2xl border-2 border-border bg-card p-5';
 const th = 'pb-2 text-xs font-semibold text-muted-foreground';
 const row = 'border-t border-border';
@@ -120,29 +120,7 @@ export function DayReports({ view, canSendTelegram }: { view: DayView; canSendTe
             </section>
           )}
 
-          {view === 'tables' && (
-            <section className={card}>
-              {data.tables.length === 0 ? <p className="text-sm text-muted-foreground">No tables on this day.</p> : (
-                <div className="overflow-x-auto"><table className="w-full text-sm">
-                  <thead><tr>
-                    <th className={`${th} text-start`}>Table</th><th className={`${th} text-start`}>Cashier</th><th className={`${th} text-start`}>Opened</th>
-                    <th className={`${th} text-start`}>Closed</th><th className={`${th} text-end`}>Bills</th><th className={`${th} text-end`}>Total</th><th className={`${th} text-start ps-4`}>Status</th>
-                  </tr></thead>
-                  <tbody>{data.tables.map((t) => (
-                    <tr key={t.label} className={row}>
-                      <td className="py-2 font-semibold">{t.label}</td>
-                      <td className="py-2">{t.who || '—'}</td>
-                      <td className="py-2">{clock(t.openedAt, tz)}</td>
-                      <td className="py-2">{clock(t.closedAt, tz)}</td>
-                      <td className="py-2 text-end">{t.bills}</td>
-                      <td className="py-2 text-end font-semibold">{usd(t.totalCents)}</td>
-                      <td className={`py-2 ps-4 ${t.status === 'paid' ? 'text-muted-foreground' : 'font-semibold text-amber-700 dark:text-amber-400'}`}>{STATUS_LABEL[t.status]}</td>
-                    </tr>
-                  ))}</tbody>
-                </table></div>
-              )}
-            </section>
-          )}
+          {view === 'tables' && <OrderList orders={data.orders ?? []} shifts={data.shifts} tz={tz} date={date} />}
 
           {view === 'payments' && (
             <section className={card}>

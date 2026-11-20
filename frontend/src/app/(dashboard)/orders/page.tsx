@@ -164,6 +164,19 @@ export default function OrdersPage() {
 
   // Consolidated filter state
   const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '', status: '' });
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const search = params.get('search');
+    if (!search) return;
+    const date = params.get('date');
+    const openId = Number(params.get('open'));
+    queueMicrotask(() => {
+      setFilters((f) => ({ ...f, search }));
+      setTabFilter('all');
+      if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) { setDateRange('custom'); setCustomDate(date); }
+      if (Number.isInteger(openId) && openId > 0) setExpandedOrderId(openId);
+    });
+  }, []);
 
   // Consolidated cancel modal state
   const [cancelModal, setCancelModal] = useState<CancelModal | null>(null);

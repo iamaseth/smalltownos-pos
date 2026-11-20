@@ -2,7 +2,7 @@ import { dayBoundsInTimezone, getDatabase, getSettingValue, now, tenantBusinessD
 import { tenantTimezone } from '../routes/cash-closures';
 import { exchangeRate, expectedByCurrency, MATCH_TOLERANCE_USD_CENTS } from '../routes/cash-handover';
 import type {
-  DailyReportData, ReportPaymentRow, ReportQtyRow, ReportSales, ReportShiftRow, ReportSpentRow, ReportTableRow, ShiftReportData,
+  DailyReportData, ReportOrderRow, ReportPaymentRow, ReportQtyRow, ReportSales, ReportShiftRow, ReportSpentRow, ReportTableRow, ShiftReportData,
 } from '../../shared/print/shift-report-text';
 
 type Db = ReturnType<typeof getDatabase>;
@@ -124,12 +124,12 @@ function paymentsFor(db: Db, w: Window): ReportPaymentRow[] {
   });
 }
 
-interface OrderRow { id: number; order_number: string; table_number: string | null; tab_name: string | null; type: string; created_at: string; status: string; bill_status: string | null; total: number; paid_at: string | null; cashier: string | null }
+interface OrderRow { id: number; order_number: string; table_number: string | null; tab_name: string | null; type: string; created_at: string; status: string; bill_status: string | null; total: number; paid_at: string | null; cashier: string | null; payment_details: string | null }
 
 function ordersInWindow(db: Db, w: Window, extraOpen: boolean): OrderRow[] {
   return db.prepare(`
     SELECT o.id, o.order_number, t.number AS table_number, o.tab_name, o.type, o.created_at, o.status,
-      b.payment_status AS bill_status, COALESCE(b.total, o.total) AS total, b.paid_at, u.name AS cashier
+      b.payment_status AS bill_status, COALESCE(b.total, o.total) AS total, b.paid_at, u.name AS cashier, b.payment_details
     FROM orders o
     LEFT JOIN tables t ON t.id = o.table_id
     LEFT JOIN bills b ON b.order_id = o.id
@@ -196,6 +196,76 @@ function movementTotals(db: Db, sessionId: number) {
   return out;
 }
 
+const isPaid = (o: OrderRow) => o.bill_status != null && ['paid', 'partially_refunded', 'refunded'].includes(o.bill_status);
+
+function methodNames(db: Db): Map<number, string> {
+  const rows = db.prepare(`SELECT id, name FROM payment_methods`).all() as { id: number; name: string }[];
+  return new Map(rows.map((r) => [r.id, r.name.replace(/\s*\(manual\)\s*$/i, '').trim()]));
+}
+
+function paymentLabel(line: Record<string, unknown>, names: Map<number, string>): string {
+  const method = String(line.method || '').toLowerCase();
+  if (method === 'cash') return Number(line.cash_khr_in || 0) > 0 && !Number(line.cash_usd_in || 0) ? 'Cash KHR' : 'Cash';
+  if (method === 'card') return 'Card';
+  const custom = names.get(Number(line.payment_method_id));
+  return custom || (method ? method.charAt(0).toUpperCase() + method.slice(1) : 'Other');
+}
+
+function parseLines(json: string | null): Record<string, unknown>[] {
+  try { const v = JSON.parse(json || '[]'); return Array.isArray(v) ? v.filter((l) => l && typeof l === 'object') : []; } catch { return []; }
+}
+
+function orderRows(db: Db, orders: OrderRow[], shiftFor: (o: OrderRow) => number | null): ReportOrderRow[] {
+  const names = methodNames(db);
+  return orders.map((o) => ({
+    id: o.id, orderNumber: o.order_number, label: tableKey(o), cashier: o.cashier ?? '',
+    openedAt: o.created_at, closedAt: isPaid(o) ? o.paid_at : null, totalCents: cents(o.total),
+    status: isPaid(o) ? 'paid' : 'unpaid',
+    paidWith: isPaid(o) ? [...new Set(parseLines(o.payment_details).map((l) => paymentLabel(l, names)))].join(' + ') : '',
+    shiftId: shiftFor(o),
+  }));
+}
+
+export interface OrderDetail {
+  id: number; orderNumber: string; label: string; status: string; paymentStatus: string; cashier: string; createdAt: string; paidAt: string | null;
+  totalCents: number; discountCents: number; timezone: string;
+  items: { name: string; qty: number; status: string; totalCents: number; note: string | null }[];
+  payments: { label: string; amountCents: number; at: string | null }[];
+  history: { at: string; text: string }[];
+}
+
+/** Read-only details for one order (Reports → Tables panel). */
+export function buildOrderDetail(orderId: number): OrderDetail {
+  const db = getDatabase();
+  const o = db.prepare(`
+    SELECT o.id, o.order_number, t.number AS table_number, o.tab_name, o.type, o.created_at, o.status,
+      b.payment_status AS bill_status, COALESCE(b.total, o.total) AS total, b.paid_at, u.name AS cashier, b.payment_details,
+      COALESCE(b.discount_amount, 0) AS discount
+    FROM orders o LEFT JOIN tables t ON t.id = o.table_id LEFT JOIN bills b ON b.order_id = o.id LEFT JOIN users u ON u.id = o.user_id
+    WHERE o.id = ?
+  `).get(orderId) as (OrderRow & { discount: number }) | undefined;
+  if (!o) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+  const names = methodNames(db);
+  const items = (db.prepare(`
+    SELECT product_name, quantity, status, total, special_instructions FROM order_items WHERE order_id = ? ORDER BY id
+  `).all(orderId) as { product_name: string; quantity: number; status: string; total: number; special_instructions: string | null }[])
+    .map((i) => ({ name: i.product_name, qty: Number(i.quantity), status: i.status, totalCents: cents(i.total), note: i.special_instructions || null }));
+  const payments = parseLines(o.payment_details).map((l) => ({
+    label: paymentLabel(l, names), amountCents: cents(l.amount), at: typeof l.timestamp === 'string' ? l.timestamp : null,
+  }));
+  const history = (db.prepare(`
+    SELECT a.action, a.created_at, u.name FROM order_audit_log a LEFT JOIN users u ON u.id = a.actor_user_id WHERE a.order_id = ? ORDER BY a.id
+  `).all(orderId) as { action: string; created_at: string; name: string | null }[])
+    .map((h) => ({ at: h.created_at, text: `${h.action.replace(/[_.]/g, ' ')}${h.name ? ` · ${h.name}` : ''}` }));
+  if (!history.length) history.push({ at: o.created_at, text: `order placed${o.cashier ? ` · ${o.cashier}` : ''}` });
+  if (isPaid(o) && o.paid_at && !history.some((h) => /paid|payment/i.test(h.text))) history.push({ at: o.paid_at, text: 'paid' });
+  return {
+    id: o.id, orderNumber: o.order_number, label: tableKey(o), status: o.status, paymentStatus: o.bill_status ?? 'unpaid',
+    cashier: o.cashier ?? '', createdAt: o.created_at, paidAt: isPaid(o) ? o.paid_at : null,
+    totalCents: cents(o.total), discountCents: cents(o.discount), timezone: tenantTimezone(), items, payments, history,
+  };
+}
+
 export function buildShiftReport(sessionId: number): ShiftReportData {
   const db = getDatabase();
   const session = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId) as SessionRow | undefined;
@@ -205,7 +275,7 @@ export function buildShiftReport(sessionId: number): ShiftReportData {
   const w: Window = { start: session.opened_at, end: secondAfter(end), sessionId: session.id };
   const billIds = paidBillIds(db, w);
   const orders = ordersInWindow(db, w, !closing);
-  const tables = tableRows(orders, () => '');
+  const tables = tableRows(orders, (o) => o.cashier ?? '');
   const dineTables = tables.filter((t) => t.label !== 'To Go' && t.label !== 'Walk-in');
   const occupiedNow = closing ? dineTables.filter((t) => t.status !== 'paid').length
     : Number((db.prepare(`SELECT COUNT(*) AS n FROM tables WHERE is_active = 1 AND status IN ('occupied', 'held')`).get() as { n: number }).n || 0);
@@ -263,6 +333,7 @@ export function buildShiftReport(sessionId: number): ShiftReportData {
       untrackedCashLines: expected.untracked_cash_lines,
     },
     spent: spentFor(db, session.id),
+    orders: orderRows(db, orders, () => session.id),
     notes,
     telegram,
   };
@@ -287,10 +358,6 @@ export function buildDailyReport(businessDate: string): DailyReportData {
       varianceKhrRiel: s.actual_usd_cents != null ? Number(s.variance_khr_riel || 0) : null,
     };
   });
-  const whoFor = (o: OrderRow) => {
-    const s = sessions.find((x) => o.created_at >= x.opened_at && (!x.closed_at || o.created_at < x.closed_at));
-    return s?.opened_by_name ?? '';
-  };
   const items = db.prepare(`
     SELECT COALESCE(c.name, 'Not on menu') AS category, oi.product_name AS product, SUM(oi.quantity) AS qty, SUM(oi.total) AS total
     FROM order_items oi
@@ -314,7 +381,8 @@ export function buildDailyReport(businessDate: string): DailyReportData {
     payments: paymentsFor(db, w),
     categories: Array.from(byCategory.values()).sort((a, b) => b.netCents - a.netCents),
     products: items.map((i) => ({ label: i.product, qty: Number(i.qty || 0), netCents: cents(i.total) })).sort((a, b) => b.netCents - a.netCents).slice(0, 10),
-    tables: tableRows(orders, whoFor),
+    tables: tableRows(orders, (o) => o.cashier ?? ''),
+    orders: orderRows(db, orders, (o) => sessions.find((x) => o.created_at >= x.opened_at && (!x.closed_at || o.created_at <= x.closed_at))?.id ?? null),
     unpaid: unpaidSummary(orders),
   };
 }

@@ -6,6 +6,10 @@
 
 export interface ReportPaymentRow { label: string; count: number; usdCents: number; khrRiel: number }
 export interface ReportTableRow { label: string; who: string; openedAt: string | null; closedAt: string | null; bills: number; totalCents: number; status: 'paid' | 'open' | 'unpaid' }
+export interface ReportOrderRow {
+  id: number; orderNumber: string; label: string; cashier: string; openedAt: string; closedAt: string | null;
+  totalCents: number; status: 'paid' | 'unpaid'; paidWith: string; shiftId: number | null;
+}
 export interface ReportQtyRow { label: string; qty: number; netCents: number }
 export interface ReportSpentRow { label: string; usdCents: number; khrRiel: number; hasPhoto: boolean }
 export interface ReportShiftRow { id: number; cashier: string; openedAt: string; closedAt: string | null; orders: number; netCents: number; varianceUsdCents: number | null; varianceKhrRiel: number | null }
@@ -41,6 +45,7 @@ export interface ShiftReportData {
   tables: { served: number; completed: number; occupied: number; awaiting: ReportTableRow[]; rows: ReportTableRow[] };
   cash: ReportCash;
   spent: ReportSpentRow[];
+  orders: ReportOrderRow[];
   notes: string[];
   telegram: string | null;
 }
@@ -53,6 +58,7 @@ export interface DailyReportData {
   categories: ReportQtyRow[];
   products: ReportQtyRow[];
   tables: ReportTableRow[];
+  orders: ReportOrderRow[];
   unpaid: { count: number; totalCents: number; labels: string[] };
 }
 
