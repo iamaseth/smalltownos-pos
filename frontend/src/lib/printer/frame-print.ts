@@ -55,7 +55,11 @@ export async function printHtmlInFrame(html: string, options: FramePrintOptions 
     // multi-metre default roll length. This option is only passed by the
     // customer-bill browser path; kitchen tickets keep their existing sizing.
     if (options.receiptPaperWidthMm) {
-      const receipt = doc.querySelector<HTMLElement>('.bill-container');
+      // Test and embedded print documents may expose only the minimal DOM surface.
+      // Skip content-height sizing when querySelector is unavailable; printing still works.
+      const receipt = typeof doc.querySelector === 'function'
+        ? doc.querySelector<HTMLElement>('.bill-container')
+        : null;
       if (receipt) {
         const contentHeightPx = Math.max(
           receipt.scrollHeight,
