@@ -230,6 +230,7 @@ function buildReport(db: Db, reportType: string, params: Record<string, unknown>
     case 'purchasing': return reports.buildPurchasingReport(db, String(params.startDate), String(params.endDate), options);
     case 'period': return reports.buildPeriodReport(db, String(params.startDate), String(params.endDate), options);
     case 'test': return { title: 'Test message', attachments: [], html: '<b>Test message</b>\nTelegram reports are connected to the POS.' };
+    case 'printout': return buildPrintout(params);
     default: throw new Error(`unknown report type ${reportType}`);
   }
 }
@@ -247,7 +248,7 @@ function splitMessage(html: string): string[] {
 }
 
 async function sendReport(chatId: string, report: TelegramReport): Promise<void> {
-  for (const part of splitMessage(report.html)) {
+  for (const part of report.parts ?? splitMessage(report.html)) {
     await callApi('sendMessage', { chat_id: chatId, text: part, parse_mode: 'HTML', disable_web_page_preview: true });
   }
   for (const file of report.attachments) {
@@ -348,6 +349,39 @@ export async function sendReportNow(startDate: string, endDate: string, recipien
     pending: rows.filter((r) => r.status === 'pending').length,
     failed: rows.filter((r) => r.status === 'failed').length,
   };
+}
+
+/** X/Z/daily printouts as monospace blocks, laid out exactly like the 80 mm paper copy. */
+function buildPrintout(params: Record<string, unknown>): TelegramReport {
+  const text = require('../../shared/print/shift-report-text') as typeof import('../../shared/print/shift-report-text');
+  const data = require('./shift-report') as typeof import('./shift-report');
+  const tz = (require('../routes/cash-closures') as typeof import('../routes/cash-closures')).tenantTimezone();
+  const lines = params.kind === 'daily'
+    ? text.renderDailyReport(data.buildDailyReport(String(params.businessDate)), 42, tz)
+    : text.renderShiftReport(data.buildShiftReport(Number(params.sessionId)), 42, tz);
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const parts: string[] = [];
+  let block: string[] = [];
+  for (const line of lines) {
+    if (block.join('\n').length + line.length > 3500) { parts.push(`<pre>${esc(block.join('\n'))}</pre>`); block = []; }
+    block.push(line);
+  }
+  if (block.length) parts.push(`<pre>${esc(block.join('\n'))}</pre>`);
+  return { title: String(params.title || 'Report'), attachments: [], html: parts.join('\n'), parts };
+}
+
+/** Sends a printout to every active recipient now (manual send; not a scheduled subscription). */
+export async function sendPrintoutNow(params: { kind: 'shift'; sessionId: number } | { kind: 'daily'; businessDate: string }, title: string, db: Db = getDatabase()) {
+  if (!isEnabled(db) || !botToken()) throw Object.assign(new Error('Telegram is not connected'), { statusCode: 400 });
+  const targets = listRecipients(db).filter((r) => r.is_active);
+  if (!targets.length) throw Object.assign(new Error('No active Telegram recipients'), { statusCode: 400 });
+  const insert = db.prepare(`INSERT INTO telegram_deliveries (recipient_id, chat_id, report_type, dedupe_key, title, params, status, created_at, next_attempt_at) VALUES (?, ?, 'printout', ?, ?, ?, 'pending', ?, ?)`);
+  const timestamp = now();
+  const batch = `printout|${params.kind}|${'sessionId' in params ? params.sessionId : params.businessDate}|${Date.now()}|${randomInt(1e9)}`;
+  const ids = targets.map((t) => Number(insert.run(t.id, t.chat_id, `${batch}|${t.chat_id}`, title, JSON.stringify({ ...params, title }), timestamp, timestamp).lastInsertRowid));
+  await processQueue(db);
+  const rows = db.prepare(`SELECT status FROM telegram_deliveries WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids) as { status: string }[];
+  return { sent: rows.filter((r) => r.status === 'sent').length, pending: rows.filter((r) => r.status === 'pending').length, failed: rows.filter((r) => r.status === 'failed').length };
 }
 
 // ---- Events and schedule ----

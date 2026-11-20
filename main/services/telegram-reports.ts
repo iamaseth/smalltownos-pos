@@ -16,7 +16,8 @@ export const TELEGRAM_REPORT_TYPES = ['daily', 'shift', 'weekly', 'low_stock', '
 export type TelegramReportType = typeof TELEGRAM_REPORT_TYPES[number];
 
 export interface TelegramAttachment { filename: string; contentType: string; data: Buffer }
-export interface TelegramReport { title: string; html: string; attachments: TelegramAttachment[] }
+/** `parts` sends pre-split messages as given (e.g. monospace printout blocks that must not be cut). */
+export interface TelegramReport { title: string; html: string; attachments: TelegramAttachment[]; parts?: string[] }
 export interface ReportOptions { pdf: boolean; csv: boolean }
 
 const escapeHtml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

@@ -10,6 +10,9 @@ import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { formatKhr, formatUsdCents } from '@shared/cash-counter';
 import { CashCounter, cashCountPayload, cashCountTotals, emptyCashCount, type CashCountValue } from '@/components/cash/CashCounter';
+import { ReportOutputButtons } from '@/components/reports/ReportOutputButtons';
+import { printReportReceipt } from '@/lib/printer/shift-report-print';
+import { PrintSkippedError } from '@/lib/printer/print-jobs';
 
 interface Status {
   rate_khr_per_usd: number;
@@ -210,8 +213,12 @@ export default function CashPage() {
       <div className="space-y-3">
         {header('Cash')}
         {s ? (
-          <div className="rounded-xl border p-4 text-sm">
-            Shift open: <b>{s.opened_by_name}</b> since {s.opened_at}
+          <div className="space-y-3 rounded-xl border p-4 text-sm">
+            <div>Shift open: <b>{s.opened_by_name}</b> since {s.opened_at}</div>
+            <div>
+              <div className="mb-1 text-xs font-semibold text-muted-foreground">X-report (shift so far — does not close it)</div>
+              <ReportOutputButtons target={{ kind: 'shift', sessionId: s.id }} size="sm" />
+            </div>
           </div>
         ) : (
           <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No shift open</div>
@@ -554,6 +561,11 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
         count: cashCountPayload(count), float_out: floatPayload, explanation: reason.trim() || undefined, device: 'pos',
       });
       toast.success('Register closed');
+      try {
+        await printReportReceipt({ kind: 'shift', sessionId }, { auto: true });
+      } catch (printError) {
+        if (!(printError instanceof PrintSkippedError)) toast.error('The shift is closed, but the Z-report did not print. Reprint it from Reports → Shifts.', { duration: 8000 });
+      }
       onClosed();
     } catch (error) { toast.error(errorText(error, 'Could not close the register')); }
   });

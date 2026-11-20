@@ -12,6 +12,7 @@ import WeeklySales from '@/components/reports/WeeklySales';
 import CogsReport from '@/components/reports/CogsReport';
 import TelegramSendButton from '@/components/reports/TelegramSendButton';
 import { tenantCan } from '@/lib/permissions';
+import { DayReports, type DayView } from '@/components/reports/DayReports';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type Preset = 'today' | 'thisWeek' | 'thisMonth' | 'custom';
@@ -32,6 +33,10 @@ interface PeriodReport {
 
 const BUILT_IN_PAYMENT_KEYS = { cash: 'methodCash', card: 'methodCard' } as const satisfies Record<'cash' | 'card', PosKey>;
 const TOP_ITEMS = 10;
+const TABS: { key: 'summary' | DayView; label: string }[] = [
+  { key: 'summary', label: 'Summary' }, { key: 'daily', label: 'Daily report' }, { key: 'shifts', label: 'Shifts' },
+  { key: 'tables', label: 'Tables' }, { key: 'payments', label: 'Payments' }, { key: 'items', label: 'Items' },
+];
 
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -77,6 +82,7 @@ export default function ReportsPage() {
   const businessName = useAuthStore((s) => s.currentTenant?.business_name);
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const canSendTelegram = tenantCan(currentTenant, 'settings.manage') && tenantCan(currentTenant, 'reports.financial.view');
+  const [tab, setTab] = useState<'summary' | DayView>('summary');
   const [preset, setPreset] = useState<Preset>('thisWeek');
   const [range, setRange] = useState<[string, string]>(() => presetRange('thisWeek'));
   const [result, setResult] = useState<{ key: string; report: PeriodReport | null; failed: boolean } | null>(null);
@@ -160,6 +166,15 @@ export default function ReportsPage() {
 
   return (
     <div className="print-report mx-auto w-full max-w-7xl p-4 sm:p-6">
+      <div className="mb-5 flex gap-1 overflow-x-auto border-b-2 border-border print:hidden" role="tablist" aria-label="Report">
+        {TABS.map((item) => (
+          <button key={item.key} type="button" role="tab" aria-selected={tab === item.key} onClick={() => setTab(item.key)}
+            className={`-mb-0.5 whitespace-nowrap border-b-2 px-4 py-2 text-sm font-semibold ${tab === item.key ? 'border-foreground text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {tab !== 'summary' ? <DayReports view={tab} canSendTelegram={canSendTelegram} /> : (<>
       {report && (
         <div className="mb-4 hidden border-b-2 border-border pb-3 print:block">
           {businessName && <p className="text-sm font-semibold">{businessName}</p>}
@@ -354,6 +369,7 @@ export default function ReportsPage() {
           )}
         </div>
       )}
+      </>)}
     </div>
   );
 }

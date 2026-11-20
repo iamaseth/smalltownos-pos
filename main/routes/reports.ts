@@ -13,6 +13,8 @@ import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countrie
 import { computeDayAggregates, paymentMethodBreakdown } from './cash-closures';
 import { getCurrencyFractionDigits } from '../countries';
 import { buildDailySalesExportDataset } from '../services/daily-sales-export';
+import { buildDailyReport, buildShiftReport } from '../services/shift-report';
+import { sendPrintoutNow } from '../services/telegram';
 import {
   dailySalesExportFilename,
   serializeDailySalesExportCsv,
@@ -1249,6 +1251,46 @@ router.get('/cogs', requirePermission('reports.financial.view'), (req: Request, 
     const { statusCode, message } = error as { statusCode?: number; message?: string };
     res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
   }
+});
+
+function sendReportError(res: Response, error: unknown) {
+  const statusCode = (error as { statusCode?: number }).statusCode;
+  res.status(statusCode || 500).json({ error: statusCode ? (error as Error).message : 'Internal server error' });
+  if (!statusCode) console.error('[reports] printout failed', error);
+}
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+router.get('/shift-report', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
+  try {
+    const id = Number(req.query.session_id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'session_id is required' });
+    res.json(buildShiftReport(id));
+  } catch (error) { sendReportError(res, error); }
+});
+
+router.get('/daily-report', requirePermission('reports.view'), (req: Request, res: Response) => {
+  try {
+    const date = String(req.query.date || '');
+    if (!DAY_RE.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    res.json(buildDailyReport(date));
+  } catch (error) { sendReportError(res, error); }
+});
+
+router.post('/shift-report/telegram', requirePermission('cash.shifts.view'), async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.body?.session_id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'session_id is required' });
+    const report = buildShiftReport(id);
+    res.json(await sendPrintoutNow({ kind: 'shift', sessionId: id }, `${report.kind}-report shift #${id}`));
+  } catch (error) { sendReportError(res, error); }
+});
+
+router.post('/daily-report/telegram', requirePermission('reports.view'), async (req: Request, res: Response) => {
+  try {
+    const date = String(req.body?.date || '');
+    if (!DAY_RE.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    res.json(await sendPrintoutNow({ kind: 'daily', businessDate: date }, `Daily sales ${date}`));
+  } catch (error) { sendReportError(res, error); }
 });
 
 export const reportRoutes = router;
