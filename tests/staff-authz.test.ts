@@ -173,9 +173,28 @@ async function main() {
   assertEqual(result.body.error, 'email is required', 'blank email update returns a clear validation error');
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '1234',
+    name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '2468',
   });
-  assertEqual(result.status, 400, 'operational roles reject a non-empty PIN');
+  assertEqual(result.status, 201, 'manager can create a cashier with an individual PIN');
+  assertEqual(result.body.staff.has_pin, 1, 'cashier PIN is reported as configured');
+  const cashierPinHash = (db.prepare('SELECT pin_hash FROM users WHERE id = ?').get(result.body.staff.id) as any).pin_hash;
+  assert(bcrypt.compareSync('2468', cashierPinHash), 'cashier PIN is stored as a bcrypt hash');
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'Duplicate PIN cashier', email: 'duplicate-pin-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '2468',
+  });
+  assertEqual(result.status, 409, 'duplicate active employee PIN is rejected');
+
+  result = await request(app).put('/api/staff/server-target-145').set(managerAuth).send({ pin: '2468' });
+  assertEqual(result.status, 409, 'an existing employee cannot reuse another active employee PIN');
+
+  result = await request(app).put('/api/staff/server-target-145').set(managerAuth).send({ pin: '1357' });
+  assertEqual(result.status, 200, 'manager can assign an individual PIN to an existing waiter');
+  assertEqual(result.body.staff.has_pin, 1, 'waiter PIN is reported as configured');
+
+  result = await request(app).put('/api/staff/server-target-145').set(managerAuth).send({ pin: '' });
+  assertEqual(result.status, 200, 'manager can clear an employee PIN');
+  assertEqual(result.body.staff.has_pin, 0, 'clearing a PIN removes PIN access');
 
   console.log('\n── PIN policy ─────────────────────────────────────────────────');
   for (const pin of ['abcd', '123', '12345', '1234567']) {
