@@ -5973,9 +5973,14 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         CREATE TABLE IF NOT EXISTS staff_schedule_settings (
           user_id TEXT PRIMARY KEY REFERENCES users(id),
           target_days_per_week INTEGER CHECK (target_days_per_week IS NULL OR target_days_per_week BETWEEN 0 AND 7),
+          job_label TEXT,
           updated_at TEXT NOT NULL
         );
       `);
+      const userColumns = db.prepare(`PRAGMA table_info(users)`).all() as { name: string }[];
+      if (!userColumns.some((col) => col.name === 'schedule_only')) {
+        db.exec(`ALTER TABLE users ADD COLUMN schedule_only INTEGER NOT NULL DEFAULT 0`);
+      }
       const insertType = db.prepare(`
         INSERT OR IGNORE INTO schedule_shift_types (id, label, start_time, end_time, sort_order, active, updated_at)
         VALUES (?, ?, ?, ?, ?, 1, ?)

@@ -449,7 +449,7 @@ sets it to `cancelled` (never deleted), and every change is written to `schedule
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `GET` | `/` | `staff.view` | query: `from`, `to` (`YYYY-MM-DD`, at most 45 days) | `{ shifts, shift_types, staff, timezone }`. Cancelled shifts are left out; `staff` lists active users with `target_days_per_week`. |
+| `GET` | `/` | `schedule.view` | query: `from`, `to` (`YYYY-MM-DD`, at most 45 days) | `{ shifts, shift_types, staff, timezone, can_manage }`. Users without `staff.operational.manage` get published shifts only; cancelled shifts are always left out. `staff` lists active users with `schedule_only`, `target_days_per_week` and `job_label`. |
 | `POST` | `/` | `staff.operational.manage` | body: `staff_id`, `work_date`, `shift_type_id`, optional `start_time`, `end_time` (`HH:MM`) | Adds a draft shift. |
 | `PATCH` | `/:id` | `staff.operational.manage` | body: any of `work_date`, `shift_type_id`, `staff_id`, `start_time`, `end_time`, `status` | Moves, reassigns, retimes or publishes/removes a shift. A change other than `status` turns a published shift back into a draft. |
 | `GET` | `/:id/history` | `staff.view` | path: `id` | Change history with the acting user. |
@@ -457,6 +457,8 @@ sets it to `cancelled` (never deleted), and every change is written to `schedule
 | `POST` | `/publish-week` | `staff.operational.manage` | body: `week_start` | Publishes every draft in that week. |
 | `PUT` | `/shift-types/:id` | `staff.operational.manage` | body: `label`, `start_time`, `end_time` | Changes a shift row's default times; existing shifts keep theirs. |
 | `PUT` | `/targets/:staffId` | `staff.operational.manage` | body: `target_days_per_week` (0–7 or `null`) | Sets how many days a week a person should work. |
+| `POST` | `/people` | `staff.operational.manage` | body: `name`, optional `job_label` | Adds a schedule-only person who cannot sign in. |
+| `PUT` | `/people/:id` | `staff.operational.manage` | body: `job_label`; for schedule-only people also `name`, `active` | Sets the job shown on the schedule; renames or retires schedule-only people. |
 
 ### Printers
 

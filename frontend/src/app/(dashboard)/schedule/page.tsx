@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
-import { tenantCan } from '@/lib/permissions';
-import { useAuthStore } from '@/store/auth';
 
 type ShiftStatus = 'draft' | 'published' | 'cancelled';
 type View = 'day' | 'week' | 'month';
@@ -14,8 +12,8 @@ interface Shift {
   shift_type_id: string | null; starts_at: string; ends_at: string; status: ShiftStatus;
 }
 interface ShiftType { id: string; label: string; start_time: string; end_time: string }
-interface StaffMember { id: string; name: string; role: string; target_days_per_week: number | null }
-interface ScheduleData { shifts: Shift[]; shift_types: ShiftType[]; staff: StaffMember[]; timezone: string }
+interface StaffMember { id: string; name: string; role: string; schedule_only: number; target_days_per_week: number | null; job_label: string | null }
+interface ScheduleData { shifts: Shift[]; shift_types: ShiftType[]; staff: StaffMember[]; timezone: string; can_manage: boolean }
 
 const COLORS = [
   'bg-sky-100 border-sky-300 text-sky-950', 'bg-violet-100 border-violet-300 text-violet-950',
@@ -29,6 +27,7 @@ const DOTS = ['bg-sky-400', 'bg-violet-400', 'bg-emerald-400', 'bg-amber-400', '
   'bg-fuchsia-400', 'bg-lime-400', 'bg-indigo-400', 'bg-orange-400', 'bg-slate-400', 'bg-pink-400'];
 const ROLE_LABEL: Record<string, string> = { owner: 'Owner', manager: 'Manager', cashier: 'Cashier', server: 'Server', chef: 'Kitchen' };
 const roleLabel = (role: string) => ROLE_LABEL[role] ?? role.charAt(0).toUpperCase() + role.slice(1);
+const jobOf = (p: { role: string; job_label?: string | null } | undefined, role = 'server') => p?.job_label || roleLabel(p?.role ?? role);
 
 function addDays(date: string, n: number): string {
   const [y, m, d] = date.split('-').map(Number);
@@ -56,7 +55,7 @@ function localTime(iso: string, timezone: string): string {
 }
 interface Ctx {
   canManage: boolean; busy: boolean; selected: string | null; openChip: string | null; setOpenChip: (id: string | null) => void;
-  timezone: string; types: ShiftType[]; shifts: Shift[]; colorIndex: Map<string, number>; dropCell: string | null;
+  timezone: string; types: ShiftType[]; shifts: Shift[]; colorIndex: Map<string, number>; dropCell: string | null; jobs: Map<string, string>;
   update: (shift: Shift, changes: Record<string, unknown>, message?: string) => Promise<void>;
   place: (staffId: string, workDate: string, typeId: string) => Promise<void>;
   dropProps: (cellKey: string, workDate: string, typeId: string | null, staffId?: string) => Record<string, unknown>;
@@ -66,8 +65,6 @@ function errorText(error: unknown, fallback: string): string {
 }
 
 export default function StaffSchedulePage() {
-  const { currentTenant } = useAuthStore();
-  const canManage = tenantCan(currentTenant, 'staff.operational.manage');
   const [timezone, setTimezone] = useState('Asia/Phnom_Penh');
   const [anchor, setAnchor] = useState(() => todayIn('Asia/Phnom_Penh'));
   const [view, setView] = useState<View>('week');
@@ -114,7 +111,9 @@ export default function StaffSchedulePage() {
     try { await fn(); } finally { setBusy(false); }
   };
 
+  const canManage = data?.can_manage === true;
   const staff = useMemo(() => data?.staff ?? [], [data]);
+  const jobs = useMemo(() => new Map(staff.map((p) => [p.id, jobOf(p)])), [staff]);
   const types = data?.shift_types ?? [];
   const shifts = useMemo(() => data?.shifts ?? [], [data]);
   const colorIndex = useMemo(() => new Map(staff.map((p, i) => [p.id, i % COLORS.length])), [staff]);
@@ -181,7 +180,7 @@ export default function StaffSchedulePage() {
   } : {};
 
   const ctx: Ctx = {
-    canManage, busy, selected, openChip, setOpenChip, timezone, types, shifts, colorIndex, dropCell,
+    canManage, busy, selected, openChip, setOpenChip, timezone, types, shifts, colorIndex, dropCell, jobs,
     update, place, dropProps,
   };
 
@@ -224,11 +223,12 @@ export default function StaffSchedulePage() {
               onClick={(e) => { e.stopPropagation(); if (canManage) setSelected(selected === p.id ? null : p.id); }}
               className={`rounded-lg border px-3 py-1.5 text-left ${COLORS[colorIndex.get(p.id) ?? 0]} ${selected === p.id ? 'ring-2 ring-foreground ring-offset-1' : ''}`}>
               <span className="block text-sm font-semibold">{p.name}</span>
-              <span className="text-[11px]">{roleLabel(p.role)} · {p.target_days_per_week == null ? `${days} days` : `${days}/${p.target_days_per_week} days`}</span>
+              <span className="text-[11px]">{jobOf(p)} · {p.target_days_per_week == null ? `${days} days` : `${days}/${p.target_days_per_week} days`}</span>
             </button>
           );
         })}
-        {staff.length === 0 && <span className="text-sm text-muted-foreground">Add staff on the Staff page first.</span>}
+        {canManage && <AddPerson onAdded={load} />}
+        {staff.length === 0 && !canManage && <span className="text-sm text-muted-foreground">No staff yet.</span>}
       </div>
       {selected && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-900">
@@ -263,7 +263,7 @@ export default function StaffSchedulePage() {
                 {menu === 'times' && <ShiftTimesMenu types={types} onSaved={load} />}
               </div>
               <div className="relative">
-                <button type="button" className={btn} onClick={() => setMenu(menu === 'targets' ? null : 'targets')}>Weekly days ▾</button>
+                <button type="button" className={btn} onClick={() => setMenu(menu === 'targets' ? null : 'targets')}>Staff days &amp; jobs ▾</button>
                 {menu === 'targets' && <TargetsMenu staff={staff} onSaved={load} />}
               </div>
               <button type="button" className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" disabled={busy || drafts === 0} onClick={() => void publishWeek()}>Publish week</button>
@@ -318,7 +318,7 @@ export default function StaffSchedulePage() {
                 <div className="flex items-center gap-2 border-r px-2.5 py-2">
                   <i className={`inline-block size-2.5 rounded-full ${DOTS[colorIndex.get(p.id) ?? 0]}`} />
                   <div><div className="text-sm font-semibold">{p.name}</div>
-                    <div className="text-[11px] text-muted-foreground">{roleLabel(p.role)} · {p.target_days_per_week == null ? `${daysFor(p.id)} days` : `${daysFor(p.id)}/${p.target_days_per_week} days`}</div></div>
+                    <div className="text-[11px] text-muted-foreground">{jobOf(p)} · {p.target_days_per_week == null ? `${daysFor(p.id)} days` : `${daysFor(p.id)}/${p.target_days_per_week} days`}</div></div>
                 </div>
                 {weekDays.map((d) => {
                   const cellKey = `${p.id}|${d}`;
@@ -390,7 +390,7 @@ export default function StaffSchedulePage() {
 }
 
 function Chip({ shift, mode, ctx }: { shift: Shift; mode: Layout; ctx: Ctx }) {
-const { canManage, busy, selected, openChip, setOpenChip, timezone, types, colorIndex, update } = ctx;
+const { canManage, busy, selected, openChip, setOpenChip, timezone, types, colorIndex, update, jobs } = ctx;
   const type = types.find((t) => t.id === shift.shift_type_id);
   const start = localTime(shift.starts_at, timezone);
   const end = localTime(shift.ends_at, timezone);
@@ -403,7 +403,7 @@ const { canManage, busy, selected, openChip, setOpenChip, timezone, types, color
       className={`rounded-md border px-1.5 py-1 text-xs ${COLORS[colorIndex.get(shift.staff_id) ?? 0]} ${shift.status === 'draft' ? 'border-dashed' : ''} ${canManage ? 'cursor-grab' : ''}`}>
       <div className="flex items-center gap-1.5">
         <span className="font-semibold">{mode === 'person' ? (type?.label ?? 'Shift') : shift.staff_name}</span>
-        <span className="opacity-70">{mode === 'person' || custom ? `${start}–${end}` : roleLabel(shift.role).charAt(0)}</span>
+        <span className="opacity-70">{mode === 'person' || custom ? `${start}–${end}` : (jobs.get(shift.staff_id) ?? roleLabel(shift.role)).charAt(0)}</span>
         <span className="ml-auto rounded border border-current bg-white/70 px-1 text-[9px]">{shift.status === 'draft' ? 'draft' : '✓'}</span>
       </div>
       {open && canManage && (
@@ -425,14 +425,14 @@ const { canManage, busy, selected, openChip, setOpenChip, timezone, types, color
   );
 }
 
-function roleSummary(list: Shift[]): string {
+function roleSummary(list: Shift[], jobs: Map<string, string>): string {
   const counts = new Map<string, number>();
-  list.forEach((s) => counts.set(roleLabel(s.role), (counts.get(roleLabel(s.role)) ?? 0) + 1));
+  list.forEach((s) => { const job = jobs.get(s.staff_id) ?? roleLabel(s.role); counts.set(job, (counts.get(job) ?? 0) + 1); });
   return Array.from(counts.entries()).map(([role, n]) => `${n} ${role.toLowerCase()}`).join(' · ');
 }
 
 function ShiftCell({ workDate, type, tall, ctx }: { workDate: string; type: ShiftType; tall?: boolean; ctx: Ctx }) {
-const { canManage, selected, shifts, colorIndex, dropCell, place, dropProps } = ctx;
+const { canManage, selected, shifts, colorIndex, dropCell, place, dropProps, jobs } = ctx;
   const cellKey = `${workDate}|${type.id}`;
   const list = shifts.filter((s) => s.work_date === workDate && s.shift_type_id === type.id)
     .sort((a, b) => (colorIndex.get(a.staff_id) ?? 0) - (colorIndex.get(b.staff_id) ?? 0));
@@ -441,7 +441,7 @@ const { canManage, selected, shifts, colorIndex, dropCell, place, dropProps } = 
       onClick={() => { if (selected && canManage) void place(selected, workDate, type.id); }}
       className={`flex flex-col gap-1 p-1.5 ${tall ? 'min-h-44' : 'min-h-24'} ${dropCell === cellKey ? 'bg-emerald-50 outline-2 outline-dashed outline-emerald-400 -outline-offset-4' : ''} ${selected ? 'cursor-copy hover:bg-emerald-50/60' : ''}`}>
       {list.length > 0 && (
-        <div className="text-[10px] leading-tight text-muted-foreground"><b className="text-foreground">{list.length} on</b> · {roleSummary(list)}</div>
+        <div className="text-[10px] leading-tight text-muted-foreground"><b className="text-foreground">{list.length} on</b> · {roleSummary(list, jobs)}</div>
       )}
       {list.map((s) => <Chip key={s.id} shift={s} mode="shift" ctx={ctx} />)}
       {!list.length && <span className="m-auto text-[11px] text-muted-foreground/50">{canManage ? 'Drop staff here' : '—'}</span>}
@@ -479,25 +479,67 @@ function ShiftTimesMenu({ types, onSaved }: { types: ShiftType[]; onSaved: () =>
 }
 
 function TargetsMenu({ staff, onSaved }: { staff: StaffMember[]; onSaved: () => Promise<void> }) {
-  const save = async (id: string, value: string) => {
+  const [labels, setLabels] = useState<Record<string, string>>(() => Object.fromEntries(staff.map((p) => [p.id, p.job_label ?? ''])));
+  const save = async (fn: () => Promise<unknown>, message?: string) => {
     try {
-      await api.put(`/schedule/targets/${id}`, { target_days_per_week: value === '' ? null : Number(value) });
+      await fn();
+      if (message) toast.success(message);
       await onSaved();
-    } catch (error) { toast.error(errorText(error, 'Could not save the target')); }
+    } catch (error) { toast.error(errorText(error, 'Could not save')); }
   };
   return (
-    <div className="absolute right-0 z-30 mt-1 max-h-80 w-60 overflow-y-auto rounded-lg border bg-background p-2.5 shadow-xl">
-      <p className="mb-1.5 text-[11px] text-muted-foreground">How many days a week each person should work.</p>
+    <div className="absolute right-0 z-30 mt-1 max-h-96 w-[22rem] overflow-y-auto rounded-lg border bg-background p-2.5 shadow-xl">
+      <p className="mb-1.5 text-[11px] text-muted-foreground">Days a week each person should work, and the job shown on the schedule.</p>
       {staff.map((p) => (
-        <div key={p.id} className="flex items-center justify-between py-0.5 text-sm">
-          <span>{p.name}</span>
+        <div key={p.id} className="flex items-center gap-1.5 py-0.5 text-sm">
+          <span className="w-20 truncate" title={p.name}>{p.name}</span>
+          <input value={labels[p.id] ?? ''} placeholder={roleLabel(p.role)} maxLength={30} aria-label={`${p.name} job`}
+            onChange={(e) => setLabels({ ...labels, [p.id]: e.target.value })}
+            onBlur={() => { if ((labels[p.id] ?? '') !== (p.job_label ?? '')) void save(() => api.put(`/schedule/people/${p.id}`, { job_label: labels[p.id] || null })); }}
+            className="w-24 min-w-0 rounded border px-1.5 py-0.5" />
           <select className="rounded border px-1 py-0.5 text-sm" value={p.target_days_per_week ?? ''} aria-label={`${p.name} days per week`}
-            onChange={(e) => void save(p.id, e.target.value)}>
-            <option value="">No target</option>
+            onChange={(e) => void save(() => api.put(`/schedule/targets/${p.id}`, { target_days_per_week: e.target.value === '' ? null : Number(e.target.value) }))}>
+            <option value="">–</option>
             {Array.from({ length: 8 }, (_, i) => <option key={i} value={i}>{i} days</option>)}
           </select>
+          {p.schedule_only === 1 && (
+            <button type="button" className="ml-auto text-xs text-red-700 underline" title="Remove from the schedule staff list"
+              onClick={() => void save(() => api.put(`/schedule/people/${p.id}`, { active: false }), `${p.name} removed`)}>Remove</button>
+          )}
         </div>
       ))}
+    </div>
+  );
+}
+
+function AddPerson({ onAdded }: { onAdded: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', job: '' });
+  const add = async () => {
+    try {
+      await api.post('/schedule/people', { name: form.name, job_label: form.job || null });
+      toast.success(`${form.name} added — no POS login`);
+      setForm({ name: '', job: '' });
+      setOpen(false);
+      await onAdded();
+    } catch (error) { toast.error(errorText(error, 'Could not add the person')); }
+  };
+  if (!open) {
+    return (
+      <button type="button" onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+        className="rounded-lg border border-dashed px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted">
+        <span className="block font-semibold">+ Add person</span><span className="text-[11px]">schedule only, no login</span>
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed p-1.5" onClick={(e) => e.stopPropagation()}>
+      <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Name" maxLength={60}
+        className="w-28 rounded border px-2 py-1 text-sm" aria-label="New person name" />
+      <input value={form.job} onChange={(e) => setForm({ ...form, job: e.target.value })} placeholder="Job (e.g. Security)" maxLength={30}
+        className="w-36 rounded border px-2 py-1 text-sm" aria-label="New person job" />
+      <button type="button" disabled={!form.name.trim()} onClick={() => void add()} className="rounded bg-emerald-600 px-2.5 py-1 text-sm font-semibold text-white disabled:opacity-50">Add</button>
+      <button type="button" onClick={() => setOpen(false)} className="px-1.5 text-sm text-muted-foreground">Cancel</button>
     </div>
   );
 }

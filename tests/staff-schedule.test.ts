@@ -100,7 +100,6 @@ async function main() {
   assert(custom.status === 201 && custom.body.shift.starts_at === '2026-11-23 10:00:00', 'a shift can have its own times');
   const jenieClosing = await add('chef-s', week, 'closing');
   assert(jenieClosing.status === 201, 'closing shift added');
-  assert((await request(app).get(`/api/schedule?from=${week}&to=2026-11-29`).set('Authorization', C)).status === 403, 'cashier cannot open the schedule (owner/manager only for now)');
   const view = await request(app).get(`/api/schedule?from=${week}&to=2026-11-29`).set('Authorization', M);
   assert(view.status === 200 && view.body.shifts.length === 3 && view.body.shift_types.length === 4, 'manager reads the week');
   assert(view.body.staff.some((s: { id: string }) => s.id === 'chef-s') && !view.body.staff.some((s: { id: string }) => s.id === 'gone-s'), 'staff list shows active staff only');
@@ -153,6 +152,42 @@ async function main() {
   const withTarget = await request(app).get(`/api/schedule?from=${week}&to=2026-11-29`).set('Authorization', M);
   assert(withTarget.body.staff.find((s: { id: string }) => s.id === 'server-s')?.target_days_per_week === 5, 'target shown with staff');
   assert((await request(app).put('/api/schedule/targets/server-s').set('Authorization', C).send({ target_days_per_week: 2 })).status === 403, 'cashier cannot change targets');
+
+  console.log('Section 7: staff see published shifts only');
+  const draftForStaff = await add('server-s', '2026-12-14', 'opening');
+  const staffView = await request(app).get('/api/schedule?from=2026-11-30&to=2026-12-20').set('Authorization', C);
+  assert(staffView.status === 200 && staffView.body.can_manage === false, 'cashier can open the schedule (read-only)');
+  assert(staffView.body.shifts.length > 0 && staffView.body.shifts.every((s: { status: string }) => s.status === 'published'), 'staff see published shifts only');
+  assert(!staffView.body.shifts.some((s: { id: string }) => s.id === draftForStaff.body.shift.id), 'drafts are hidden from staff');
+  const managerView = await request(app).get('/api/schedule?from=2026-11-30&to=2026-12-20').set('Authorization', M);
+  assert(managerView.body.can_manage === true && managerView.body.shifts.some((s: { id: string }) => s.id === draftForStaff.body.shift.id), 'managers see drafts');
+  const chef = tok('chef-s', 'chef');
+  assert((await request(app).get('/api/schedule?from=2026-11-30&to=2026-12-06').set('Authorization', chef)).status === 200, 'kitchen staff can view too');
+  assert((await request(app).get(`/api/schedule/${draftForStaff.body.shift.id}/history`).set('Authorization', C)).status === 403, 'staff cannot read change history');
+
+  console.log('Section 8: schedule-only people');
+  const person = await request(app).post('/api/schedule/people').set('Authorization', M).send({ name: 'Pheap', job_label: 'Security' });
+  assert(person.status === 201 && person.body.person.schedule_only === 1 && person.body.person.job_label === 'Security', 'manager adds a schedule-only person with a job label');
+  const row = db.prepare(`SELECT email, pin, pin_hash, password, role, is_active FROM users WHERE id = ?`).get(person.body.person.id) as Record<string, unknown>;
+  assert(row.email === null && row.pin === null && row.pin_hash === null && row.password === '!' && row.is_active === 1, 'no email, no PIN and an unusable password');
+  assert((await request(app).post('/api/schedule/people').set('Authorization', C).send({ name: 'X' })).status === 403, 'cashier cannot add people');
+  assert((await request(app).post('/api/schedule/people').set('Authorization', M).send({ name: '  ' })).status === 400, 'name required');
+  const pheapShift = await add(person.body.person.id, '2026-12-15', 'closing');
+  assert(pheapShift.status === 201, 'schedule-only person can be scheduled');
+  const list = await request(app).get('/api/schedule?from=2026-12-14&to=2026-12-20').set('Authorization', M);
+  const listed = list.body.staff.find((s: { id: string }) => s.id === person.body.person.id);
+  assert(listed?.schedule_only === 1 && listed.job_label === 'Security', 'shown in the staff list with job label');
+  const relabel = await request(app).put('/api/schedule/people/server-s').set('Authorization', M).send({ job_label: 'Bartender' });
+  assert(relabel.status === 200, 'POS staff can get a job label too');
+  assert((await request(app).put('/api/schedule/people/server-s').set('Authorization', M).send({ name: 'Renamed' })).status === 409, 'POS staff accounts are not renamed here');
+  const retired = await request(app).put(`/api/schedule/people/${person.body.person.id}`).set('Authorization', M).send({ active: false });
+  const afterRetire = await request(app).get('/api/schedule?from=2026-12-14&to=2026-12-20').set('Authorization', M);
+  assert(retired.status === 200 && !afterRetire.body.staff.some((s: { id: string }) => s.id === person.body.person.id), 'schedule-only person can be retired');
+  const authApp = express();
+  authApp.use(express.json());
+  authApp.use('/api/auth', require('../main/routes/auth').authRoutes);
+  const pinLogin = await request(authApp).post('/api/auth/login').send({ email: null, password: '!' });
+  assert(pinLogin.status >= 400, 'schedule-only person cannot log in');
 
   console.log('='.repeat(50));
   console.log(`Passed ${passed}/${passed + failed}, failed ${failed}`);

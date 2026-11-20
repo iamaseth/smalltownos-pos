@@ -82,7 +82,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, permission: 'kitchen.stations.manage', businessTypes: ['restaurant'] },
   { href: '/customers', labelKey: 'customers', icon: Users, permission: 'customers.view', businessTypes: null },
   { href: '/staff', labelKey: 'staff', icon: UserCog, permission: 'staff.view', businessTypes: null },
-  { href: '/schedule', labelKey: 'staff', label: 'Staff schedule', icon: CalendarDays, permission: 'staff.view', businessTypes: null },
+  { href: '/schedule', labelKey: 'staff', label: 'Staff schedule', icon: CalendarDays, permission: 'schedule.view', businessTypes: null },
   { href: '/settings', labelKey: 'settings', icon: Settings, permission: 'settings.view', businessTypes: null },
 ];
 

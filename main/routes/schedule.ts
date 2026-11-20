@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { dayBoundsInTimezone, getDatabase, now, withTxn } from '../db';
-import { requirePermission } from '../services/authorization';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { tenantTimezone } from './cash-closures';
 
 type Db = ReturnType<typeof getDatabase>;
@@ -121,20 +121,22 @@ function insertShift(db: Db, fields: Omit<ShiftRow, 'id' | 'created_at' | 'updat
   return id;
 }
 
-router.get('/', requirePermission('staff.view'), (req: Request, res: Response) => {
+/** Managers see drafts; everyone else with schedule access sees published shifts only. */
+router.get('/', requirePermission('schedule.view'), (req: Request, res: Response) => {
   try {
+    const canManage = hasPermission(actor(req), 'staff.operational.manage');
     const from = parseDate(req.query.from, 'from');
     const to = parseDate(req.query.to, 'to');
     if (to < from || addDays(from, MAX_RANGE_DAYS) < to) fail(`Choose a date range of ${MAX_RANGE_DAYS} days or less`);
     const db = getDatabase();
-    const shifts = db.prepare(`${SHIFT_SELECT} WHERE s.work_date >= ? AND s.work_date <= ? AND s.status != 'cancelled' ORDER BY s.work_date, s.starts_at, u.name`).all(from, to);
+    const shifts = db.prepare(`${SHIFT_SELECT} WHERE s.work_date >= ? AND s.work_date <= ? AND s.status ${canManage ? "!= 'cancelled'" : "= 'published'"} ORDER BY s.work_date, s.starts_at, u.name`).all(from, to);
     const shiftTypes = db.prepare(`SELECT id, label, start_time, end_time, sort_order FROM schedule_shift_types WHERE active = 1 ORDER BY sort_order, label`).all();
     const staff = db.prepare(`
-      SELECT u.id, u.name, u.role, st.target_days_per_week
+      SELECT u.id, u.name, u.role, u.schedule_only, st.target_days_per_week, st.job_label
       FROM users u LEFT JOIN staff_schedule_settings st ON st.user_id = u.id
       WHERE u.is_active = 1 ORDER BY u.name
     `).all();
-    res.json({ shifts, shift_types: shiftTypes, staff, timezone: tenantTimezone() });
+    res.json({ shifts, shift_types: shiftTypes, staff, timezone: tenantTimezone(), can_manage: canManage });
   } catch (error) { send(res, error, 'Could not load the staff schedule'); }
 });
 
@@ -291,6 +293,58 @@ router.put('/targets/:staffId', requirePermission('staff.operational.manage'), (
     `).run(person.id, raw, now());
     res.json({ staff_id: person.id, target_days_per_week: raw });
   } catch (error) { send(res, error, 'Could not save the target'); }
+});
+
+function jobLabel(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value !== 'string') fail('Job must be text');
+  const trimmed = value.trim().slice(0, 30);
+  return trimmed || null;
+}
+
+/** People who are on the schedule but never log in (kitchen helpers, security): no email, no PIN, unusable password. */
+router.post('/people', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
+  try {
+    actor(req);
+    const db = getDatabase();
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 60) : '';
+    if (!name) fail('Enter a name');
+    const job = jobLabel(req.body?.job_label);
+    const id = randomUUID();
+    const at = now();
+    withTxn(() => {
+      db.prepare(`
+        INSERT INTO users (id, name, email, password, role, pin, pin_hash, is_active, schedule_only, created_at, updated_at)
+        VALUES (?, ?, NULL, '!', 'server', NULL, NULL, 1, 1, ?, ?)
+      `).run(id, name, at, at);
+      db.prepare(`INSERT INTO staff_schedule_settings (user_id, target_days_per_week, job_label, updated_at) VALUES (?, NULL, ?, ?)`).run(id, job, at);
+    });
+    res.status(201).json({ person: { id, name, role: 'server', schedule_only: 1, target_days_per_week: null, job_label: job } });
+  } catch (error) { send(res, error, 'Could not add the person'); }
+});
+
+/** Set anyone's job label; rename or retire schedule-only people (POS staff accounts stay on the Staff page). */
+router.put('/people/:id', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
+  try {
+    actor(req);
+    const db = getDatabase();
+    const person = db.prepare(`SELECT id, name, schedule_only FROM users WHERE id = ?`).get(String(req.params.id)) as { id: string; name: string; schedule_only: number } | undefined;
+    if (!person) fail('Person not found', 404);
+    const changesAccount = req.body && ('name' in req.body || 'active' in req.body);
+    if (!person.schedule_only && changesAccount) fail('Change POS staff on the Staff page', 409);
+    const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim().slice(0, 60) : person.name;
+    const active = req.body?.active === false ? 0 : 1;
+    withTxn(() => {
+      if (person.schedule_only) db.prepare(`UPDATE users SET name = ?, is_active = ?, updated_at = ? WHERE id = ?`).run(name, active, now(), person.id);
+      if (req.body && 'job_label' in req.body) {
+        db.prepare(`
+          INSERT INTO staff_schedule_settings (user_id, target_days_per_week, job_label, updated_at) VALUES (?, NULL, ?, ?)
+          ON CONFLICT(user_id) DO UPDATE SET job_label = excluded.job_label, updated_at = excluded.updated_at
+        `).run(person.id, jobLabel(req.body.job_label), now());
+      }
+    });
+    res.json({ ok: true });
+  } catch (error) { send(res, error, 'Could not update the person'); }
 });
 
 export const scheduleRoutes = router;
