@@ -25,6 +25,8 @@ import PaymentModal from '@/components/pos/PaymentModal';
 import OpenTabsModal from '@/components/pos/OpenTabsModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
+import RegisterLockScreen from '@/components/pos/RegisterLockScreen';
+import { useRegisterAccess } from '@/hooks/useRegisterAccess';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
 import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
 import { useCashSession } from '@/hooks/useCashSession';
@@ -110,6 +112,7 @@ export default function POSPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const cashDrawer = useCashDrawerMovements();
   const shift = useCashSession();
+  const registerAccess = useRegisterAccess(true);
   // Shift actions follow the same owner/manager/cashier group as the
   // backend route gates (backend still enforces; this only hides the entry).
   const canUseShift = tenantCan(currentTenant, 'cash.shifts.view');
