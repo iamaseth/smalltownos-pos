@@ -106,6 +106,7 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'reports.daily-sales.export', area: 'reports', defaultRoles: OWNER, configurable: true, risk: 'sensitive' },
 
   { id: 'staff.view', area: 'staff', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
+  { id: 'schedule.view', area: 'staff', defaultRoles: ALL_STAFF, configurable: true, risk: 'standard' },
   { id: 'staff.operational.manage', area: 'staff', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
   { id: 'staff.privileged.manage', area: 'staff', defaultRoles: OWNER, configurable: false, risk: 'sensitive' },
   { id: 'authorization.manage', area: 'authorization', defaultRoles: OWNER, configurable: false, risk: 'sensitive' },

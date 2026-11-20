@@ -5961,6 +5961,70 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 107,
+    name: 'add_staff_scheduled_shifts',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS schedule_shift_types (
+          id TEXT PRIMARY KEY,
+          label TEXT NOT NULL,
+          start_time TEXT NOT NULL,
+          end_time TEXT NOT NULL,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          active INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS scheduled_shifts (
+          id TEXT PRIMARY KEY,
+          staff_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+          role TEXT NOT NULL,
+          work_date TEXT NOT NULL,
+          shift_type_id TEXT REFERENCES schedule_shift_types(id),
+          starts_at TEXT NOT NULL,
+          ends_at TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'cancelled')),
+          notes TEXT,
+          created_by TEXT NOT NULL REFERENCES users(id),
+          updated_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          CHECK (starts_at < ends_at)
+        );
+        CREATE INDEX IF NOT EXISTS idx_scheduled_shifts_work_date ON scheduled_shifts(work_date, status);
+        CREATE INDEX IF NOT EXISTS idx_scheduled_shifts_staff_starts ON scheduled_shifts(staff_id, starts_at, ends_at);
+        CREATE TABLE IF NOT EXISTS scheduled_shift_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          shift_id TEXT NOT NULL REFERENCES scheduled_shifts(id),
+          action TEXT NOT NULL,
+          before_json TEXT,
+          after_json TEXT,
+          actor_id TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_scheduled_shift_events_shift ON scheduled_shift_events(shift_id, id);
+        CREATE TABLE IF NOT EXISTS staff_schedule_settings (
+          user_id TEXT PRIMARY KEY REFERENCES users(id),
+          target_days_per_week INTEGER CHECK (target_days_per_week IS NULL OR target_days_per_week BETWEEN 0 AND 7),
+          job_label TEXT,
+          updated_at TEXT NOT NULL
+        );
+      `);
+      const userColumns = db.prepare(`PRAGMA table_info(users)`).all() as { name: string }[];
+      if (!userColumns.some((col) => col.name === 'schedule_only')) {
+        db.exec(`ALTER TABLE users ADD COLUMN schedule_only INTEGER NOT NULL DEFAULT 0`);
+      }
+      const insertType = db.prepare(`
+        INSERT OR IGNORE INTO schedule_shift_types (id, label, start_time, end_time, sort_order, active, updated_at)
+        VALUES (?, ?, ?, ?, ?, 1, ?)
+      `);
+      const at = now();
+      insertType.run('opening', 'Opening', '14:00', '20:00', 1, at);
+      insertType.run('main', 'Main', '16:00', '23:00', 2, at);
+      insertType.run('closing', 'Closing', '18:00', '01:00', 3, at);
+      insertType.run('full', 'Full', '14:00', '01:00', 4, at);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

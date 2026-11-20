@@ -187,6 +187,12 @@ but cannot modify or deactivate owner or manager accounts: that needs the protec
 `staff.privileged.manage`, which only an owner holds. Only an owner can change the role on an
 existing account, and the last active owner cannot be demoted.
 
+**Staff schedule.** Every role can open the schedule by default (`schedule.view`) and sees
+published shifts only. Planning — adding, moving and publishing shifts, shift times, weekly
+targets and schedule-only people — needs `staff.operational.manage`, and only those users see
+drafts and change history. Schedule-only people are `users` rows with `schedule_only = 1`, no
+email, no PIN and an unusable password, so they cannot sign in.
+
 **Conditional surfaces.** Business type, feature settings such as KDS or WhatsApp, and account
 state can hide or disable a surface independently of whether the permission is granted.
 
