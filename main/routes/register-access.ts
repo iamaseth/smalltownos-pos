@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { getDatabase } from '../db';
+import { resolveEffectivePermissions } from '../services/authorization';
 
 /**
  * Staff PIN verification for a register already authenticated to the POS.
@@ -44,7 +45,19 @@ router.post('/unlock', pinLimiter, async (req: Request, res: Response) => {
       res.status(401).json({ error: 'Invalid PIN' });
       return;
     }
-    res.json({ operator: { id: matched.id, name: matched.name, role: matched.role } });
+    const effective = resolveEffectivePermissions(matched.id);
+    if (!effective) {
+      res.status(401).json({ error: 'Employee account is no longer active' });
+      return;
+    }
+    res.json({
+      operator: {
+        id: matched.id,
+        name: matched.name,
+        role: matched.role,
+        permissions: [...effective.permissionIds],
+      },
+    });
   } catch {
     res.status(500).json({ error: 'PIN verification unavailable' });
   }
