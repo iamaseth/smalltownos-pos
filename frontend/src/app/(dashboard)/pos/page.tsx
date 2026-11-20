@@ -31,6 +31,7 @@ import { useCashSession } from '@/hooks/useCashSession';
 import { tenantCan } from '@/lib/permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
+import { PrintSkippedError } from '@/lib/printer/print-jobs';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
@@ -399,6 +400,7 @@ export default function POSPage() {
       const printWarnings = await printKot(order, order.items ? { items: order.items } : undefined);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
+      if (err instanceof PrintSkippedError) { toast(err.message, { icon: '🖨️' }); return; }
       console.error('[POS] KOT print failed:', err);
       const msg = err instanceof Error ? err.message : 'print failed';
       const code = `print.kot.${msg.toLowerCase().includes('spool') ? 'spooler_timeout' : 'failed'}`;
@@ -477,6 +479,7 @@ export default function POSPage() {
       const printWarnings = await printBill(bill, currentTenant);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
+      if (err instanceof PrintSkippedError) { toast(err.message, { icon: '🖨️' }); return; }
       // Non-fatal: print failure should not block the checkout flow.
       const msg = err instanceof Error ? err.message : 'print failed';
       const supportMessage = msg.startsWith('Receipt not printed:')

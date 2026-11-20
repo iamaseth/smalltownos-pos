@@ -59,7 +59,7 @@ export default function PrintTestPage() {
             toast.success(t('browserDialogOpened'));
             showPrintWarningsToast(printWarnings);
           } else {
-            const printWarnings = await printBill(testBill, testTenant, { paperWidth });
+            const printWarnings = await printBill(testBill, testTenant, { paperWidth, skipPrintLedger: true });
             toast.success(t('receiptPrinted'));
             showPrintWarningsToast(printWarnings);
           }
@@ -107,7 +107,7 @@ export default function PrintTestPage() {
               kind: 'locale' as const,
             })));
           } else {
-            const printWarnings = await printKot(testOrder, { paperWidth, stationName: t('kitchenStation') });
+            const printWarnings = await printKot(testOrder, { paperWidth, stationName: t('kitchenStation'), skipPrintLedger: true });
             toast.success(t('kotPrinted'));
             showPrintWarningsToast(printWarnings);
           }

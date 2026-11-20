@@ -11,6 +11,7 @@ import { refundRoutes } from './refunds';
 import { cashClosureRoutes } from './cash-closures';
 import { cashSessionRoutes } from './cash-sessions';
 import { cashHandoverRoutes } from './cash-handover';
+import { printJobRoutes } from './print-jobs';
 import { inventoryRoutes } from './inventory';
 import { supplyRoutes } from './supplies';
 import { vendorRoutes } from './vendors';
@@ -84,6 +85,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/cash-closures', cashClosureRoutes);
   app.use('/api/cash-sessions', cashSessionRoutes);
   app.use('/api/cash-handover', cashHandoverRoutes);
+  app.use('/api/print-jobs', printJobRoutes);
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/supplies', supplyRoutes);
   app.use('/api/vendors', vendorRoutes);

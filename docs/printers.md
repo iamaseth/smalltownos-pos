@@ -1,7 +1,11 @@
 # Printer setup
 
-FloCafe prints receipts and kitchen order tickets from the desktop app. Configure printers in
-**Settings > Printers**, then use **Test Print** before service.
+FloCafe has two printer paths. The desktop app can print to printers attached to that computer or
+reachable on its local network. The BackStreet online POS runs in Railway, so it cannot discover or
+send jobs to printers attached to the restaurant computer. From the online POS, use the toolbar's
+**Print Center** on the computer that has the printer: choose **Use Chrome dialog** for an
+OS-installed printer, or **Connect USB printer** for a compatible WebUSB device. Then print a test
+slip before service.
 
 > For how the print pipeline is put together, see
 > [the printing architecture](architecture/printing.md). For validating a physical printer before
@@ -11,16 +15,18 @@ FloCafe prints receipts and kitchen order tickets from the desktop app. Configur
 
 ## Connection types
 
-| Type | Use it for | What you need |
+| Type | Where it works | What you need |
 | --- | --- | --- |
-| Network | Receipt or kitchen printers on the local network | Printer IP address and port; most ESC/POS printers use port `9100` |
-| USB / OS Queue | Direct USB printers and OS-managed print queues | A direct USB connection or a configured OS print queue (Windows Spooler or CUPS) |
-| WebUSB | A browser-connected printer | A compatible browser and a user-selected device; the browser sends the print bytes |
+| Network | Desktop app only | Printer IP address and port; most ESC/POS printers use port `9100` |
+| USB / OS Queue | Desktop app only | A direct USB connection or a configured OS print queue (Windows Spooler or CUPS) |
+| WebUSB | Desktop app or BackStreet online POS | Chrome or Edge on the computer with the printer; select the device in **Print Center > Connect USB printer** |
+| Chrome dialog | BackStreet online POS or desktop app | An OS-installed printer on the computer running the browser |
 
-Set the paper width to match the printer, either 58 mm or 80 mm. The first configured printer
-becomes the default; choose a different default in Settings when another printer should receive
-ordinary receipts. If no hardware printer is configured, FloCafe falls back to system print when
-printing bills.
+Set the paper width to match the printer, either 58 mm or 80 mm. In the desktop app, the first
+configured printer becomes the default; choose a different default in Settings when another printer
+should receive ordinary receipts. In the BackStreet online POS, use the Chrome dialog or WebUSB
+choice in Print Center. If no desktop hardware printer is configured, FloCafe falls back to system
+print when printing bills.
 
 Enable **Open cash drawer on checkout** on a receipt printer only when a till is connected to that
 printer's drawer-kick port. When enabled, FloCafe appends the standard ESC/POS drawer pulse to
@@ -109,6 +115,24 @@ the station list, and print on the default kitchen printer.
 
 KOT printing can be disabled for the business. When it is disabled, neither automatic nor manual KOT
 print requests are sent.
+
+## BackStreet online POS
+
+The **Settings > Printers > Detect** control inspects printers visible to the POS server. On the
+online POS, that server runs in Railway and cannot see a USB printer attached to the cashier's
+computer. Use **Print Center** in the POS toolbar instead:
+
+1. Choose **Use Chrome dialog**. Print Center uses the browser's print dialog, where you can choose
+   the printer that already works from Chrome and set its paper size.
+2. Choose **Print test slip** and confirm the paper comes out correctly.
+3. For a compatible USB printer, choose **Connect USB printer** and select it in Chrome's device
+   picker. WebUSB support depends on the browser and printer. Keep the normal Windows printer driver
+   if Chrome dialog printing works; replacing it with WinUSB is only a troubleshooting option for
+   direct WebUSB and removes the device from the normal Windows printer queue.
+
+The online POS does not send print jobs to the Railway server's USB, OS, or network printer queues.
+It reports a server-printing-unavailable error instead. A browser print dialog cannot confirm that
+paper physically came out, so its print status is recorded as unconfirmed.
 
 ## Troubleshooting
 

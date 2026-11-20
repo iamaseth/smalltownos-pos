@@ -104,6 +104,36 @@ export function getEffectiveOrderItems(db: any, orderId: string): any[] {
 }
 
 // GET /api/printers — list all
+/**
+ * Where server-side printing can physically reach a printer. On the Railway
+ * deployment (FLO_RUNTIME=cloud) the API runs in a data centre, so USB / LAN /
+ * OS-queue printers at the restaurant are unreachable from here: terminals must
+ * print locally (WebUSB or the Chrome print dialog). The desktop app prints natively.
+ */
+export function isCloudRuntime(): boolean {
+  return process.env.FLO_RUNTIME === 'cloud';
+}
+
+router.get('/runtime', requirePermission('printing.execute'), (_req: Request, res: Response) => {
+  const cloud = isCloudRuntime();
+  res.json({
+    runtime: cloud ? 'cloud' : 'desktop',
+    server_side_printing: !cloud,
+    hint: cloud
+      ? 'Printing happens on this computer: connect the USB printer in Chrome, or use the Chrome print dialog.'
+      : 'Printing is sent by this computer to the configured printers.',
+  });
+});
+
+function refuseInCloud(res: Response): boolean {
+  if (!isCloudRuntime()) return false;
+  res.status(409).json({
+    error: 'Server printing is not available on the online POS. Print from this computer (USB in Chrome or the print dialog).',
+    code: 'server_printing_unavailable',
+  });
+  return true;
+}
+
 router.get('/', requirePermission('printers.manage'), (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -353,6 +383,7 @@ router.post('/:id/test', requirePermission('printers.manage'), asyncHandler(asyn
 // POST /api/printers/print-bill — print bill via backend (desktop app).
 // `sales` gets the server role past this gate; the setting check below decides if it's actually allowed.
 router.post('/print-bill', requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
+  if (refuseInCloud(res)) return;
   const authUser = (req as any).user;
   if (authUser?.role === 'server' && !isServerBillPrintingEnabled()) {
     return res.status(403).json({ error: 'Bill printing is disabled for the server role. An owner or manager can enable it in Settings.' });
@@ -613,6 +644,7 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
 // POST /api/printers/print-kot — print KOT via backend (desktop app).
 // Uses `sales` so the waiter terminal's "server" role can print its own orders.
 router.post('/print-kot', requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
+  if (refuseInCloud(res)) return;
   // Enforce master KOT printing toggle for all automatic and manual print requests.
   if (!isKotPrintingEnabled()) {
     return res.status(403).json({ error: 'KOT printing is disabled for this business' });

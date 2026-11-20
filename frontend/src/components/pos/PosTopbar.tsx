@@ -1,6 +1,7 @@
 'use client';
 
 import PrinterStatus from './PrinterStatus';
+import PrintCenter from './PrintCenter';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CustomerSearch from './CustomerSearch';
@@ -51,6 +52,7 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
         {searchSlotRef && <div ref={searchSlotRef} className="min-w-0 flex-1 max-w-xl" />}
       </div>
       <div className="flex items-center gap-2">
+        <PrintCenter />
         <div className="relative">
         <button type="button" onClick={() => setActionsOpen(v => !v)} aria-expanded={actionsOpen}
           aria-label="Cashier actions" className="flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold hover:bg-[#243149]">

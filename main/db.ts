@@ -5928,6 +5928,35 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSetting.run('cash_change_policy', 'usd_whole_khr_rest');
     },
   },
+  {
+    version: 106,
+    name: 'add_print_jobs_ledger',
+    up: () => {
+      // One row per print attempt group. job_key de-duplicates double taps,
+      // retries and mode switches; failed kitchen tickets stay visible until
+      // printed or dismissed. Printing never blocks orders or payments.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS print_jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_key TEXT NOT NULL UNIQUE,
+          kind TEXT NOT NULL CHECK (kind IN ('receipt', 'kot', 'test', 'other')),
+          label TEXT NOT NULL DEFAULT '',
+          transport TEXT NOT NULL DEFAULT 'unknown' CHECK (transport IN ('webusb', 'browser', 'native', 'unknown')),
+          status TEXT NOT NULL DEFAULT 'printing' CHECK (status IN ('printing', 'printed', 'printed_unconfirmed', 'failed', 'dismissed')),
+          attempts INTEGER NOT NULL DEFAULT 0,
+          payload_json TEXT NOT NULL DEFAULT '{}',
+          last_error_code TEXT,
+          last_error TEXT,
+          device_id TEXT,
+          requested_by TEXT REFERENCES users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          printed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_print_jobs_status ON print_jobs(status, updated_at);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
