@@ -162,7 +162,9 @@ function seedPosFixture() {
     ['billing_type', 'prepaid'],
     ['business_type', 'restaurant'],
     ['tables_required', 'false'],
-    ['whatsapp_enabled', 'true'],
+    // Browser E2E must not initiate a real WhatsApp Web/Baileys session.
+    // WhatsApp UI is still testable; connection behavior has dedicated mocked tests.
+    ['whatsapp_enabled', process.env.E2E_DISABLE_EXTERNAL_WHATSAPP === '1' ? 'false' : 'true'],
     // Tax defaults off (migration 40) until explicitly enabled — this fixture's
     // product carries a real tax_category_id expecting real tax, so it must
     // turn taxes on itself rather than rely on a global default.
