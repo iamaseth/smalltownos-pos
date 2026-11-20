@@ -124,6 +124,7 @@ export async function printWebBill(
     kind: 'locale' as const,
   }));
   const html = generateBillHtml(bill, tenant, { ...opts, languages });
+  const paperSize = opts.paperSize ?? 'thermal58';
 
   // Hidden frame instead of a popup: works after the payment await (no popup
   // blocker) and does not cancel Chrome's print preview.

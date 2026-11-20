@@ -203,9 +203,9 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
         <div className="mt-2 flex min-h-11 items-center justify-between gap-2 text-[15px]">
           {destination === 'table' && (cart.tableId ? (
             <>
-              <button type="button" onClick={onSelectTable} className="flex min-w-0 items-baseline gap-2 text-start" title="Change table">
-                <span className="max-w-[80%] shrink-0 truncate text-[20px] font-black text-white">{selectedTable?.name || cart.tableId}</span>
-                {existingOrder && <span className="min-w-0 truncate text-[14px] font-semibold text-[#8f9bb8]">#{existingOrder.order_number}</span>}
+              <button type="button" onClick={onSelectTable} className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 text-start" title="Change table">
+                <span className="min-w-0 break-words text-[20px] font-black leading-tight text-white">{selectedTable?.name || cart.tableId}</span>
+                {existingOrder && <span className="shrink-0 text-[14px] font-semibold text-[#8f9bb8]">#{existingOrder.order_number}</span>}
               </button>
               <div className="flex shrink-0 items-center gap-1 text-[14px] font-bold">
                 <button type="button" className={iconButton+' border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2]'} aria-label="Decrease pax" onClick={() => cart.setGuestCount(Math.max(1,cart.guestCount-1))}><Minus size={16}/></button>
@@ -218,8 +218,8 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
           ))}
           {destination === 'tab' && (cart.tabName ? (
             <>
-              <span className="flex min-w-0 items-baseline gap-2">
-                <span className="max-w-[80%] shrink-0 truncate text-[20px] font-black text-white">Tab: {cart.tabName}</span>
+              <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                <span className="min-w-0 break-words text-[20px] font-black leading-tight text-white">Tab: {cart.tabName}</span>
                 {existingOrder && <span className="min-w-0 truncate text-[14px] font-semibold text-[#8f9bb8]">#{existingOrder.order_number}</span>}
               </span>
               <button type="button" onClick={onSelectTab} className="h-10 shrink-0 rounded-lg border-2 border-[#3d4f7c] bg-[#22325a] px-3 text-[14px] font-bold" title="Change tab">Change</button>
@@ -228,7 +228,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
             <button type="button" onClick={onSelectTab} className={destinationPrompt}>Tap to name or choose a tab</button>
           ))}
           {destination === 'togo' && (existingOrder ? (
-            <span className="flex min-w-0 items-baseline gap-2"><span className="max-w-[80%] shrink-0 truncate text-[20px] font-black text-white">To Go{cart.tabName ? `: ${cart.tabName}` : ''}</span><span className="min-w-0 truncate text-[14px] font-semibold text-[#8f9bb8]">#{existingOrder.order_number}</span></span>
+            <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2"><span className="min-w-0 break-words text-[20px] font-black leading-tight text-white">To Go{cart.tabName ? `: ${cart.tabName}` : ''}</span><span className="shrink-0 text-[14px] font-semibold text-[#8f9bb8]">#{existingOrder.order_number}</span></span>
           ) : (
             <input type="text" maxLength={60} value={cart.tabName} onChange={(e) => cart.setTabName(e.target.value)}
               placeholder="Customer name (optional)" aria-label="To Go customer name"
