@@ -11,7 +11,12 @@
  * With Chrome started with --kiosk-printing this prints silently to the
  * Windows default printer (the BackStreet thermal printer).
  */
-export async function printHtmlInFrame(html: string): Promise<void> {
+export interface FramePrintOptions {
+  /** Physical roll width for content-sized customer receipts. */
+  receiptPaperWidthMm?: 58 | 80;
+}
+
+export async function printHtmlInFrame(html: string, options: FramePrintOptions = {}): Promise<void> {
   if (typeof document === 'undefined') throw new Error('Printing needs a browser');
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
@@ -44,6 +49,40 @@ export async function printHtmlInFrame(html: string): Promise<void> {
       new Promise((resolve) => setTimeout(resolve, 1500)),
     ]);
     await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 50)));
+
+    // Customer receipts use a continuous roll. Ask Chrome for a page whose
+    // height matches the rendered receipt instead of the printer driver's
+    // multi-metre default roll length. This option is only passed by the
+    // customer-bill browser path; kitchen tickets keep their existing sizing.
+    if (options.receiptPaperWidthMm) {
+      const receipt = doc.querySelector<HTMLElement>('.bill-container');
+      if (receipt) {
+        const contentHeightPx = Math.max(
+          receipt.scrollHeight,
+          receipt.getBoundingClientRect().height,
+        );
+        if (contentHeightPx > 0) {
+          // Convert CSS pixels at 96dpi to millimetres and leave a small
+          // trailing allowance for the printer's cutter.
+          const pageHeightMm = Math.max(25, Math.ceil((contentHeightPx * 25.4) / 96 + 3));
+          const pageStyle = doc.createElement('style');
+          pageStyle.media = 'print';
+          pageStyle.textContent = `
+            @page { size: ${options.receiptPaperWidthMm}mm ${pageHeightMm}mm; margin: 0; }
+            @media print {
+              html, body {
+                width: ${options.receiptPaperWidthMm}mm !important;
+                height: auto !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+            }
+          `;
+          doc.head.appendChild(pageStyle);
+        }
+      }
+    }
 
     win.addEventListener('afterprint', () => {
       clearTimeout(safety);
