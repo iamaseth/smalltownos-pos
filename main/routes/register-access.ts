@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
+import jwt from 'jsonwebtoken';
+import { randomUUID } from 'node:crypto';
+import { getJWTSecret } from '../security/jwt-secret';
 import { getDatabase } from '../db';
 import { resolveEffectivePermissions } from '../services/authorization';
 
@@ -50,7 +53,17 @@ router.post('/unlock', pinLimiter, async (req: Request, res: Response) => {
       res.status(401).json({ error: 'Employee account is no longer active' });
       return;
     }
+    // Mint a short-lived normal POS bearer token for the employee. All existing
+    // API permission middleware now evaluates this employee, not the manager
+    // who originally opened the register. The frontend keeps it in memory only.
+    const accessToken = jwt.sign(
+      { userId: matched.id, email: null, role: matched.role, tenantId: 1, registerSession: true, jti: randomUUID() },
+      getJWTSecret(),
+      { expiresIn: '8h' },
+    );
     res.json({
+      access_token: accessToken,
+      expires_in: 8 * 60 * 60,
       operator: {
         id: matched.id,
         name: matched.name,
