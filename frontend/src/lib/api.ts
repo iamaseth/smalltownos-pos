@@ -1,6 +1,12 @@
 import axios from 'axios';
 
 let authRedirectInProgress = false;
+let registerSessionToken: string | null = null;
+
+/** Ephemeral employee token; deliberately never written to localStorage. */
+export function setRegisterSessionToken(token: string | null): void {
+  registerSessionToken = token;
+}
 
 // Base URL derived from window.location.origin so LAN clients connect to host IP.
 const api = axios.create({
@@ -14,7 +20,7 @@ const api = axios.create({
 // Attach JWT token to every request
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
+    const token = registerSessionToken || localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -27,6 +33,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
+      if (registerSessionToken) {
+        registerSessionToken = null;
+        window.dispatchEvent(new Event('flo:register-session-expired'));
+        return Promise.reject(error);
+      }
       // KDS routes render inline login; avoid redirecting away to /auth/login.
       const isKdsPath = window.location.pathname.startsWith('/kds');
       localStorage.removeItem('token');

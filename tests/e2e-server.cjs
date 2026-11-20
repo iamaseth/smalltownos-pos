@@ -44,6 +44,8 @@ const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitFor
 const { createExitCodeAwareShutdown, waitForHttpShutdownWork, isShutdownTimeout } = require('../dist/main/shutdown');
 const { startServer, stopServer, getServerPort } = require('../dist/main/server');
 const { startServerApp, stopServerApp, getServerAppPort } = require('../dist/main/server-app');
+// Browser E2E must never open a real WhatsApp Web/Baileys connection.
+if (process.env.FLO_WHATSAPP_AUTOCONNECT === undefined) process.env.FLO_WHATSAPP_AUTOCONNECT = '0';
 const { shutdown: shutdownWhatsApp, requestShutdown: requestWhatsAppShutdown } = require('../dist/main/services/whatsapp');
 const { startStandaloneServers } = require('../dist/main/standalone-startup');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
@@ -162,6 +164,9 @@ function seedPosFixture() {
     ['billing_type', 'prepaid'],
     ['business_type', 'restaurant'],
     ['tables_required', 'false'],
+    // WhatsApp stays enabled so its pages (blocklist, inbox) render for the
+    // browser specs. The live WhatsApp Web socket is not opened: see
+    // FLO_WHATSAPP_AUTOCONNECT below. Connection behaviour has mocked tests.
     ['whatsapp_enabled', 'true'],
     // Tax defaults off (migration 40) until explicitly enabled — this fixture's
     // product carries a real tax_category_id expecting real tax, so it must

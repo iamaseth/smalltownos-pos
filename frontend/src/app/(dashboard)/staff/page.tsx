@@ -325,7 +325,7 @@ export default function StaffPage() {
                   </p>
                 </div>
               )}
-              {hasRole(form.role, ROLE_ACCESS.ownerManager) && (
+              {(
                 <div>
                   <div className="relative">
                     <input

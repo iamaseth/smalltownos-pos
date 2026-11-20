@@ -37,6 +37,7 @@ const {
   now,
 } = require('./helpers/test-setup');
 const { staffRoutes } = require('../main/routes/staff');
+const { registerAccessRoutes } = require('../main/routes/register-access');
 const { getJWTSecret } = require('../main/routes/auth');
 
 function seedUser(db: any, id: string, role: string, pin = '1234') {
@@ -74,7 +75,7 @@ async function main() {
     VALUES ('station-145', 'Main Kitchen', 1, ?, ?)`
   ).run(now(), now());
 
-  const app = createApp({ '/api/staff': staffRoutes });
+  const app = createApp({ '/api/staff': staffRoutes, '/api/register-access': registerAccessRoutes });
 
   console.log('\n── Manager boundaries ─────────────────────────────────────────');
   let result = await request(app).put('/api/staff/owner-145').set(managerAuth).send({
@@ -172,10 +173,50 @@ async function main() {
   assertEqual(result.status, 400, 'staff update rejects blank email');
   assertEqual(result.body.error, 'email is required', 'blank email update returns a clear validation error');
 
+  result = await request(app).get('/api/register-access/status').set(managerAuth);
+  assertEqual(result.status, 200, 'register status is available to a logged-in register');
+  const pinsBefore = (db.prepare('SELECT COUNT(*) AS n FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL').get() as any).n;
+  assertEqual(result.body.pin_lock_enabled, pinsBefore > 0, 'register PIN lock follows whether any active staff PIN exists');
+
   result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '1234',
+    name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '2468',
   });
-  assertEqual(result.status, 400, 'operational roles reject a non-empty PIN');
+  assertEqual(result.status, 201, 'manager can create a cashier with an individual PIN');
+  assertEqual(result.body.staff.has_pin, 1, 'cashier PIN is reported as configured');
+  assertEqual((await request(app).get('/api/register-access/status').set(managerAuth)).body.pin_lock_enabled, true,
+    'register PIN lock turns on once a staff PIN exists');
+  const pinnedCashierId = result.body.staff.id;
+  const cashierPinHash = (db.prepare('SELECT pin_hash FROM users WHERE id = ?').get(result.body.staff.id) as any).pin_hash;
+  assert(bcrypt.compareSync('2468', cashierPinHash), 'cashier PIN is stored as a bcrypt hash');
+  result = await request(app).post('/api/register-access/unlock').set(managerAuth).send({ pin: '2468' });
+  assertEqual(result.status, 200, 'valid cashier PIN identifies the active employee');
+  assertEqual(result.body.operator.id, pinnedCashierId, 'PIN response identifies the correct employee');
+  assertEqual(result.body.operator.role, 'cashier', 'PIN response includes employee role');
+  assert(Array.isArray(result.body.operator.permissions), 'PIN response includes effective permissions');
+  const employeePermissions = result.body.operator.permissions as string[];
+  const employeeToken = jwt.verify(result.body.access_token, getJWTSecret()) as any;
+  assertEqual(employeeToken.userId, pinnedCashierId, 'employee session JWT is scoped to the PIN-matched cashier');
+  assertEqual(employeeToken.registerSession, true, 'employee session JWT is marked as a register session');
+  result = await request(app).get('/api/staff').set({ Authorization: `Bearer ${result.body.access_token}` });
+  assertEqual(result.status, 403, 'employee session cannot use manager-only staff administration APIs');
+  assert(employeePermissions.includes('pos.use'), 'cashier receives existing role-based POS permissions');
+
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'Duplicate PIN cashier', email: 'duplicate-pin-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '2468',
+  });
+  assertEqual(result.status, 409, 'duplicate active employee PIN is rejected');
+
+  result = await request(app).put('/api/staff/server-target-145').set(managerAuth).send({ pin: '2468' });
+  assertEqual(result.status, 409, 'an existing employee cannot reuse another active employee PIN');
+
+  result = await request(app).put('/api/staff/server-target-145').set(managerAuth).send({ pin: '1357' });
+  assertEqual(result.status, 200, 'manager can assign an individual PIN to an existing waiter');
+  assertEqual(result.body.staff.has_pin, 1, 'waiter PIN is reported as configured');
+
+  result = await request(app).put('/api/staff/server-target-145').set(managerAuth).send({ pin: '' });
+  assertEqual(result.status, 200, 'manager can clear an employee PIN');
+  assertEqual(result.body.staff.has_pin, 0, 'clearing a PIN removes PIN access');
 
   console.log('\n── PIN policy ─────────────────────────────────────────────────');
   for (const pin of ['abcd', '123', '12345', '1234567']) {
@@ -187,9 +228,9 @@ async function main() {
 
   result = await request(app).put('/api/staff/manager-target-145').set(ownerAuth).send({ role: 'server' });
   assertEqual(result.status, 200, 'owner can demote a manager to server');
-  assertEqual(result.body.staff.has_pin, 0, 'demoting to an operational role clears has_pin');
+  assertEqual(result.body.staff.has_pin, 1, 'demoting to an operational role preserves the employee PIN');
   const demoted = db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-target-145') as any;
-  assertEqual(demoted.pin_hash, null, 'demoting to an operational role clears pin_hash');
+  assert(Boolean(demoted.pin_hash), 'demoting to an operational role preserves the PIN hash');
 
   const originalPinHash = (db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-145') as any).pin_hash;
   result = await request(app).put('/api/staff/manager-145').set(ownerAuth).send({ name: 'Manager PIN preserved' });
