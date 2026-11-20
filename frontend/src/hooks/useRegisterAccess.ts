@@ -47,6 +47,13 @@ export function useRegisterAccess(enabled: boolean) {
     };
   }, [enabled, locked, restoreAppUser]);
 
+  useEffect(() => () => {
+    // If the POS page is left while an employee is active, restore the
+    // original email/password identity before the rest of the app is used.
+    setRegisterSessionToken(null);
+    void useAuthStore.getState().refreshAuthContext().catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (!enabled) return;
     const expired = () => { void restoreAppUser(); };
@@ -82,7 +89,7 @@ export function useRegisterAccess(enabled: boolean) {
       setError('');
       return true;
     } catch {
-      setRegisterSessionToken(null);
+      await restoreAppUser();
       setError('PIN verification failed or employee session could not be started');
       return false;
     } finally {
