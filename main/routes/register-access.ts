@@ -9,8 +9,8 @@ import { resolveEffectivePermissions } from '../services/authorization';
 
 /**
  * Staff PIN verification for a register already authenticated to the POS.
- * This is NOT a replacement for the existing bearer authentication.
- * It does not grant privileges or change the JWT identity.
+ * A successful PIN creates a short-lived bearer token scoped to that employee.
+ * Existing API permission middleware then enforces the employee's own access.
  */
 const router = Router();
 const pinLimiter = rateLimit({
