@@ -55,6 +55,13 @@ export function useRegisterAccess(enabled: boolean) {
   }, []);
 
   useEffect(() => {
+    if (enabled || !operator) return;
+    // Defer the identity restore until after this route-state effect.
+    const restore = window.setTimeout(() => { void restoreAppUser(); }, 0);
+    return () => window.clearTimeout(restore);
+  }, [enabled, operator, restoreAppUser]);
+
+  useEffect(() => {
     if (!enabled) return;
     const expired = () => { void restoreAppUser(); };
     window.addEventListener('flo:register-session-expired', expired);
