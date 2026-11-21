@@ -29,6 +29,7 @@ interface Props {
   onSelectToGo: () => void;
   onClearCart?: () => void;
   onPayExisting?: () => void;
+  onSplitBill?: () => void;
   onShowTabs?: () => void;
   openTabCount?: number;
   onPayNow: () => void;
@@ -135,7 +136,7 @@ function ItemQuantityControl({
   );
 }
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, destination, showTableOption = true, onSelectTable, onSelectTab, onSelectToGo, onClearCart, onPayExisting, onShowTabs, openTabCount = 0, onPayNow, onEditItem, variant = 'sidebar', existingOrder, onPrintBill, onSendAndPrintBill }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, destination, showTableOption = true, onSelectTable, onSelectTab, onSelectToGo, onClearCart, onPayExisting, onSplitBill, onShowTabs, openTabCount = 0, onPayNow, onEditItem, variant = 'sidebar', existingOrder, onPrintBill, onSendAndPrintBill }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -323,7 +324,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
         ) : (<>
           <button type="button" onClick={() => setEditingNote(true)} className={menuItem}><StickyNote size={17}/>{cart.orderNotes ? 'Edit order note' : 'Add order note'}</button>
           <button type="button" disabled={!canHold} onClick={() => { setMoreOpen(false); handleHold(); }} className={menuItem}><Pause size={17}/>Hold</button>
-          <button type="button" disabled title="Split bill workflow not connected" className={menuItem}><Users size={17}/>Split bill</button>
+          <button type="button" disabled={!onSplitBill || cart.items.length > 0 || !existingOrder?.table_id} onClick={() => { setMoreOpen(false); onSplitBill?.(); }} className={menuItem}><Users size={17}/>Split bill</button>
           <button type="button" disabled={cart.items.length===0} onClick={() => { if(window.confirm('Clear cart?')) {cart.clearCart();onClearCart?.();setMoreOpen(false);} }} className={menuItem}><Trash2 size={17}/>Clear cart</button>
           <div className="my-1 border-t border-[#2f3d5c]"/>
           {([['Combine bills',GitMerge],['Move table',ArrowLeftRight],['Discount',BadgePercent]] as const).map(([label,Icon]) => (
