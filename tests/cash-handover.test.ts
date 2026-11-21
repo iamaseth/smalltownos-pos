@@ -297,6 +297,84 @@ async function main() {
   try { cashSplitFields({ cash_usd_in: 20, cash_khr_in: 0, change_usd_out: 0, change_khr_out: 0 }, true, 30, 0); } catch { mismatch = true; }
   assert(mismatch, 'split that does not match the tender is rejected');
 
+  console.log('Section 7: close with bills passed on; next cashier accepts them');
+  const s8open = await request(app).post('/api/cash-handover/open').set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 5000, khr_riel: 0 }, device: 'pos' });
+  assert(s8open.status === 200, `A opens a new shift (${s8open.status} ${s8open.body.error || ''})`);
+  const s8 = s8open.body.session.id;
+  addBill([], 'unpaid');
+  addBill([], 'unpaid');
+  const blocked = await request(app).post(`/api/cash-handover/sessions/${s8}/closing-count`).set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 } });
+  assert(blocked.status === 409, 'close without passing bills is still refused');
+  const passClose = await request(app).post(`/api/cash-handover/sessions/${s8}/closing-count`).set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 }, pass_open_tickets: true, device: 'pos' });
+  assert(passClose.status === 200, `close with bills passed on succeeds (${passClose.status} ${passClose.body.error || ''})`);
+  assert(passClose.body.passed_to_next_cashier?.tickets >= 2, 'the unpaid bills are passed to the next cashier');
+  assert((db.prepare(`SELECT status FROM cash_sessions WHERE id = ?`).get(s8) as { status: string }).status === 'closed', 'the shift is closed with a full count');
+  assert(passClose.body.reconciliation.status === 'balanced', 'sales count is reconciled in the same close');
+  const waitingNext = await request(app).get('/api/cash-handover/status').set('Authorization', B);
+  const incoming = waitingNext.body.awaiting_incoming.find((h: { id: number }) => h.id === passClose.body.passed_to_next_cashier.handover_id);
+  assert(!!incoming && incoming.tickets.length >= 2, 'next cashier sees the passed bills before opening');
+  const firstTicket = incoming.tickets[0].order_id;
+  const received = await request(app).post(`/api/cash-handover/handovers/${incoming.id}/receive`).set('Authorization', B)
+    .send({ count: { method: 'manual', usd_cents: 5000, khr_riel: 0 }, device: 'pos', disputed_orders: [{ order_id: firstTicket, reason: 'Not right: call manager' }] });
+  assert(received.status === 200 && received.body.handover.status === 'clean', `next cashier opens by counting the float (${received.status} ${received.body.error || ''})`);
+  const passedItems = db.prepare(`SELECT i.order_id, i.item_status FROM ticket_handover_items i JOIN ticket_handovers t ON t.id = i.ticket_handover_id WHERE t.cash_handover_id = ?`).all(incoming.id) as { order_id: number; item_status: string }[];
+  assert(passedItems.find((i) => i.order_id === firstTicket)?.item_status === 'disputed' && passedItems.filter((i) => i.item_status === 'accepted').length >= 1,
+    '"Not right: call manager" marks the bill for the manager, the rest are accepted');
+  const s9 = received.body.session.id;
+
+  console.log('Section 8: receipt photos from a phone (QR link)');
+  const handover = require('../main/routes/cash-handover');
+  const publicApp = express();
+  publicApp.use(express.json({ limit: '20mb' }));
+  publicApp.use('/api/receipt-upload', require('../main/routes/receipt-upload').receiptUploadRoutes);
+  const pngQ = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const noOrigin = await request(app).post(`/api/cash-handover/sessions/${s9}/phone-upload-link`).set('Authorization', B).send({});
+  assert(noOrigin.status === 400, 'a link needs the POS address');
+  const otherLink = await request(app).post(`/api/cash-handover/sessions/${s9}/phone-upload-link`).set('Authorization', A).send({ origin: 'https://pos.example' });
+  assert(otherLink.status === 403, 'another cashier cannot make a link for this shift');
+  const link = await request(app).post(`/api/cash-handover/sessions/${s9}/phone-upload-link`).set('Authorization', B).send({ origin: 'https://pos.example/cash?x=1' });
+  assert(link.status === 200 && link.body.url.startsWith('https://pos.example/receipt-upload/?t=') && link.body.qr.startsWith('data:image/png'), 'link and QR image created for the till');
+  const token = link.body.token;
+  const info = await request(publicApp).get('/api/receipt-upload/info').query({ t: token });
+  assert(info.status === 200 && info.body.open === true && info.body.uploaded === 0, 'phone page can check the link without logging in');
+  const up1 = await request(publicApp).post('/api/receipt-upload').send({ t: token, data: pngQ });
+  const up2 = await request(publicApp).post('/api/receipt-upload').send({ t: token, data: pngQ });
+  const up3 = await request(publicApp).post('/api/receipt-upload').send({ t: token, data: pngQ });
+  assert(up1.status === 201 && up2.status === 201 && up3.status === 201, 'phone uploads several photos');
+  const tampered = await request(publicApp).post('/api/receipt-upload').send({ t: `${token.split('.')[0]}.AAAA`, data: pngQ });
+  assert(tampered.status === 401, 'a changed link is refused');
+  const forged = await request(publicApp).post('/api/receipt-upload').send({ t: tok('cashier-b', 'cashier').slice(7), data: pngQ });
+  assert(forged.status === 401, 'a login token cannot be used as an upload link');
+  const loginWithLink = await request(app).get('/api/cash-handover/status').set('Authorization', `Bearer ${token}`).catch(() => ({ status: 401 }));
+  assert(loginWithLink.status !== 200, 'an upload link cannot be used to log in');
+  const realNow = Date.now;
+  Date.now = () => realNow() + 31 * 60 * 1000;
+  const expired = await request(publicApp).post('/api/receipt-upload').send({ t: token, data: pngQ });
+  Date.now = realNow;
+  assert(expired.status === 401 && /expired/.test(expired.body.error), 'the link expires after 30 minutes');
+  const phonePending = await request(app).get(`/api/cash-handover/sessions/${s9}/phone-receipts`).set('Authorization', B);
+  assert(phonePending.status === 200 && phonePending.body.photos.length === 3, 'till lists the 3 phone photos waiting for details');
+  const phonePhoto = await request(app).get(`/api/cash-handover/media/${up1.body.id}`).set('Authorization', B);
+  assert(phonePhoto.status === 200, 'the cashier can see the phone photo on the till');
+  const detailed = await request(app).post(`/api/cash-handover/sessions/${s9}/cash-spent`).set('Authorization', B)
+    .send({ currency: 'USD', amount_minor: 300, what: 'Market: Ice', media_id: up1.body.id });
+  assert(detailed.status === 201, 'cashier adds details to a phone photo');
+  const dismissed = await request(app).post(`/api/cash-handover/sessions/${s9}/phone-receipts/${up2.body.id}/dismiss`).set('Authorization', B);
+  assert(dismissed.status === 200, 'a bad photo can be removed from the list');
+  const after = await request(app).get(`/api/cash-handover/sessions/${s9}/phone-receipts`).set('Authorization', B);
+  assert(after.body.photos.length === 1 && after.body.photos[0].id === up3.body.id, 'detailed and removed photos leave the waiting list');
+  assert(!!db.prepare(`SELECT 1 FROM media_uploads WHERE id = ?`).get(up2.body.id), 'a removed photo is kept on record');
+  const prevMax = handover.PHONE_UPLOAD_MAX_PHOTOS;
+  const phoneCount = handover.phoneUploadCount(db, s9);
+  assert(phoneCount === 3 && prevMax === 20, 'per-shift photo count includes removed photos (limit 20)');
+  await request(app).post(`/api/cash-handover/sessions/${s9}/closing-count`).set('Authorization', B)
+    .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 }, pass_open_tickets: true });
+  const afterClose = await request(publicApp).post('/api/receipt-upload').send({ t: token, data: pngQ });
+  assert(afterClose.status === 409, 'the link stops working once the shift is closed');
+
   console.log('='.repeat(50));
   console.log(`Passed ${passed}/${passed + failed}, failed ${failed}`);
   fs.rmSync(testDir, { recursive: true, force: true });

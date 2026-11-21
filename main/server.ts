@@ -43,6 +43,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   if (req.path.startsWith('/api/products/') && req.path.endsWith('/image') && req.method === 'GET') { next(); return; }
   // Login-screen support-ticket paths, rate-limited in support-ticket.ts.
   // Matched exactly (not by prefix) so a lookalike path can't skip auth.
+  // Phone receipt upload: the signed QR link in the body/query is the credential (see receipt-upload.ts).
+  if (req.method === 'GET' && req.path === '/api/receipt-upload/info') { next(); return; }
+  if (req.method === 'POST' && (req.path === '/api/receipt-upload' || req.path === '/api/receipt-upload/')) { next(); return; }
   if (req.method === 'POST' && req.path === '/api/support-ticket/pre-login') { next(); return; }
   if (req.method === 'GET' && req.path === '/api/support-ticket/pre-login/profile') { next(); return; }
   if (req.method === 'GET' && /^\/api\/support-ticket\/pre-login\/[0-9a-f-]{36}\/status$/i.test(req.path)) { next(); return; }

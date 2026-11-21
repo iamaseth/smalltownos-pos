@@ -25,7 +25,7 @@ export function getLandingPage(tenant?: Tenant | null): string {
   return candidates.find(([permission]) => tenantCan(tenant, permission))?.[1] ?? '/auth/login';
 }
 
-const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/server-standalone', '/auth/login', '/auth/register', '/auth/recover', '/setup'];
+const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/server-standalone', '/receipt-upload', '/auth/login', '/auth/register', '/auth/recover', '/setup'];
 
 const PAGE_PERMISSIONS = [
   ['/pos', 'pos.use'],
@@ -53,7 +53,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname?.startsWith(p + '/'));
   const isSetupPath = pathname === '/setup' || pathname?.startsWith('/setup/');
-  const isStandalonePath = pathname?.startsWith('/kds') || pathname?.startsWith('/server-standalone');
+  const isStandalonePath = pathname?.startsWith('/kds') || pathname?.startsWith('/server-standalone') || pathname?.startsWith('/receipt-upload');
 
   useEffect(() => {
     // Standalone KDS and Server App pages manage their own auth sessions;
