@@ -98,6 +98,12 @@ const isUsablePrepaidAttempt = (attempt: PrepaidAttempt): boolean =>
   && !!attempt.orderIdempotencyKey
   && !!attempt.paymentIdempotencyKey;
 
+function newIdempotencyKey(): string {
+  return typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export default function POSPage() {
   const { currentTenant, user } = useAuthStore();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
@@ -383,9 +389,6 @@ export default function POSPage() {
     const { code, detail, status } = classifyOrderRequestFailure(error);
     reportOrderFailure({ code, title, message: title, detail, status });
   };
-  const newIdempotencyKey = () => typeof globalThis.crypto?.randomUUID === 'function'
-    ? globalThis.crypto.randomUUID()
-    : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const currency = getCurrencySymbol(currentTenant?.currency || '', getCountryByCode(currentTenant?.country ?? '')?.locale);
   const { printBill, printKot } = usePrinterStore();
