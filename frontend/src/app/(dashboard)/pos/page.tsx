@@ -1247,6 +1247,16 @@ export default function POSPage() {
     }
   };
 
+  /** Bill for the customer to check before paying; creates the bill if the order has none yet. */
+  const printCustomerBill = async (orderId: number | string) => {
+    try {
+      const { data } = await api.post('/bills/generate', { order_id: Number(orderId) });
+      await printBillForTenant(await fetchLatestBill(data.bill.id), true);
+    } catch {
+      toast.error(t('receiptPrintFailed'));
+    }
+  };
+
   const handlePaymentComplete = async () => {
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
@@ -1292,6 +1302,7 @@ export default function POSPage() {
     openTabCount: openTabs.length + tables.filter((tb) => tb.status === 'occupied' && (tb.current_order || tb.activeOrder)).length,
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
+    onPrintBill: pendingOrder ? () => { void printCustomerBill(pendingOrder.id); } : undefined,
   };
 
   const itemCount = cart.itemCount();
@@ -1537,6 +1548,7 @@ export default function POSPage() {
           onAddItems={handleAddItemsToOrder}
           onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
           onAddCartToOrder={handleAddCartToOrder}
+          onPrintBill={(order) => printCustomerBill(order.id)}
         />
       )}
 

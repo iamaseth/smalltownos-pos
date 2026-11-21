@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart, Users, Trash2, BadgePercent } from 'lucide-react';
+import { X, ShoppingCart, Users, Trash2, BadgePercent, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -23,6 +23,8 @@ interface Props {
   onAddItems: (table: Table, order: Order) => void;
   onPayment: (bill: Bill) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
+  /** Prints the bill for the customer to check before paying. */
+  onPrintBill?: (order: Order) => Promise<void> | void;
 }
 
 export default function TableCheckoutModal({
@@ -32,7 +34,8 @@ export default function TableCheckoutModal({
   onClose,
   onAddItems,
   onPayment,
-  onAddCartToOrder
+  onAddCartToOrder,
+  onPrintBill,
 }: Props) {
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
@@ -41,6 +44,7 @@ export default function TableCheckoutModal({
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
   const canDiscount = tenantCan(currentTenant, 'orders.discount.apply');
   const [discountTarget, setDiscountTarget] = useState<{ kind: 'order' } | { kind: 'item'; item: OrderItem } | null>(null);
+  const [printingBill, setPrintingBill] = useState(false);
   const [removingId, setRemovingId] = useState<number | string | null>(null);
   const fmt = useFormatCurrency();
   const formatItemTotal = (value: unknown, fallback: unknown) => {
@@ -283,6 +287,13 @@ export default function TableCheckoutModal({
           {canDiscount && canEditOrder && (
             <Button variant="outline" size="lg" className="w-full h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800" onClick={() => setDiscountTarget({ kind: 'order' })}>
               <BadgePercent size={18} className="me-2" />{Number(order.discount_amount) > 0 ? 'Change bill discount' : 'Discount whole bill'}
+            </Button>
+          )}
+          {onPrintBill && order.bill?.payment_status !== 'paid' && (
+            <Button variant="outline" size="lg" disabled={printingBill}
+              className="w-full h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800"
+              onClick={async () => { setPrintingBill(true); try { await onPrintBill(order); } finally { setPrintingBill(false); } }}>
+              <Printer size={18} className="me-2" />{printingBill ? 'Printing…' : 'Print bill for customer'}
             </Button>
           )}
           {/* Show different buttons based on cart state */}
