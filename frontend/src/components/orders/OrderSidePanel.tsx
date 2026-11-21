@@ -72,7 +72,7 @@ export function OrderSidePanel({
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-          {[['Put through by', order.staff_name || '—'], ['Time', stamp(order.created_at)], ['Customer', order.customer?.name || 'Walk-in'], ['Kitchen / bar', cancelled ? '—' : kitchen]].map(([k, v]) => (
+          {[['Put through by', order.staff_name || '—'], ['Paid by', order.paid_by_name || '—'], ['Time', stamp(order.created_at)], ['Customer', order.customer?.name || 'Walk-in'], ['Kitchen / bar', cancelled ? '—' : kitchen]].map(([k, v]) => (
             <div key={k} className="rounded-xl bg-muted px-3 py-2 text-muted-foreground">{k}<b className="block text-sm text-foreground">{v}</b></div>
           ))}
         </div>

@@ -189,6 +189,7 @@ export interface Order {
   external_order_id?: string | null;
   created_by: number;
   staff_name?: string | null;
+  paid_by_name?: string | null;
   paid_with?: string | null;
   created_at: string;
   cancelled_at?: string | null;

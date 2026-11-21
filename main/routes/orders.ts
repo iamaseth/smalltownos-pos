@@ -245,6 +245,21 @@ function resolveBusinessRange(query: Request['query']): [string, string] | null 
 }
 
 /** "Cash", "ACLEDA", "Cash + Card"… from the order's paid bills, for the list view. */
+/** Names of the staff who took payments on these bills (from payment_details.taken_by_name), in order. */
+function paidByNames(bills: Array<{ payment_details?: unknown }>): string | null {
+  const names: string[] = [];
+  for (const bill of bills) {
+    let lines: unknown = bill.payment_details;
+    if (typeof lines === 'string') { try { lines = JSON.parse(lines); } catch { lines = []; } }
+    if (!Array.isArray(lines)) continue;
+    for (const line of lines) {
+      const name = (line as { taken_by_name?: unknown })?.taken_by_name;
+      if (typeof name === 'string' && name && !names.includes(name)) names.push(name);
+    }
+  }
+  return names.length ? names.join(', ') : null;
+}
+
 function paidWith(bills: { payment_status?: string; payment_details?: unknown }[], names: Map<number, string>): string | null {
   const labels = new Set<string>();
   for (const bill of bills) {
@@ -496,6 +511,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     return {
       ...order,
       staff_name: order.user_id ? staffNameById.get(order.user_id) ?? null : null,
+      paid_by_name: paidByNames(bills),
       paid_with: paidWith(bills, methodNameById),
       items: itemList,
       table,

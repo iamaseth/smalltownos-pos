@@ -8,7 +8,7 @@ import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown, UserRound, Users } from 'lucide-react';
+import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown, UserRound, LogOut } from 'lucide-react';
 import { useRegisterOperator } from '@/hooks/register-operator-context';
 import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
@@ -65,9 +65,16 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
               <button type="button" className="fixed inset-0 z-40 cursor-default" aria-label="Close staff menu" onClick={() => setStaffOpen(false)} />
               <div className="absolute start-0 top-full z-50 mt-2 w-56 space-y-1 rounded-xl border border-slate-700 bg-[#111a2e] p-2 shadow-2xl">
                 <p className="px-2 pb-1 text-xs text-slate-400">Signed in as <span className="font-semibold text-slate-200">{operator.name}</span></p>
-                <button type="button" onClick={() => { setStaffOpen(false); operator.switchStaff(); }}
+                <button type="button" onClick={() => {
+                  setStaffOpen(false);
+                  // Unsent items must not pass silently to the next cashier.
+                  const unsent = cart.items.length;
+                  if (unsent > 0 && !window.confirm(`${unsent} item${unsent > 1 ? 's are' : ' is'} in the cart and not sent yet.\n\nOK = clear the cart and log out\nCancel = stay logged in`)) return;
+                  if (unsent > 0) cart.clearCart();
+                  operator.switchStaff();
+                }}
                   className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700">
-                  <Users size={16} /> Switch staff
+                  <LogOut size={16} /> Log out
                 </button>
                 {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined}
                   onClick={() => { setStaffOpen(false); openCashScreen(); }}

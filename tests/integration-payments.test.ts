@@ -109,6 +109,10 @@ async function main() {
     assertEqual(payments.length, 2, 'two payments recorded');
     assertEqual(payments[0].method, 'cash', 'first payment is cash');
     assertEqual(payments[1].method, 'UPI', 'second payment is UPI');
+    assert(typeof payments[0].taken_by === 'string' && payments[0].taken_by.length > 0, 'payment records who took it (taken_by)');
+    assert(typeof payments[1].taken_by_name === 'string' && payments[1].taken_by_name.length > 0, 'payment records the name of who took it');
+    const paidLog = db.prepare("SELECT COUNT(*) AS n FROM order_audit_log WHERE action = 'payment_recorded' AND actor_user_id = ?").get(payments[1].taken_by) as { n: number };
+    assert(paidLog.n >= 2, 'each payment is written to the order audit log under the staff member');
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario B: Wallet Double-Spend Prevention
