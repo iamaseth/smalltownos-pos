@@ -493,15 +493,31 @@ function getPaperStyles(size: PaperSize): string {
     .text-italic { font-style: italic; color: #888; }
   `;
 
+  // Chrome's browser-print fallback must render opaque black text on thermal paper.
+  // Keep these rules scoped to the receipt popup, not the POS screen.
+  const thermalPrintStyles = `
+    @page { size: ${size === 'thermal80' ? '80mm' : '58mm'} auto; margin: 0; }
+    @media print {
+      html, body { width: ${size === 'thermal80' ? '80mm' : '58mm'}; margin: 0 !important; padding: 0 !important; background: #fff !important; }
+      .bill-container { width: 100% !important; max-width: 100% !important; padding: 2mm !important; overflow: visible !important; }
+      .bill-container, .bill-container * { color: #000 !important; opacity: 1 !important; text-shadow: none !important; -webkit-text-fill-color: #000 !important; }
+      .bill-container table { width: 100% !important; table-layout: fixed; }
+      .bill-container td, .bill-container th { overflow-wrap: anywhere; }
+      .bill-container .num { overflow-wrap: normal; }
+      .items-table th, .items-table td, .tax-table td, .totals-table td, .payments-table td { padding: 2px 3px !important; }
+      .tax-table, .payments-table { margin-inline-start: 0 !important; }
+    }
+  `;
+
   switch (size) {
     case 'thermal58':
-      return baseStyles + `
+      return baseStyles + thermalPrintStyles + `
         .bill-container { padding: 5px; max-width: 58mm; font-size: 10px; }
         .header h1 { font-size: 14px; }
         .items-table th, .items-table td, .tax-table td, .totals-table td, .payments-table td { padding: 2px 4px; }
       `;
     case 'thermal80':
-      return baseStyles + `
+      return baseStyles + thermalPrintStyles + `
         .bill-container { padding: 10px; max-width: 80mm; font-size: 11px; }
         .header h1 { font-size: 16px; }
       `;
