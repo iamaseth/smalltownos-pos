@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Trash2, Printer, Percent, Banknote, Search, Plus, Loader2, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
+import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
 import CreateCustomerModal from '@/components/pos/CreateCustomerModal';
 import AddonModal from '@/components/pos/AddonModal';
 import RefundModal from '@/components/orders/RefundModal';
@@ -165,6 +166,7 @@ export default function OrdersPage() {
     try { window.localStorage.setItem('orders-view-mode', mode); } catch { /* storage is optional */ }
   };
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
+  const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [refundModal, setRefundModal] = useState<{ order: Order; bills: Bill[] } | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
   const [kdsEnabled, setKdsEnabled] = useState(true);
@@ -560,6 +562,11 @@ export default function OrdersPage() {
   });
 
   const handleCheckout = async (orderId: number) => {
+    const tableOrder = orders.find((o) => o.id === orderId && o.type === 'dine_in' && o.table_id);
+    if (tableOrder?.table_id) {
+      setCheckoutTable({ id: tableOrder.table_id, name: tableOrder.table?.name ?? orderPlace(tableOrder), current_order: tableOrder } as Table);
+      return;
+    }
     setGeneratingBill(orderId);
     try {
       const { data } = await api.post('/bills/generate', { order_id: orderId });
@@ -622,8 +629,8 @@ export default function OrdersPage() {
   };
 
   const handlePrint = async (billId: number) => {
-    const order = orders.find((o) => o.bill?.id === billId);
-    if (!order?.bill) {
+    const order = orders.find((o) => o.bill?.id === billId || o.bills?.some((b) => b.id === billId));
+    if (!order) {
       toast.error(tOrders('billNotFound'));
       return;
     }
@@ -1279,6 +1286,17 @@ export default function OrdersPage() {
       })()}
 
       {/* Payment Modal */}
+      {checkoutTable && (
+        <TableCheckoutModal
+          table={checkoutTable}
+          currency={currentTenant?.currency || ''}
+          cartItemCount={0}
+          onClose={() => { setCheckoutTable(null); void fetchOrders(); }}
+          onAddItems={(table) => router.push(`/pos?table=${encodeURIComponent(table.id)}`)}
+          onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
+          onPrintBill={(order, bill) => (bill ? setConfirmPrintBillId(bill.id) : printCustomerBill(order))}
+        />
+      )}
       {paymentBill && (
         <PaymentModal
           bill={paymentBill}

@@ -106,11 +106,14 @@ export function SplitCheckModal({ bill, order, onClose, onSplit }: { bill: Bill;
   };
 
   const eachPaysOwn = () => setAssign(Object.fromEntries(items.map((item) => [item.id, emptyAssignment(count)])));
-  const splitEvenly = () => setAssign(Object.fromEntries(items.map((item) => {
-    const units = Array(count).fill(0);
-    for (let unit = 0; unit < item.quantity; unit++) units[unit % count]++;
-    return [item.id, { units, sharedBy: [] }];
-  })));
+  const splitEvenly = () => {
+    let next = 0;
+    setAssign(Object.fromEntries(items.map((item) => {
+      const units = Array(count).fill(0);
+      for (let unit = 0; unit < item.quantity; unit++) units[next++ % count]++;
+      return [item.id, { units, sharedBy: [] }];
+    })));
+  };
   const restToSelected = () => setAssign((old) => Object.fromEntries(items.map((item) => {
     const a = old[item.id];
     const left = unassignedOf(item);

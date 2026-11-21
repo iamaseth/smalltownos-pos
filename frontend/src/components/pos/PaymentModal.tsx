@@ -1,6 +1,5 @@
 'use client';
 
-import SplitEvenlyRow from '@/components/pos/SplitEvenlyRow';
 import { useState, useEffect, useRef } from 'react';
 import { X, Wallet, Sparkles, User, Percent, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -101,7 +100,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     idempotencyKeyRef.current = null;
   }, [bill.id]);
   const [justPaid, setJustPaid] = useState(false);
-  const [extraPanel, setExtraPanel] = useState<'split' | 'details' | null>(null);
+  const [extraPanel, setExtraPanel] = useState<'details' | null>(null);
   const [tenderIndex, setTenderIndex] = useState<number | null>(null);
   const [keypadCurrency, setKeypadCurrency] = useState<'USD' | 'KHR'>('USD');
   const [sendingWa, setSendingWa] = useState(false);
@@ -119,7 +118,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   // QR is manual verification only until a receiving bank is configured.
   const [khrTendered, setKhrTendered] = useState('');
   const [khrRate, setKhrRate] = useState(4100);
-  const [people, setPeople] = useState(2);
   useEffect(() => {
     api.get('/settings/usd_khr_exchange_rate').then(({ data }) => {
       const value = Number(data.setting?.value);
@@ -432,7 +430,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
           setWalletAmount('');
           setPaymentsTouched(false);
           setAmountTarget(null);
-          setPeople((n) => Math.max(1, n - 1));
           toast.success(`Payment recorded. ${currencyFmt(Number(updatedBill.balance) || 0)} left to pay.`);
           return;
         }
@@ -765,7 +762,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   {Number(bill.discount_amount) > 0 ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}` : t('discount')}
                 </button>
               )}
-              <button type="button" onClick={() => setExtraPanel((open) => open === 'split' ? null : 'split')} aria-expanded={extraPanel === 'split'} className={secondaryChip(extraPanel === 'split')}>Split bill</button>
               <button type="button" onClick={() => setExtraPanel((open) => open === 'details' ? null : 'details')} aria-expanded={extraPanel === 'details'} className={secondaryChip(extraPanel === 'details')}>Bill details</button>
             </div>
 
@@ -844,26 +840,6 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                     )}
                   </div>
                 )}
-              </div>
-            )}
-
-            {extraPanel === 'split' && (
-              <div className="rounded-xl border-2 border-neutral-700 bg-neutral-900 p-3">
-                {remainingMinor > 0 && (() => {
-                  const shareMinor = Math.ceil(remainingMinor / people);
-                  const shareDisplay = toDisplayUnit(shareMinor / minorFactor);
-                  return <SplitEvenlyRow
-                    people={people}
-                    onPeopleChange={setPeople}
-                    shareLabel={currencyFmt(shareMinor / minorFactor)}
-                    onFill={() => {
-                      setKhrTendered('');
-                      setPaymentsTouched(true);
-                      setPayments((current) => current.map((p) => p.method === 'cash' && p.payment_method_id === undefined ? { ...p, amount: formatInput(shareDisplay) } : { ...p, amount: '' }));
-                    }}
-                  />;
-                })()}
-                {remainingMinor <= 0 && <p className="text-sm text-neutral-400">Nothing left to split.</p>}
               </div>
             )}
 
