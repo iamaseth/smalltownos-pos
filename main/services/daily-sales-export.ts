@@ -146,22 +146,22 @@ export function buildDailySalesExportDataset(
       oi.product_name AS product_name,
       oi.product_sku AS product_sku,
       SUM(CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
-               THEN oi.quantity ELSE bi.quantity END) AS quantity,
+               THEN oi.quantity ELSE (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) END) AS quantity,
       SUM(CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
                THEN oi.subtotal + COALESCE(oi.discount_amount, 0)
-               ELSE (oi.subtotal + COALESCE(oi.discount_amount, 0)) * bi.quantity / NULLIF(oi.quantity, 0)
+               ELSE (oi.subtotal + COALESCE(oi.discount_amount, 0)) * (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) / NULLIF(oi.quantity, 0)
           END) AS gross_item_sales,
       SUM(CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
                THEN COALESCE(oi.discount_amount, 0)
-               ELSE COALESCE(oi.discount_amount, 0) * bi.quantity / NULLIF(oi.quantity, 0)
+               ELSE COALESCE(oi.discount_amount, 0) * (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) / NULLIF(oi.quantity, 0)
           END) AS item_discounts,
       SUM(CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
                THEN oi.subtotal
-               ELSE oi.subtotal * bi.quantity / NULLIF(oi.quantity, 0)
+               ELSE oi.subtotal * (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) / NULLIF(oi.quantity, 0)
           END) AS net_item_sales,
       SUM(CASE WHEN b.split_group_id IS NULL OR b.split_group_id = ''
                THEN COALESCE(oi.tax_amount, 0)
-               ELSE COALESCE(oi.tax_amount, 0) * bi.quantity / NULLIF(oi.quantity, 0)
+               ELSE COALESCE(oi.tax_amount, 0) * (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) / NULLIF(oi.quantity, 0)
           END) AS tax_amount
     FROM bills b
     JOIN orders o ON o.id = b.order_id

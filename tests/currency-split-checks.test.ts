@@ -9,7 +9,8 @@ Module._load = function (request, parent, isMain) {
   return originalLoad.apply(this, arguments);
 };
 
-const { initTestDb, createApp, startServer, seedOwnerUser, seedCategory, seedProduct, api, assertOrThrow, assertEqualOrThrow, now } = require('./helpers/test-setup');
+const { initTestDb, createApp, startServer, seedOwnerUser, seedCategory, seedProduct, installAndActivateTestTaxPack, api, assertOrThrow, assertEqualOrThrow, now } = require('./helpers/test-setup');
+const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes, allocateMinorUnits, allocateTaxSnapshots, projectOrderItems } = require('../main/routes/bills');
 const { settingsRoutes } = require('../main/routes/settings');
@@ -236,6 +237,187 @@ async function main() {
     assertEqualOrThrow(usdSplitRes.status, 201, 'USD check split succeeded');
     assertEqualOrThrow(usdSplitRes.data.bills[0].total, 10.00, 'Seat 1 bill is $10.00');
     assertEqualOrThrow(usdSplitRes.data.bills[1].total, 10.00, 'Seat 2 bill is $10.00');
+
+    // ── 6. Guest splits: shared items, totals reconcile, undo split ──
+    console.log('\n6. Guest Splits (2/4/8 guests, shared items, undo):');
+    const setRegion = (country, currency) => {
+      db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', ?, ?)").run(country, now());
+      db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('currency', ?, ?)").run(currency, now());
+    };
+    const FIELDS = ['subtotal', 'tax_amount', 'discount_amount', 'service_charge', 'round_off', 'total'];
+    const openBill = async ({ items, guest_count = 2, service_charge, discount }) => {
+      const res = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count, items, ...(service_charge ? { service_charge } : {}) }, headers: authHeader });
+      assertEqualOrThrow(res.status, 201, 'guest-split order created');
+      if (discount) {
+        const d = await api(baseUrl, `/api/orders/${res.data.order.id}/discount`, { method: 'PATCH', body: { discount_type: 'percentage', discount_value: discount, discount_reason: 'test' }, headers: authHeader });
+        assertEqualOrThrow(d.status, 200, 'discount applied before split');
+      }
+      const bill = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: res.data.order.id }, headers: authHeader });
+      assertEqualOrThrow(bill.status, 201, 'guest-split bill generated');
+      const order = (await api(baseUrl, `/api/orders/${res.data.order.id}`, { headers: authHeader })).data.order || res.data.order;
+      return { order, bill: bill.data.bill };
+    };
+    const split = (billId, checks) => api(baseUrl, `/api/bills/${billId}/split-check`, { method: 'POST', body: { checks }, headers: authHeader });
+    const assertReconciles = (name, source, bills, factor) => {
+      for (const field of FIELDS) {
+        const sum = bills.reduce((acc, b) => acc + Math.round(Number(b[field] || 0) * factor), 0);
+        assertEqualOrThrow(sum, Math.round(Number(source[field] || 0) * factor), `${name}: ${field} adds up exactly`);
+      }
+      for (const b of bills) assertEqualOrThrow(b.balance, b.total, `${name}: ${b.split_label} balance equals total`);
+    };
+    const roundRobin = (items, guests) => Array.from({ length: guests }, (_, g) => ({
+      label: `Guest ${g + 1}`,
+      items: items.flatMap((item) => {
+        const qty = Array.from({ length: item.quantity }, (_, u) => u % guests).filter((slot) => slot === g).length;
+        return qty > 0 ? [{ order_item_id: item.id, quantity: qty }] : [];
+      }),
+    }));
+
+    setRegion('US', 'USD');
+    seedProduct(db, 'g-beer', 'usd-cat', 'Beer', 2.5);
+    seedProduct(db, 'g-coffee', 'usd-cat', 'Coffee', 1.75);
+    seedProduct(db, 'g-platter', 'usd-cat', 'Platter', 10);
+    seedProduct(db, 'g-wings', 'usd-cat', 'Wings', 6.35);
+
+    // 2 guests, split evenly, with service charge and discount
+    {
+      const { order, bill } = await openBill({ items: [{ product_id: 'g-beer', quantity: 3 }, { product_id: 'g-wings', quantity: 1 }], service_charge: 1.5, discount: 10 });
+      const res = await split(bill.id, roundRobin(order.items, 2).map((c, i) => (c.items.length ? c : { ...c, items: [{ order_item_id: order.items[0].id, quantity: 1 }] })));
+      assertEqualOrThrow(res.status, 201, '2 guests split evenly');
+      assertReconciles('2 guests even', bill, res.data.bills, 100);
+    }
+
+    // 4 guests, each pays own
+    {
+      const { order, bill } = await openBill({ guest_count: 4, items: [{ product_id: 'g-beer', quantity: 1 }, { product_id: 'g-coffee', quantity: 1 }, { product_id: 'g-platter', quantity: 1 }, { product_id: 'g-wings', quantity: 1 }], service_charge: 2 });
+      const res = await split(bill.id, order.items.map((item, i) => ({ label: `Guest ${i + 1}`, items: [{ order_item_id: item.id, quantity: 1 }] })));
+      assertEqualOrThrow(res.status, 201, '4 guests each pay own');
+      assertReconciles('4 guests own', bill, res.data.bills, 100);
+    }
+
+    // 8 guests, split evenly plus one platter shared by all 8
+    {
+      const { order, bill } = await openBill({ guest_count: 8, items: [{ product_id: 'g-beer', quantity: 8 }, { product_id: 'g-coffee', quantity: 9 }, { product_id: 'g-platter', quantity: 1 }], discount: 15, service_charge: 3.33 });
+      const platter = order.items.find((i) => i.product_id === 'g-platter');
+      const others = order.items.filter((i) => i.id !== platter.id);
+      const checks = roundRobin(others, 8).map((c) => ({ ...c, items: [...c.items, { order_item_id: platter.id, share: { of: 8 } }] }));
+      const res = await split(bill.id, checks);
+      assertEqualOrThrow(res.status, 201, '8 guests with shared platter');
+      assertReconciles('8 guests shared', bill, res.data.bills, 100);
+      const shareRows = db.prepare('SELECT share_of, quantity FROM bill_items WHERE order_item_id = ?').all(platter.id);
+      assertEqualOrThrow(shareRows.length, 8, 'shared platter recorded on all 8 bills');
+      assertOrThrow(shareRows.every((r) => r.share_of === 8 && r.quantity === 1), 'shared rows store share_of 8');
+    }
+
+    // Shared item: price divided evenly, leftover cent to first guest
+    {
+      const { order, bill } = await openBill({ guest_count: 3, items: [{ product_id: 'g-platter', quantity: 1 }] });
+      const platter = order.items[0];
+      const res = await split(bill.id, [1, 2, 3].map((g) => ({ label: `Guest ${g}`, items: [{ order_item_id: platter.id, share: { of: 3 } }] })));
+      assertEqualOrThrow(res.status, 201, 'platter shared by 3');
+      assertEqualOrThrow(JSON.stringify(res.data.bills.map((b) => b.total)), JSON.stringify([3.34, 3.33, 3.33]), 'shared $10 platter: leftover cent goes to first guest');
+      const lineTotals = [];
+      for (const b of res.data.bills) {
+        const detail = await api(baseUrl, `/api/bills/${b.id}`, { headers: authHeader });
+        const line = (detail.data.bill?.order?.items || detail.data.order?.items || detail.data.items || []).find((i) => i.id === platter.id);
+        assertOrThrow(line && line.share_of === 3, `${b.split_label} bill shows the shared platter (1/3)`);
+        lineTotals.push(line.total);
+      }
+      assertEqualOrThrow(JSON.stringify(lineTotals), JSON.stringify([3.34, 3.33, 3.33]), 'shared line amounts on each bill add up to the item price');
+    }
+
+    // Invalid shares are refused
+    {
+      const { order, bill } = await openBill({ items: [{ product_id: 'g-platter', quantity: 1 }, { product_id: 'g-beer', quantity: 1 }] });
+      const [p, b] = [order.items.find((i) => i.product_id === 'g-platter'), order.items.find((i) => i.product_id === 'g-beer')];
+      const bad1 = await split(bill.id, [{ label: 'A', items: [{ order_item_id: p.id, share: { of: 3 } }, { order_item_id: b.id, quantity: 1 }] }, { label: 'B', items: [{ order_item_id: p.id, share: { of: 3 } }] }]);
+      assertEqualOrThrow(bad1.status, 400, 'share of more guests than checks is refused');
+      const bad2 = await split(bill.id, [{ label: 'A', items: [{ order_item_id: p.id, share: { of: 2 } }, { order_item_id: b.id, quantity: 1 }] }, { label: 'B', items: [{ order_item_id: p.id, quantity: 1 }] }]);
+      assertEqualOrThrow(bad2.status, 400, 'mixing a share with a quantity is refused');
+      assertEqualOrThrow(db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(order.id).n, 1, 'refused splits leave one bill');
+    }
+
+    // Undo split: allowed before payment, refused after
+    {
+      const { order, bill } = await openBill({ guest_count: 3, items: [{ product_id: 'g-beer', quantity: 2 }, { product_id: 'g-platter', quantity: 1 }, { product_id: 'g-coffee', quantity: 1 }], service_charge: 1, discount: 5 });
+      const platter = order.items.find((i) => i.product_id === 'g-platter');
+      const beer = order.items.find((i) => i.product_id === 'g-beer');
+      const coffee = order.items.find((i) => i.product_id === 'g-coffee');
+      const checks = [
+        { label: 'Sok', items: [{ order_item_id: beer.id, quantity: 1 }, { order_item_id: platter.id, share: { of: 3 } }] },
+        { label: 'Guest 2', items: [{ order_item_id: beer.id, quantity: 1 }, { order_item_id: platter.id, share: { of: 3 } }] },
+        { label: 'Guest 3', items: [{ order_item_id: coffee.id, quantity: 1 }, { order_item_id: platter.id, share: { of: 3 } }] },
+      ];
+      const first = await split(bill.id, checks);
+      assertEqualOrThrow(first.status, 201, 'split before undo');
+      const undo = await api(baseUrl, `/api/bills/${first.data.bills[1].id}/unsplit`, { method: 'POST', headers: authHeader });
+      assertEqualOrThrow(undo.status, 200, 'undo split allowed before any payment');
+      const remaining = db.prepare('SELECT * FROM bills WHERE order_id = ?').all(order.id);
+      assertEqualOrThrow(remaining.length, 1, 'undo merges back into one bill');
+      assertEqualOrThrow(remaining[0].id, bill.id, 'the original bill is kept');
+      assertEqualOrThrow(remaining[0].split_group_id, null, 'kept bill is no longer split');
+      for (const field of FIELDS) assertEqualOrThrow(Math.round(Number(remaining[0][field] || 0) * 100), Math.round(Number(bill[field] || 0) * 100), `undo restores ${field}`);
+      assertEqualOrThrow(db.prepare('SELECT COUNT(*) AS n FROM bill_items WHERE bill_id = ?').get(bill.id).n, 0, 'undo clears split allocations');
+      assertOrThrow(db.prepare("SELECT 1 FROM order_audit_log WHERE order_id = ? AND action = 'split_undone'").get(order.id), 'undo is recorded in the order audit log');
+
+      const again = await split(bill.id, checks);
+      assertEqualOrThrow(again.status, 201, 'bill can be split again after undo');
+      const pay = await api(baseUrl, `/api/bills/${again.data.bills[0].id}/payment`, { method: 'POST', body: { method: 'cash', amount: again.data.bills[0].total }, headers: authHeader });
+      assertOrThrow(pay.status === 200 || pay.status === 201, 'one split bill paid');
+      const refused = await api(baseUrl, `/api/bills/${again.data.bills[1].id}/unsplit`, { method: 'POST', headers: authHeader });
+      assertEqualOrThrow(refused.status, 409, 'undo split refused once a split bill has a payment');
+      assertOrThrow(/payment/i.test(refused.data.error || ''), 'refusal explains a payment exists');
+      assertEqualOrThrow(db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(order.id).n, 3, 'refused undo leaves the split bills');
+      const orderRow = db.prepare('SELECT status FROM orders WHERE id = ?').get(order.id);
+      assertOrThrow(orderRow.status !== 'completed', 'order stays open until every split bill is paid');
+    }
+
+    // Tax (exclusive 5%) with discount and service charge, shared item
+    {
+      const pack = {
+        ...dualRatePackData,
+        id: 'test-guest-split-pack',
+        country: 'IN',
+        currency: 'INR',
+        categories: dualRatePackData.categories.map((category) => ({ ...category, ruleIds: category.id === 'standard' ? ['item-tax'] : [] })),
+        rules: [{ ...dualRatePackData.rules[0], id: 'item-tax', label: 'Item Tax', categoryIds: ['standard'], rate: '5' }],
+      };
+      setRegion('IN', 'INR');
+      db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_type', 'restaurant', ?), ('state_code', '27', ?)").run(now(), now());
+      installAndActivateTestTaxPack(db, pack);
+      seedCategory(db, 'g-tax-cat', 'Taxed');
+      seedProduct(db, 'g-tax-curry', 'g-tax-cat', 'Curry', 237.5, { tax_category_id: 'standard', tax_behavior: 'exclusive' });
+      seedProduct(db, 'g-tax-naan', 'g-tax-cat', 'Naan', 41.25, { tax_category_id: 'standard', tax_behavior: 'exclusive' });
+      const { order, bill } = await openBill({ guest_count: 3, items: [{ product_id: 'g-tax-curry', quantity: 1 }, { product_id: 'g-tax-naan', quantity: 5 }], service_charge: 20, discount: 10 });
+      assertOrThrow(Number(bill.tax_amount) > 0, 'taxed bill has tax');
+      const curry = order.items.find((i) => i.product_id === 'g-tax-curry');
+      const naan = order.items.find((i) => i.product_id === 'g-tax-naan');
+      const res = await split(bill.id, [
+        { label: 'A', items: [{ order_item_id: curry.id, share: { of: 3 } }, { order_item_id: naan.id, quantity: 2 }] },
+        { label: 'B', items: [{ order_item_id: curry.id, share: { of: 3 } }, { order_item_id: naan.id, quantity: 2 }] },
+        { label: 'C', items: [{ order_item_id: curry.id, share: { of: 3 } }, { order_item_id: naan.id, quantity: 1 }] },
+      ]);
+      assertEqualOrThrow(res.status, 201, 'taxed split with shared item');
+      assertReconciles('taxed shared', bill, res.data.bills, 100);
+    }
+
+    // KHR rounding with a shared item
+    {
+      setRegion('KH', 'KHR');
+      seedCategory(db, 'g-khr-cat', 'Riel menu');
+      seedProduct(db, 'g-khr-fish', 'g-khr-cat', 'Fish amok', 10050);
+      seedProduct(db, 'g-khr-tea', 'g-khr-cat', 'Iced tea', 2350);
+      const { order, bill } = await openBill({ guest_count: 3, items: [{ product_id: 'g-khr-fish', quantity: 1 }, { product_id: 'g-khr-tea', quantity: 2 }], service_charge: 1500 });
+      const fish = order.items.find((i) => i.product_id === 'g-khr-fish');
+      const tea = order.items.find((i) => i.product_id === 'g-khr-tea');
+      const res = await split(bill.id, [
+        { label: 'A', items: [{ order_item_id: fish.id, share: { of: 3 } }, { order_item_id: tea.id, quantity: 1 }] },
+        { label: 'B', items: [{ order_item_id: fish.id, share: { of: 3 } }, { order_item_id: tea.id, quantity: 1 }] },
+        { label: 'C', items: [{ order_item_id: fish.id, share: { of: 3 } }] },
+      ]);
+      assertEqualOrThrow(res.status, 201, 'KHR split with shared item');
+      assertReconciles('KHR shared', bill, res.data.bills, getCurrencyMinorUnitFactor('KHR'));
+    }
 
     console.log('\n✅ All currency split-check and precision tests passed successfully!');
   } finally {

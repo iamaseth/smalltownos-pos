@@ -137,10 +137,13 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     }
     if (bill.split_group_id) {
       const allocation = db.prepare(`
-        SELECT quantity FROM bill_items WHERE bill_id = ? AND order_item_id = ?
-      `).get(bill.id, item.id) as { quantity: number } | undefined;
+        SELECT quantity, share_of FROM bill_items WHERE bill_id = ? AND order_item_id = ?
+      `).get(bill.id, item.id) as { quantity: number; share_of: number | null } | undefined;
       if (!allocation) {
         throw httpError('Item is not allocated to this split bill', 400);
+      }
+      if (allocation.share_of) {
+        throw httpError('A shared item cannot be refunded from one guest bill', 409);
       }
       if (Number(allocation.quantity) !== Number(item.quantity)) {
         throw httpError('Partially allocated split items cannot be refunded as a whole item', 409);

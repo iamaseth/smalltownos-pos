@@ -6059,6 +6059,16 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 109,
+    name: 'add_bill_item_shares',
+    up: () => {
+      const cols = db.prepare('PRAGMA table_info(bill_items)').all() as { name: string }[];
+      if (!cols.some((col) => col.name === 'share_of')) {
+        db.exec('ALTER TABLE bill_items ADD COLUMN share_of INTEGER CHECK (share_of IS NULL OR (share_of >= 2 AND share_of <= 20))');
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
