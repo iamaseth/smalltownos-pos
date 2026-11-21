@@ -1258,6 +1258,14 @@ export default function POSPage() {
     }
   };
 
+  const printSplitBill = async (billId: number) => {
+    try {
+      await printBillForTenant(await fetchLatestBill(billId), true, true);
+    } catch {
+      toast.error(t('receiptPrintFailed'));
+    }
+  };
+
   const handlePaymentComplete = async () => {
     const bill = paymentBill; // capture before clearing state
     setPaymentBill(null);
@@ -1550,7 +1558,7 @@ export default function POSPage() {
           onAddItems={handleAddItemsToOrder}
           onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
           onAddCartToOrder={handleAddCartToOrder}
-          onPrintBill={(order) => printCustomerBill(order.id)}
+          onPrintBill={(order, bill) => (bill ? printSplitBill(bill.id) : printCustomerBill(order.id))}
         />
       )}
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart, Users, Trash2, BadgePercent, Printer } from 'lucide-react';
+import { X, ShoppingCart, Users, Trash2, BadgePercent, Printer, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -24,7 +24,8 @@ interface Props {
   onPayment: (bill: Bill) => void;
   onAddCartToOrder?: (table: Table, order: Order) => void;
   /** Prints the bill for the customer to check before paying. */
-  onPrintBill?: (order: Order) => Promise<void> | void;
+  /** Prints the customer bill; pass a split bill to print just that guest's bill. */
+  onPrintBill?: (order: Order, bill?: Bill) => Promise<void> | void;
 }
 
 export default function TableCheckoutModal({
@@ -59,6 +60,8 @@ export default function TableCheckoutModal({
   const [addingItems, setAddingItems] = useState(false);
   const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
   const [splitBill, setSplitBill] = useState<Bill | null>(null);
+  const [printingSplitId, setPrintingSplitId] = useState<number | null>(null);
+  const [undoingSplit, setUndoingSplit] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -122,6 +125,23 @@ export default function TableCheckoutModal({
       toast.error(t('generateBillFailed'));
     }
     finally { setGenerating(false); }
+  };
+
+  const handleUndoSplit = async () => {
+    const first = (order?.bills || []).find((bill) => bill.split_group_id);
+    if (!order || !first) return;
+    setUndoingSplit(true);
+    try {
+      await api.post(`/bills/${first.id}/unsplit`);
+      const { data } = await api.get(`/orders/${order.id}`);
+      setOrder(data.order);
+      toast.success('Split undone: back to one bill');
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      toast.error(message || 'Could not undo the split');
+    } finally {
+      setUndoingSplit(false);
+    }
   };
 
   const handleRemoveItem = (item: OrderItem) => {
@@ -198,6 +218,8 @@ export default function TableCheckoutModal({
   const activeItems = (order.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
   const splitBills = (order.bills || []).filter((bill) => Boolean(bill.split_group_id));
   const canEditOrder = order.bill?.payment_status !== 'paid' && splitBills.length === 0;
+  const splitPaidCount = splitBills.filter((bill) => bill.payment_status === 'paid').length;
+  const canUndoSplit = splitBills.length > 0 && splitBills.every((bill) => bill.payment_status === 'unpaid' && Number(bill.paid_amount || 0) === 0);
 
   return (
     <>
@@ -275,21 +297,53 @@ export default function TableCheckoutModal({
             <span>{t('total')}</span>
             <span className="tabular-nums">{fmt(Number(order.total))}</span>
           </div>
-          {order.bill && order.bill.payment_status !== 'paid' && Number(order.bill.balance) > 0 && (
+          {order.bill && splitBills.length === 0 && order.bill.payment_status !== 'paid' && Number(order.bill.balance) > 0 && (
             <div className="flex justify-between text-base font-bold">
               <span className="text-orange-400">{t('balanceDue')}</span>
               <span className="text-orange-400 tabular-nums">{fmt(Number(order.bill.balance))}</span>
             </div>
           )}
 
-          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-muted-foreground">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pay')}</Button>}</div>)}</div>}
+          {splitBills.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold uppercase tracking-[0.1em] text-neutral-300">Split bills</p>
+                <span className={`rounded-full px-2.5 py-0.5 text-sm font-extrabold ${splitPaidCount === splitBills.length ? 'bg-green-500 text-black' : 'bg-orange-400 text-black'}`}>{splitPaidCount} of {splitBills.length} paid</span>
+              </div>
+              {splitBills.map((bill, index) => {
+                const paid = bill.payment_status === 'paid';
+                return (
+                  <div key={bill.id} className="flex items-center gap-2 rounded-xl border-2 border-neutral-700 bg-neutral-900 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-base font-extrabold">{bill.split_label} <span className="text-sm font-semibold text-neutral-400">· Bill {index + 1} of {splitBills.length}</span></p>
+                      <p className="text-sm font-semibold text-neutral-300"><span className="tabular-nums">{fmt(Number(bill.total))}</span> · {paid ? <span className="text-green-400">{t('paid')}</span> : <span className="text-orange-400">{t('unpaid')}</span>}</p>
+                    </div>
+                    {onPrintBill && (
+                      <button type="button" disabled={printingSplitId === bill.id} aria-label={`Print bill for ${bill.split_label}`}
+                        onClick={async () => { setPrintingSplitId(bill.id); try { await onPrintBill(order, bill); } finally { setPrintingSplitId(null); } }}
+                        className="flex h-12 min-w-12 items-center justify-center gap-1 rounded-xl border-2 border-neutral-600 bg-neutral-950 px-3 font-bold text-white hover:bg-neutral-800 disabled:opacity-40">
+                        <Printer size={18} /><span className="hidden sm:inline">Print</span>
+                      </button>
+                    )}
+                    {!paid && <Button className="h-12 bg-green-500 px-5 text-base font-black text-black hover:bg-green-400" onClick={() => onPayment(bill)}>{t('pay')}</Button>}
+                  </div>
+                );
+              })}
+              {canUndoSplit && (
+                <Button variant="outline" disabled={undoingSplit} onClick={handleUndoSplit}
+                  className="h-12 w-full border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800">
+                  <Undo2 size={18} className="me-2" />{undoingSplit ? 'Undoing…' : 'Undo split'}
+                </Button>
+              )}
+            </div>
+          )}
 
           {canDiscount && canEditOrder && (
             <Button variant="outline" size="lg" className="w-full h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800" onClick={() => setDiscountTarget({ kind: 'order' })}>
               <BadgePercent size={18} className="me-2" />{Number(order.discount_amount) > 0 ? 'Change bill discount' : 'Discount whole bill'}
             </Button>
           )}
-          {onPrintBill && order.bill?.payment_status !== 'paid' && (
+          {onPrintBill && order.bill?.payment_status !== 'paid' && splitBills.length === 0 && (
             <Button variant="outline" size="lg" disabled={printingBill}
               className="w-full h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800"
               onClick={async () => { setPrintingBill(true); try { await onPrintBill(order); } finally { setPrintingBill(false); } }}>

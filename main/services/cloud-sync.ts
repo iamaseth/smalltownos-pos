@@ -1684,8 +1684,8 @@ export class CloudSyncService {
 
     const topItems = db.prepare(`
       SELECT oi.product_id, oi.product_name,
-        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) as quantity,
-        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) as total
+        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) END), 0) as quantity,
+        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) / oi.quantity END), 0) as total
       FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
       WHERE b.paid_at IS NOT NULL
@@ -1718,8 +1718,8 @@ export class CloudSyncService {
        WHERE paid_at IS NOT NULL AND date(paid_at) BETWEEN date(?) AND date(?)
     `).get(minorFactor, range.from, range.to, range.from, range.to) as any;
     const topItems = db.prepare(`
-      SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) AS qty,
-             COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) AS revenue,
+      SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) END), 0) AS qty,
+             COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) / oi.quantity END), 0) AS revenue,
              COALESCE(AVG(oi.unit_price), 0) AS price
         FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
         LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
@@ -1764,8 +1764,8 @@ export class CloudSyncService {
     const requestedLimit = Number(payload?.limit);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
     const items = getDatabase().prepare(`
-      SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) AS qty_sold,
-             COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) AS revenue
+      SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) END), 0) AS qty_sold,
+             COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * (bi.quantity * 1.0 / COALESCE(bi.share_of, 1)) / oi.quantity END), 0) AS revenue
         FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
         LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
        WHERE b.paid_at IS NOT NULL AND date(b.paid_at) BETWEEN date(?) AND date(?)

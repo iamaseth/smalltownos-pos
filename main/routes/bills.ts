@@ -137,16 +137,18 @@ export function projectOrderItems(
   minorFactor = 100,
 ): any[] {
   const allocated = new Map(allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]));
+  const sharedOf = new Map(allocations.filter((row) => Number(row.share_of) > 1).map((row) => [Number(row.order_item_id), Number(row.share_of)]));
   const taxDiscountRatio = getTaxDiscountRatio(order.subtotal, order.discount_amount);
   const decimals = Math.log10(minorFactor);
   return rawItemRows
     .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))
     .map((item) => {
       const quantity = allocated.get(Number(item.id));
+      const shareOf = sharedOf.get(Number(item.id));
       const originalQuantity = Number(item.quantity);
       const quantityRatio = quantity === undefined || originalQuantity <= 0
         ? 1
-        : quantity / originalQuantity;
+        : quantity / originalQuantity / (shareOf || 1);
       const ownerAllocation = childItemAllocations.get(Number(item.id));
       const sourceTaxMinor = Math.round(Number(item.tax_amount || 0) * taxDiscountRatio * minorFactor);
       const taxMinor = ownerAllocation
@@ -170,14 +172,18 @@ export function projectOrderItems(
         ? item.tax_snapshot
         : scaleTaxSnapshots([item.tax_snapshot], taxDiscountRatio * quantityRatio, minorFactor)[0] || null;
       if (quantity === undefined && taxDiscountRatio === 1 && !ownerAllocation) return item;
+      const shareAmount = (value: unknown) => (shareOf && ownerAllocation
+        ? allocateSignedMinorUnits(Math.round(Number(value || 0) * minorFactor), ownerAllocation.weights)[ownerAllocation.index] / minorFactor
+        : Number((Number(value) * quantityRatio).toFixed(decimals)));
       return {
         ...item,
         ...(quantity === undefined ? {} : { quantity }),
-        subtotal: Number((Number(item.subtotal) * quantityRatio).toFixed(decimals)),
+        ...(shareOf ? { share_of: shareOf } : {}),
+        subtotal: shareAmount(item.subtotal),
         tax_amount: taxMinor / minorFactor,
         tax_breakdown: taxBreakdown,
         tax_snapshot: taxSnapshot,
-        total: Number((Number(item.total) * quantityRatio).toFixed(decimals)),
+        total: shareAmount(item.total),
       };
     });
 }
@@ -264,7 +270,7 @@ function selectRowsByIds<T>(
 export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number, billId?: number): any {
   const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId));
   if (!order) return order;
-  const allocations = billId === undefined ? [] : db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ?').all(billId) as any[];
+  const allocations = billId === undefined ? [] : db.prepare('SELECT order_item_id, quantity, share_of FROM bill_items WHERE bill_id = ?').all(billId) as any[];
   let childItemAllocations = new Map<number, ChildItemAllocation>();
   let persistedTaxBreakdown: unknown = null;
   if (billId !== undefined) {
@@ -275,7 +281,7 @@ export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: n
       const childIds = childBills.map((child) => Number(child.id));
       const childRows = childIds.length === 0
         ? []
-        : db.prepare(`SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${childIds.map(() => '?').join(',')})`).all(...childIds) as any[];
+        : db.prepare(`SELECT bill_id, order_item_id, quantity * 1.0 / COALESCE(share_of, 1) AS quantity FROM bill_items WHERE bill_id IN (${childIds.map(() => '?').join(',')})`).all(...childIds) as any[];
       childItemAllocations = childAllocationsForBills(childBills, childRows, Number(billId));
     }
   }
@@ -313,13 +319,13 @@ export function getOrdersWithItemsForBills(
   }
 
   const billIds = bills.map((bill) => Number(bill.id));
-  const reportBillItems = selectRowsByIds<any>(db, billIds, (count) => `SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${new Array(count).fill('?').join(',')})`);
+  const reportBillItems = selectRowsByIds<any>(db, billIds, (count) => `SELECT bill_id, order_item_id, quantity * 1.0 / COALESCE(share_of, 1) AS quantity FROM bill_items WHERE bill_id IN (${new Array(count).fill('?').join(',')})`);
   const splitGroupIds = Array.from(new Set(bills.map((bill) => bill.split_group_id).filter(Boolean)));
   const siblingBills = splitGroupIds.length === 0
     ? []
     : selectRowsByIds<any>(db, splitGroupIds, (count) => `SELECT id, order_id, split_group_id FROM bills WHERE split_group_id IN (${new Array(count).fill('?').join(',')}) ORDER BY split_group_id, id`);
   const allBillIds = Array.from(new Set([...billIds, ...siblingBills.map((bill) => Number(bill.id))]));
-  const allBillItems = selectRowsByIds<any>(db, allBillIds, (count) => `SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${new Array(count).fill('?').join(',')})`);
+  const allBillItems = selectRowsByIds<any>(db, allBillIds, (count) => `SELECT bill_id, order_item_id, quantity * 1.0 / COALESCE(share_of, 1) AS quantity FROM bill_items WHERE bill_id IN (${new Array(count).fill('?').join(',')})`);
   const billItemsByBill = new Map<number, any[]>();
   for (const row of reportBillItems) {
     const rows = billItemsByBill.get(Number(row.bill_id)) || [];
@@ -472,7 +478,13 @@ router.get('/:id', requirePermission('bills.read'), (req: Request, res: Response
     const order = getOrderWithItems(db, (bill as any).order_id, Number((bill as any).id));
     const customer = (bill as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id) : null;
 
-    res.json({ bill: { ...bill, order, customer } });
+    const splitGroupId = (bill as { split_group_id?: string | null }).split_group_id;
+    const splitIds = splitGroupId
+      ? (db.prepare('SELECT id FROM bills WHERE split_group_id = ? ORDER BY id').all(splitGroupId) as { id: number }[]).map((row) => Number(row.id))
+      : [];
+    const splitPosition = splitIds.length > 0 ? { split_index: splitIds.indexOf(Number(req.params.id)) + 1, split_count: splitIds.length } : {};
+
+    res.json({ bill: { ...bill, ...splitPosition, order, customer } });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1240,7 +1252,7 @@ function getSplitBillAllocationWeights(
   const billIds = bills.map((bill) => Number(bill.id));
   const billItems = billIds.length === 0
     ? []
-    : db.prepare(`SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${billIds.map(() => '?').join(',')})`).all(...billIds) as any[];
+    : db.prepare(`SELECT bill_id, order_item_id, quantity * 1.0 / COALESCE(share_of, 1) AS quantity FROM bill_items WHERE bill_id IN (${billIds.map(() => '?').join(',')})`).all(...billIds) as any[];
   const quantities = new Map<number, Map<number, number>>();
   for (const row of billItems) {
     const byItem = quantities.get(Number(row.bill_id)) || new Map<number, number>();
@@ -1293,7 +1305,7 @@ function getBillItemWeights(
 ): number[] {
   const billIds = bills.map((bill) => Number(bill.id));
   if (billIds.length === 0) return [];
-  const rows = db.prepare(`SELECT bill_id, quantity FROM bill_items WHERE order_item_id = ? AND bill_id IN (${billIds.map(() => '?').join(',')})`).all(itemId, ...billIds) as any[];
+  const rows = db.prepare(`SELECT bill_id, quantity * 1.0 / COALESCE(share_of, 1) AS quantity FROM bill_items WHERE order_item_id = ? AND bill_id IN (${billIds.map(() => '?').join(',')})`).all(itemId, ...billIds) as any[];
   const quantities = new Map(rows.map((row) => [Number(row.bill_id), Number(row.quantity)]));
   return bills.map((bill) => quantities.get(Number(bill.id)) || 0);
 }
@@ -1526,6 +1538,7 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       const txnActiveItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded') ORDER BY id").all(txnSource.order_id) as any[];
       const txnItemById = new Map(txnActiveItems.map((item) => [Number(item.id), item]));
       const txnAssigned = new Map<number, number>();
+      const txnShares = new Map<number, { of: number; count: number }>();
 
       const txnNormalized = checks.map((check: any, index: number) => {
         const label = String(check?.label || `Guest ${index + 1}`).trim().slice(0, 40) || `Guest ${index + 1}`;
@@ -1533,26 +1546,43 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
         const seenItems = new Set<number>();
         const items = check.items.map((entry: any) => {
           const itemId = Number(entry?.order_item_id);
-          const quantity = Number(entry?.quantity);
           const item = txnItemById.get(itemId);
-          if (!item || !Number.isSafeInteger(quantity) || quantity < 1) throw Object.assign(new Error(`Invalid item allocation in ${label}`), { statusCode: 400 });
           if (seenItems.has(itemId)) throw Object.assign(new Error(`${label} contains the same item more than once`), { statusCode: 400 });
           seenItems.add(itemId);
+          if (entry?.share !== undefined) {
+            const of = Number(entry.share?.of);
+            if (!item || !Number.isSafeInteger(of) || of < 2 || of > checks.length) throw Object.assign(new Error(`Invalid shared item in ${label}`), { statusCode: 400 });
+            const share = txnShares.get(itemId) || { of, count: 0 };
+            if (share.of !== of) throw Object.assign(new Error(`${item.product_name} must be shared the same way on every check`), { statusCode: 400 });
+            share.count += 1;
+            txnShares.set(itemId, share);
+            return { item, quantity: Number(item.quantity), shareOf: of };
+          }
+          const quantity = Number(entry?.quantity);
+          if (!item || !Number.isSafeInteger(quantity) || quantity < 1) throw Object.assign(new Error(`Invalid item allocation in ${label}`), { statusCode: 400 });
           txnAssigned.set(itemId, (txnAssigned.get(itemId) || 0) + quantity);
-          return { item, quantity };
+          return { item, quantity, shareOf: null as number | null };
         });
         return { label, items };
       });
 
       for (const item of txnActiveItems) {
+        const share = txnShares.get(Number(item.id));
+        if (share) {
+          if (share.count !== share.of || txnAssigned.has(Number(item.id))) {
+            throw Object.assign(new Error(`${item.product_name} must be shared by exactly ${share.of} checks`), { statusCode: 400 });
+          }
+          continue;
+        }
         if ((txnAssigned.get(Number(item.id)) || 0) !== Number(item.quantity)) {
           throw Object.assign(new Error(`Allocate all ${item.quantity} × ${item.product_name}`), { statusCode: 400 });
         }
       }
 
       const groupId = randomUUID();
-      const weights = txnNormalized.map((check: { items: { item: any; quantity: number }[] }) =>
-        check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)
+      const unitsOf = (entry: { quantity: number; shareOf: number | null }) => entry.quantity / (entry.shareOf || 1);
+      const weights = txnNormalized.map((check: { items: { item: any; quantity: number; shareOf: number | null }[] }) =>
+        check.items.reduce((sum: number, entry) => sum + Number(entry.item.total || entry.item.subtotal || 0) * unitsOf(entry) / Number(entry.item.quantity), 0)
       );
 
       const tenantCurrency = getTenantCurrency();
@@ -1574,9 +1604,10 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       const snapshotItems = txnSnapshotItems.filter((item) => hasSnapshotLines(item.tax_snapshot));
       const snapshotWeights = snapshotItems.map((item) => {
         if (['voided', 'void_adjustment'].includes(item.status)) return null;
-        return txnNormalized.map((check: { items: { item: any; quantity: number }[] }) => (
-          check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0
-        ));
+        return txnNormalized.map((check: { items: { item: any; quantity: number; shareOf: number | null }[] }) => {
+          const entry = check.items.find((candidate) => Number(candidate.item.id) === Number(item.id));
+          return entry ? unitsOf(entry) : 0;
+        });
       });
       const snapshotExclusions = snapshotItems.map((item) => ['voided', 'void_adjustment'].includes(item.status));
       const snapshotAllocation = allocateTaxSnapshotsWithTax(txnSource.tax_snapshot, weights, snapshotWeights, snapshotExclusions, minorFactor);
@@ -1585,9 +1616,10 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
       const legacyContribution = collectLegacyTaxContribution(
         txnSnapshotItems,
         weights,
-        (item) => txnNormalized.map((check: { items: { item: any; quantity: number }[] }) => (
-          check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0
-        )),
+        (item) => txnNormalized.map((check: { items: { item: any; quantity: number; shareOf: number | null }[] }) => {
+          const entry = check.items.find((candidate) => Number(candidate.item.id) === Number(item.id));
+          return entry ? unitsOf(entry) : 0;
+        }),
         legacyTaxRatio,
         txnSource.tax_breakdown,
         minorFactor,
@@ -1618,9 +1650,10 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
         getTaxBreakdownWeights(
           txnSource.tax_breakdown,
           txnSnapshotItems,
-          (item) => txnNormalized.map((check: { items: { item: any; quantity: number }[] }) => (
-            check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0
-          )),
+          (item) => txnNormalized.map((check: { items: { item: any; quantity: number; shareOf: number | null }[] }) => {
+            const entry = check.items.find((candidate) => Number(candidate.item.id) === Number(item.id));
+            return entry ? unitsOf(entry) : 0;
+          }),
         ),
         minorFactor,
       );
@@ -1647,8 +1680,8 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
           billId = Number(inserted.lastInsertRowid);
         }
         billIds.push(billId);
-        const insertItem = db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, ?)');
-        for (const entry of check.items) insertItem.run(billId, entry.item.id, entry.quantity);
+        const insertItem = db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity, share_of) VALUES (?, ?, ?, ?)');
+        for (const entry of check.items) insertItem.run(billId, entry.item.id, entry.quantity, entry.shareOf);
       });
       return billIds.map((id) => parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(id)));
     });
@@ -1657,6 +1690,64 @@ router.post('/:id/split-check', requirePermission('bills.generate'), (req: Reque
     res.status(201).json({ bills: result });
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message || 'Unable to split check' });
+  }
+});
+
+// Merge unpaid split checks back into the original bill.
+router.post('/:id/unsplit', requirePermission('bills.generate'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const actorId = (req as Request & { user?: { userId?: string } }).user?.userId;
+    type SplitBillRow = { id: number; order_id: number; bill_number: string; split_group_id: string | null; split_label: string | null; total: number; paid_amount: number | null; payment_status: string; payment_details: string | null };
+    const result = withTxn(() => {
+      const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as SplitBillRow | undefined;
+      if (!bill) throw Object.assign(new Error('Bill not found'), { statusCode: 404 });
+      if (!bill.split_group_id) throw Object.assign(new Error('This bill is not split'), { statusCode: 409 });
+      const group = db.prepare('SELECT * FROM bills WHERE split_group_id = ? ORDER BY id').all(bill.split_group_id) as SplitBillRow[];
+      const hasPayment = (row: SplitBillRow) => Number(row.paid_amount || 0) !== 0 || row.payment_status !== 'unpaid' || Boolean(row.payment_details);
+      if (group.some(hasPayment)) {
+        throw Object.assign(new Error('Cannot undo the split: one of the split bills already has a payment'), { statusCode: 409 });
+      }
+      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as Record<string, string | number | null> | undefined;
+      if (!order) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      const [keep, ...removed] = group;
+      const removedIds = removed.map((row) => Number(row.id));
+      const placeholders = group.map(() => '?').join(',');
+      db.prepare(`DELETE FROM bill_items WHERE bill_id IN (${placeholders})`).run(...group.map((row) => row.id));
+      if (removedIds.length > 0) {
+        const removedPlaceholders = removedIds.map(() => '?').join(',');
+        db.prepare(`UPDATE print_logs SET bill_id = ? WHERE bill_id IN (${removedPlaceholders})`).run(keep.id, ...removedIds);
+        const hasWhatsApp = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'whatsapp_messages'").get();
+        if (hasWhatsApp) db.prepare(`UPDATE whatsapp_messages SET bill_id = ? WHERE bill_id IN (${removedPlaceholders})`).run(keep.id, ...removedIds);
+        db.prepare(`DELETE FROM bills WHERE id IN (${removedPlaceholders})`).run(...removedIds);
+      }
+      db.prepare('UPDATE bills SET split_group_id = NULL, split_label = NULL, updated_at = ? WHERE id = ?').run(now(), keep.id);
+      syncUnpaidBillsForOrder(db, Number(order.id), {
+        subtotal: Number(order.subtotal || 0),
+        taxAmount: Number(order.tax_amount || 0),
+        taxBreakdown: order.tax_breakdown == null ? null : String(order.tax_breakdown),
+        taxSnapshot: order.tax_snapshot == null ? null : String(order.tax_snapshot),
+        discountAmount: Number(order.discount_amount || 0),
+        deliveryCharge: Number(order.delivery_charge || 0),
+        packagingCharge: Number(order.packaging_charge || 0),
+        serviceCharge: Number(order.service_charge || 0),
+        total: Number(order.total || 0),
+      }, getSettingValue('country') || '');
+      if (actorId) {
+        recordOrderAudit(db, {
+          orderId: Number(order.id),
+          actorUserId: actorId,
+          action: 'split_undone',
+          details: { bill_id: keep.id, merged_bills: group.map((row) => ({ id: row.id, bill_number: row.bill_number, label: row.split_label, total: row.total })) },
+        });
+      }
+      return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(keep.id));
+    });
+    void sendEvent('feature_used', { feature: 'split_checks', action: 'undone' });
+    notifyOrderUpdated();
+    res.json({ bill: result });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message || 'Unable to undo split' });
   }
 });
 
