@@ -22,6 +22,7 @@ import { kitchenRoutes } from './kitchen';
 import { customerRoutes, parseCustomer, getWalletBalance } from './customers';
 import { staffRoutes } from './staff';
 import { scheduleRoutes } from './schedule';
+import { itemApprovalRoutes } from './item-approvals';
 import { registerAccessRoutes } from './register-access';
 import { settingsRoutes } from './settings';
 import { paymentMethodRoutes } from './payment-methods';
@@ -98,6 +99,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/staff', staffRoutes);   // users with POS roles
   app.use('/api/users', staffRoutes);   // same router, dual-mounted
   app.use('/api/schedule', scheduleRoutes);
+  app.use('/api/item-approvals', itemApprovalRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/payment-methods', paymentMethodRoutes);
   app.use('/api/reports', reportRoutes);

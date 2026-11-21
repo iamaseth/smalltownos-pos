@@ -2,7 +2,7 @@ import { dayBoundsInTimezone, getDatabase, getSettingValue, now, tenantBusinessD
 import { tenantTimezone } from '../routes/cash-closures';
 import { exchangeRate, expectedByCurrency, MATCH_TOLERANCE_USD_CENTS } from '../routes/cash-handover';
 import type {
-  DailyReportData, ReportOrderRow, ReportPaymentRow, ReportQtyRow, ReportSales, ReportShiftRow, ReportSpentRow, ReportTableRow, ShiftReportData,
+  DailyReportData, ReportAdjustmentRow, ReportOrderRow, ReportPaymentRow, ReportQtyRow, ReportSales, ReportShiftRow, ReportSpentRow, ReportTableRow, ShiftReportData,
 } from '../../shared/print/shift-report-text';
 
 type Db = ReturnType<typeof getDatabase>;
@@ -64,6 +64,12 @@ function salesFor(db: Db, w: Window, billIds: number[]): ReportSales {
     SELECT COUNT(*) AS n, COALESCE(SUM(total), 0) AS t FROM order_items
     WHERE status = 'voided' AND datetime(COALESCE(voided_at, updated_at)) >= datetime(?) AND datetime(COALESCE(voided_at, updated_at)) < datetime(?)
   `).get(w.start, w.end) as { n: number; t: number };
+  const itemComps = db.prepare(`
+    SELECT COUNT(*) AS n, COALESCE(SUM(unit_price * quantity), 0) AS t FROM order_items
+    WHERE comped_at IS NOT NULL AND datetime(comped_at) >= datetime(?) AND datetime(comped_at) < datetime(?)
+  `).get(w.start, w.end) as { n: number; t: number };
+  compCount += Number(itemComps.n || 0);
+  compCents += cents(itemComps.t);
   const netAfterRefunds = net - Number(refunds.c || 0);
   const orders = bills.length;
   return {
@@ -226,6 +232,41 @@ function orderRows(db: Db, orders: OrderRow[], shiftFor: (o: OrderRow) => number
   }));
 }
 
+const ADJUSTMENT_KIND: Record<string, ReportAdjustmentRow['kind']> = { item_voided: 'void', item_comped: 'comp', item_cancelled: 'removed' };
+
+/** Voids, comps and removed items recorded in the window (from the order audit log). */
+function adjustmentsFor(db: Db, w: Window): ReportAdjustmentRow[] {
+  const { REASON_LABELS } = require('./item-approvals') as typeof import('./item-approvals');
+  const rows = db.prepare(`
+    SELECT a.action, a.created_at, a.details_json, oi.product_name, oi.quantity, oi.unit_price, oi.subtotal, oi.discount_amount,
+      o.order_number, o.tab_name, o.type, t.number AS table_number, req.name AS requester, app.name AS approver
+    FROM order_audit_log a
+    JOIN order_items oi ON oi.id = a.order_item_id
+    JOIN orders o ON o.id = a.order_id
+    LEFT JOIN tables t ON t.id = o.table_id
+    LEFT JOIN users req ON req.id = a.actor_user_id
+    LEFT JOIN users app ON app.id = json_extract(a.details_json, '$.approved_by')
+    WHERE a.action IN ('item_voided', 'item_comped', 'item_cancelled')
+      AND datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)
+    ORDER BY a.created_at, a.id
+  `).all(w.start, w.end) as {
+    action: string; created_at: string; details_json: string | null; product_name: string; quantity: number; unit_price: number; subtotal: number; discount_amount: number;
+    order_number: string; tab_name: string | null; type: string; table_number: string | null; requester: string | null; approver: string | null;
+  }[];
+  return rows.map((r) => {
+    let details: Record<string, string> = {};
+    try { details = JSON.parse(r.details_json || '{}'); } catch { details = {}; }
+    const kind = ADJUSTMENT_KIND[r.action];
+    const amount = kind === 'comp' ? cents(r.unit_price) * Number(r.quantity) : cents(Number(r.subtotal) + Number(r.discount_amount || 0));
+    const label = tableKey({ table_number: r.table_number, tab_name: r.tab_name, type: r.type } as OrderRow);
+    return {
+      kind, at: r.created_at, product: r.product_name, qty: Number(r.quantity), amountCents: amount, label,
+      requestedBy: r.requester ?? '—', approvedBy: r.approver, channel: details.approval_channel ?? (r.approver ? 'pin' : null),
+      reason: details.reason ?? null, reasonLabel: details.reason ? (REASON_LABELS[details.reason] ?? details.reason) : 'no reason given', note: details.note ?? null,
+    };
+  });
+}
+
 export interface OrderDetail {
   id: number; orderNumber: string; label: string; status: string; paymentStatus: string; cashier: string; createdAt: string; paidAt: string | null;
   totalCents: number; discountCents: number; timezone: string;
@@ -253,11 +294,22 @@ export function buildOrderDetail(orderId: number): OrderDetail {
   const payments = parseLines(o.payment_details).map((l) => ({
     label: paymentLabel(l, names), amountCents: cents(l.amount), at: typeof l.timestamp === 'string' ? l.timestamp : null,
   }));
-  const history = (db.prepare(`
-    SELECT a.action, a.created_at, u.name FROM order_audit_log a LEFT JOIN users u ON u.id = a.actor_user_id WHERE a.order_id = ? ORDER BY a.id
-  `).all(orderId) as { action: string; created_at: string; name: string | null }[])
-    .map((h) => ({ at: h.created_at, text: `${h.action.replace(/[_.]/g, ' ')}${h.name ? ` · ${h.name}` : ''}` }));
-  if (!history.length) history.push({ at: o.created_at, text: `order placed${o.cashier ? ` · ${o.cashier}` : ''}` });
+  const { REASON_LABELS } = require('./item-approvals') as typeof import('./item-approvals');
+  const viaLabel: Record<string, string> = { pin: 'PIN', telegram: 'Telegram', allowance: 'nightly allowance' };
+  const history = [{ at: o.created_at, text: `order placed${o.cashier ? ` · ${o.cashier}` : ''}` }, ...(db.prepare(`
+    SELECT a.action, a.created_at, a.details_json, u.name, oi.product_name, app.name AS approver
+    FROM order_audit_log a LEFT JOIN users u ON u.id = a.actor_user_id LEFT JOIN order_items oi ON oi.id = a.order_item_id
+    LEFT JOIN users app ON app.id = json_extract(a.details_json, '$.approved_by')
+    WHERE a.order_id = ? ORDER BY a.id
+  `).all(orderId) as { action: string; created_at: string; details_json: string | null; name: string | null; product_name: string | null; approver: string | null }[])
+    .map((h) => {
+      let d: Record<string, string> = {};
+      try { d = JSON.parse(h.details_json || '{}'); } catch { d = {}; }
+      const what = h.product_name ? ` ${h.product_name}` : '';
+      const why = d.reason ? ` (${REASON_LABELS[d.reason] ?? d.reason})` : '';
+      const ok = h.approver && d.approval_channel !== 'allowance' ? ` · ok ${h.approver}${d.approval_channel ? ` by ${viaLabel[d.approval_channel] ?? d.approval_channel}` : ''}` : d.approval_channel === 'allowance' ? ' · nightly allowance' : '';
+      return { at: h.created_at, text: `${h.action.replace(/[_.]/g, ' ')}${what}${why}${h.name ? ` · ${h.name}` : ''}${ok}` };
+    })];
   if (isPaid(o) && o.paid_at && !history.some((h) => /paid|payment/i.test(h.text))) history.push({ at: o.paid_at, text: 'paid' });
   return {
     id: o.id, orderNumber: o.order_number, label: tableKey(o), status: o.status, paymentStatus: o.bill_status ?? 'unpaid',
@@ -334,6 +386,7 @@ export function buildShiftReport(sessionId: number): ShiftReportData {
     },
     spent: spentFor(db, session.id),
     orders: orderRows(db, orders, () => session.id),
+    adjustments: adjustmentsFor(db, w),
     notes,
     telegram,
   };
@@ -382,6 +435,7 @@ export function buildDailyReport(businessDate: string): DailyReportData {
     categories: Array.from(byCategory.values()).sort((a, b) => b.netCents - a.netCents),
     products: items.map((i) => ({ label: i.product, qty: Number(i.qty || 0), netCents: cents(i.total) })).sort((a, b) => b.netCents - a.netCents).slice(0, 10),
     tables: tableRows(orders, (o) => o.cashier ?? ''),
+    adjustments: adjustmentsFor(db, w),
     orders: orderRows(db, orders, (o) => sessions.find((x) => o.created_at >= x.opened_at && (!x.closed_at || o.created_at <= x.closed_at))?.id ?? null),
     unpaid: unpaidSummary(orders),
   };

@@ -10,6 +10,11 @@ export interface ReportOrderRow {
   id: number; orderNumber: string; label: string; cashier: string; openedAt: string; closedAt: string | null;
   totalCents: number; status: 'paid' | 'unpaid'; paidWith: string; shiftId: number | null;
 }
+/** A void, comp or removed item, with who asked and who approved. */
+export interface ReportAdjustmentRow {
+  kind: 'void' | 'comp' | 'removed'; at: string; product: string; qty: number; amountCents: number; label: string;
+  requestedBy: string; approvedBy: string | null; channel: string | null; reason: string | null; reasonLabel: string; note: string | null;
+}
 export interface ReportQtyRow { label: string; qty: number; netCents: number }
 export interface ReportSpentRow { label: string; usdCents: number; khrRiel: number; hasPhoto: boolean }
 export interface ReportShiftRow { id: number; cashier: string; openedAt: string; closedAt: string | null; orders: number; netCents: number; varianceUsdCents: number | null; varianceKhrRiel: number | null }
@@ -46,6 +51,7 @@ export interface ShiftReportData {
   cash: ReportCash;
   spent: ReportSpentRow[];
   orders: ReportOrderRow[];
+  adjustments: ReportAdjustmentRow[];
   notes: string[];
   telegram: string | null;
 }
@@ -59,6 +65,7 @@ export interface DailyReportData {
   products: ReportQtyRow[];
   tables: ReportTableRow[];
   orders: ReportOrderRow[];
+  adjustments: ReportAdjustmentRow[];
   unpaid: { count: number; totalCents: number; labels: string[] };
 }
 
@@ -181,6 +188,33 @@ function tableLine(w: number, row: ReportTableRow, timezone: string): string {
   return cols(w, `${row.label}${row.who ? ` ${row.who}` : ''}`, when, `${usd(row.totalCents)}${status}`);
 }
 
+const CHANNEL_SHORT: Record<string, string> = { pin: 'PIN', telegram: 'TG', allowance: 'allowance' };
+
+/** Voids, comps and removed items, grouped by kind; entertainer drinks get their own group. */
+function adjustmentsBlock(w: number, rows: ReportAdjustmentRow[], timezone: string): string[] {
+  const out = [rule(w), w >= 40 ? 'VOIDS, COMPS & REMOVED ITEMS' : 'VOIDS, COMPS, REMOVED', rule(w)];
+  if (rows.length === 0) return [...out, ' None'];
+  const wide = w >= 40;
+  const groups: [string, (r: ReportAdjustmentRow) => boolean][] = [
+    [wide ? 'Voids (made, taken off)' : 'Voids', (r) => r.kind === 'void'],
+    [wide ? 'Comps (made, free)' : 'Comps', (r) => r.kind === 'comp' && r.reason !== 'entertainer'],
+    [wide ? 'Entertainer drinks' : 'Entertainer', (r) => r.kind === 'comp' && r.reason === 'entertainer'],
+    [wide ? 'Removed before cooking' : 'Not made', (r) => r.kind === 'removed'],
+  ];
+  for (const [title, test] of groups) {
+    const list = rows.filter(test);
+    if (!list.length) continue;
+    out.push(cols(w, title, String(list.reduce((n, r) => n + r.qty, 0)), usd(list.reduce((n, r) => n + r.amountCents, 0))));
+    for (const r of list) {
+      out.push(lr(w, ` ${timeOnly(formatStamp(r.at, timezone))} ${r.product} x${r.qty} ${r.label}`, usd(r.amountCents)));
+      const who = r.approvedBy && r.channel !== 'allowance' ? `${r.requestedBy} > ok ${r.approvedBy} (${CHANNEL_SHORT[r.channel ?? ''] ?? r.channel ?? '-'})` : `${r.requestedBy}${r.channel === 'allowance' ? ' (allowance)' : ''}`;
+      out.push(...wrap(w, `${who} ${r.reasonLabel}${r.note ? ` - ${r.note}` : ''}`, '   '));
+    }
+  }
+  out.push(rule(w), lr(w, 'Not charged total', usd(rows.reduce((n, r) => n + r.amountCents, 0))));
+  return out;
+}
+
 export function renderShiftReport(d: ShiftReportData, w: ReportWidth, timezone: string, reprint = false): string[] {
   const closing = d.kind === 'Z';
   const out: string[] = [
@@ -216,12 +250,13 @@ export function renderShiftReport(d: ShiftReportData, w: ReportWidth, timezone: 
     if (d.cash.countedUsdCents != null && d.cash.floatKeptUsdCents != null) out.push(lr(w, 'Takings out USD', usd(d.cash.countedUsdCents - d.cash.floatKeptUsdCents)));
     if (d.cash.countedKhrRiel != null) out.push(lr(w, 'Takings out KHR', khr(d.cash.countedKhrRiel - (d.cash.floatKeptKhrRiel ?? 0))));
   }
+  out.push(...adjustmentsBlock(w, d.adjustments ?? [], timezone));
   if (d.notes.length) {
     out.push(rule(w), 'NOTES');
     d.notes.forEach((n) => out.push(...wrap(w, n)));
   }
   if (closing) out.push(rule(w), lr(w, 'Telegram', d.telegram ?? 'not sent'));
-  out.push(rule(w, '='), center(w, closing ? 'End of shift report' : 'X-report does not close the shift'));
+  out.push(rule(w, '='), center(w, closing ? 'End of shift report' : w >= 40 ? 'X-report does not close the shift' : 'Shift is still open'));
   return out;
 }
 
@@ -253,6 +288,7 @@ export function renderDailyReport(d: DailyReportData, w: ReportWidth, timezone: 
   const counted = d.shifts.filter((s) => s.varianceUsdCents != null);
   if (counted.length === 0) out.push(' No closed shifts');
   counted.forEach((s) => out.push(lr(w, s.cashier, `USD ${signed(usd(s.varianceUsdCents ?? 0), s.varianceUsdCents ?? 0)} / ${signed(khr(s.varianceKhrRiel ?? 0), s.varianceKhrRiel ?? 0)}`)));
+  out.push(...adjustmentsBlock(w, d.adjustments ?? [], timezone), rule(w));
   out.push(lr(w, 'Outstanding tickets', d.unpaid.count ? `${d.unpaid.count} · ${usd(d.unpaid.totalCents)}` : 'none'));
   d.unpaid.labels.forEach((l) => out.push(` ${l}`));
   out.push(rule(w, '='), center(w, 'End of daily report'));

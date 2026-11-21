@@ -273,7 +273,8 @@ Router: `main/routes/orders.ts`. Full path: `/api/orders`.
 | `PATCH` | `/:id/convert-to-takeaway` | `ROLE_ACCESS.sales` + order write limiter | path: `id` | - |
 | `PATCH` | `/:id/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`; body: `discount_type`, `discount_value`, `discount_reason`, `override_pin` | - |
 | `PATCH` | `/:id/items/:itemId/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`, `itemId`; body: `discount_type`, `discount_value`, `override_pin` | - |
-| `PATCH` | `/:orderId/items/:itemId/cancel` | any authenticated role + item cancel limiter, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
+| `PATCH` | `/:orderId/items/:itemId/cancel` | any authenticated role + item cancel limiter, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `note`, `approval_request_id`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
+| `PATCH` | `/:orderId/items/:itemId/comp` | any authenticated role + item cancel limiter; approval in handler | path: `orderId`, `itemId`; body: `reason` (one of `COMP_REASONS` in `main/services/item-approvals.ts`), `note`, `override_pin` or `approval_request_id` | Gives a made item free: an item-level discount of its full price, `comp_reason`/`comped_at`/`comped_by`/`comp_approved_by` set, stock stays used, audit `item_comped`. Approval is a manager PIN, an approved request, or, for `entertainer`, the nightly `entertainer_comp_allowance`. `403` with `approvalRequired: true` without approval; `409` when already comped or payment has started. Returns `{ item }`. |
 | `PATCH` | `/:orderId/items/:itemId/restore` | in-handler `orders.item.restore` (shipped to `ROLE_ACCESS.ownerManager`) | path: `orderId`, `itemId` | Returns `{ order: { ...order, items } }`. `400` on a completed or cancelled order or a paid one. Re-deducts inventory and recipe components, and rescales an order-level percentage discount. |
 
 Both item endpoints resolve the caller's effective permissions from the database inside a `withTxn`
@@ -298,6 +299,26 @@ again.
   `cancelled` and restores the recorded inventory deduction and recipe components.
 - Cancelling the last active item cancels the order and frees its table.
 - `override_pin` attempts are rate limited per client IP, not per item, to slow brute force.
+- With the setting `item_removal_requires_approval = true`, the permission rules above are replaced:
+  every existing item (served included, which becomes a void) needs a non-empty `reason` (`400`)
+  and approval from an owner or manager, by `override_pin` or an approved `approval_request_id`,
+  whoever is signed in (`403` with `approvalRequired: true`). The audit row records `reason`,
+  `note`, `approved_by` and `approval_channel` (`pin`, `telegram`).
+
+### Item approvals
+
+Router: `main/routes/item-approvals.ts`. Full path: `/api/item-approvals`. All endpoints need
+`orders.read`. A request asks the managers linked as Telegram approvers to approve one void or comp;
+the bot sends Approve / Reject buttons, and only a recipient whose `approver_user_id` is an active
+owner or manager holding the action's permission can decide. Requests expire after 30 minutes and
+an approved request is consumed by the void or comp it was made for.
+
+| Method | Path | Authorization | Parameters | Response |
+| --- | --- | --- | --- | --- |
+| `GET` | `/config` | `orders.read` | none | `removalRequiresApproval`, `entertainerAllowance`, `entertainerUsedToday`, approver counts per action, reason lists. |
+| `POST` | `/` | `orders.read` | body: `order_id`, `item_id`, `action` (`void`/`comp`), `reason`, `note` | `201 { id, status, sentTo }`. `409` when no approver is linked; `502` when Telegram is unreachable. |
+| `GET` | `/:id` | `orders.read` | path: `id` | `{ id, status, action, decidedBy, decidedAt }`; status is `pending`, `approved`, `rejected`, `cancelled`, `used` or `expired`. |
+| `DELETE` | `/:id` | `orders.read` | path: `id` | Cancels a pending request and marks the manager messages cancelled. |
 
 ### Order item status
 
@@ -528,6 +549,8 @@ Router: `main/routes/settings.ts`. Full path: `/api/settings`.
 | `PUT` | `/loyalty` | `ROLE_ACCESS.ownerManager` | body: `loyalty_enabled`, `global_cashback_percent` | - |
 | `GET` | `/discount` | `ROLE_ACCESS.allStaff` | none | - |
 | `PUT` | `/discount` | `ROLE_ACCESS.ownerManager` | body: `discount_max_percentage`, `discount_max_amount`, `discount_mode`, `discount_requires_approval` | - |
+| `GET` | `/item-control` | `settings.view` | none | `item_removal_requires_approval`, `entertainer_comp_allowance`. |
+| `PUT` | `/item-control` | `settings.manage` | body: `item_removal_requires_approval` (boolean), `entertainer_comp_allowance` (0-50) | Saved values. |
 | `GET` | `/kds` | any authenticated role | none | KDS settings for the pre-login and display surfaces. Readable by any authenticated role. |
 | `PUT` | `/kds` | `ROLE_ACCESS.ownerManager` | body: `kds_default_view` | - |
 | `GET` | `/order-numbering` | `ROLE_ACCESS.allStaff` | none | - |
@@ -669,7 +692,7 @@ Router: `main/routes/telegram.ts`. Full path: `/api/telegram`. Every endpoint re
 | `POST` | `/connect` | `settings.manage` + `reports.financial.view` | none | Verifies the bot with `getMe`, then enables sending. 400 when `TELEGRAM_BOT_TOKEN` is unset; 502 when the bot is unreachable. |
 | `POST` | `/disconnect` | `settings.manage` + `reports.financial.view` | none | Stops sending and polling. Recipients and settings are kept. |
 | `POST` | `/link-code` | `settings.manage` + `reports.financial.view` | none | Single-use six-digit code, valid for 15 minutes. |
-| `PUT` | `/recipients/:id` | `settings.manage` + `reports.financial.view` | path: `id`; body: `reports`, `is_active`, `display_name` | Updated recipient. Unknown report types are dropped. |
+| `PUT` | `/recipients/:id` | `settings.manage` + `reports.financial.view` | path: `id`; body: `reports`, `is_active`, `display_name`, `approver_user_id` | Updated recipient. Unknown report types are dropped. `approver_user_id` links the chat to an active owner or manager who may approve voids and comps from Telegram (`null` to unlink); `400` for anyone else. |
 | `DELETE` | `/recipients/:id` | `settings.manage` + `reports.financial.view` | path: `id` | Removes the recipient. |
 | `PUT` | `/schedule` | `settings.manage` + `reports.financial.view` | body: `weeklyDay`, `weeklyTime`, `dailyFallbackTime`, `pdf`, `csv` | Saved schedule. 400 on an invalid day or time. |
 | `POST` | `/test` | `settings.manage` + `reports.financial.view` | body: `recipient_id` (optional) | Sends a test message to one or all active recipients. |

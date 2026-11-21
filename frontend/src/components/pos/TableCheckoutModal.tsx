@@ -11,9 +11,9 @@ import toast from 'react-hot-toast';
 import type { Table, Order, Bill, OrderItem } from '@/lib/types';
 import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
 import DiscountDialog, { type DiscountInput } from '@/components/pos/DiscountDialog';
-import { useConfirm } from '@/hooks/use-confirm';
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
+import { VoidCompDialog } from '@/components/orders/VoidCompDialog';
 
 interface Props {
   table: Table;
@@ -37,7 +37,6 @@ export default function TableCheckoutModal({
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
-  const { confirm, ConfirmDialog } = useConfirm();
   const { currentTenant } = useAuthStore();
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
   const canDiscount = tenantCan(currentTenant, 'orders.discount.apply');
@@ -121,19 +120,19 @@ export default function TableCheckoutModal({
     finally { setGenerating(false); }
   };
 
-  const handleRemoveItem = async (item: OrderItem) => {
+  const handleRemoveItem = (item: OrderItem) => {
     if (!order) return;
-    if (!await confirm(`${tOrders('removeItemConfirm')} ${item.quantity}x ${item.product_name}`, { destructive: true, confirmLabel: tCommon('remove') })) return;
     setRemovingId(item.id);
+  };
+
+  const refreshAfterRemoval = async () => {
+    if (!order) return;
+    setRemovingId(null);
     try {
-      await api.patch(`/orders/${order.id}/items/${item.id}/cancel`, { reason: tOrders('removedByManager') });
       const { data } = await api.get(`/orders/${order.id}`);
       setOrder(data.order);
-      toast.success(tOrders('itemRemoved'));
     } catch {
       toast.error(tOrders('removeItemFailed'));
-    } finally {
-      setRemovingId(null);
     }
   };
 
@@ -318,7 +317,6 @@ export default function TableCheckoutModal({
         </div>
       </div>
     </div>
-    {ConfirmDialog}
     {discountTarget && (
       <DiscountDialog
         title={discountTarget.kind === 'order' ? 'Discount whole bill' : `Discount ${discountTarget.item.product_name}`}
@@ -328,6 +326,9 @@ export default function TableCheckoutModal({
         onClose={() => setDiscountTarget(null)}
         onApply={applyDiscount}
       />
+    )}
+    {removingId != null && (
+      <VoidCompDialog order={order} itemId={Number(removingId)} action="void" onClose={() => setRemovingId(null)} onDone={refreshAfterRemoval} />
     )}
     {splitBill && <SplitCheckModal bill={splitBill} order={order} onClose={() => setSplitBill(null)} onSplit={(bills) => { setOrder({ ...order, bill: bills[0], bills }); setSplitBill(null); }} />}
     </>

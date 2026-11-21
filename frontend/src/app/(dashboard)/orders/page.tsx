@@ -50,12 +50,19 @@ import { matchesOrderSearch } from '@/lib/orders-search';
 import { tenantCan } from '@/lib/permissions';
 
 import { OrderCard } from '@/components/orders/OrderCard';
+import { OrderSidePanel, orderPlace } from '@/components/orders/OrderSidePanel';
+import { ShiftStrip } from '@/components/orders/ShiftStrip';
+import { VoidCompDialog } from '@/components/orders/VoidCompDialog';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
 type FilterType = 'open' | 'unpaid' | 'paid' | 'held' | 'all' | 'cancelled' | 'completed';
 
-const MAIN_TABS: FilterType[] = ['open', 'unpaid', 'paid', 'held', 'all'];
+const MAIN_TABS: FilterType[] = ['unpaid', 'open', 'paid', 'held', 'all'];
+const TAB_INFO: Partial<Record<FilterType, [string, string]>> = {
+  unpaid: ['Not paid', 'needs payment'], open: ['In progress', 'kitchen / bar'], paid: ['Paid', 'finished'],
+  held: ['Held', 'saved for later'], all: ['Everything', 'all orders'],
+};
 const MORE_TABS: FilterType[] = ['cancelled', 'completed'];
 
 const tabLabelKey: Record<Exclude<FilterType, 'open'>, OrdersKey> = {
@@ -128,7 +135,10 @@ export default function OrdersPage() {
   // Snapshot of "now" for the "Xm ago" timestamps below — Date.now() can't be called directly
   // during render (impure), so it's held in state and refreshed periodically instead.
   const [now, setNow] = useState(() => Date.now());
-  const [tabFilter, setTabFilter] = useState<FilterType>('open');
+  const [tabFilter, setTabFilter] = useState<FilterType>('unpaid');
+  const [panelOrderId, setPanelOrderId] = useState<number | null>(null);
+  const [voidComp, setVoidComp] = useState<{ orderId: number; itemId?: number | null; action: 'void' | 'comp' } | null>(null);
+  const [shiftOpenedAt, setShiftOpenedAt] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
     try {
       return typeof window !== 'undefined' && window.localStorage.getItem('orders-view-mode') === 'list' ? 'list' : 'cards';
@@ -136,8 +146,7 @@ export default function OrdersPage() {
       return 'cards';
     }
   });
-  const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
-  type DateRange = 'today' | 'yesterday' | 'week' | 'custom';
+  type DateRange = 'shift' | 'today' | 'yesterday' | 'week' | 'custom';
   const [dateRange, setDateRange] = useState<DateRange>('today');
   const [customDate, setCustomDate] = useState('');
   const rangeKey = dateRange === 'custom' ? customDate : dateRange;
@@ -148,7 +157,7 @@ export default function OrdersPage() {
   const rangeParams = (key: string): Record<string, string | number> => {
     const base = { per_page: 100, include_open: 1 };
     if (/^\d{4}-\d{2}-\d{2}$/.test(key)) return { ...base, business_date: key };
-    return { ...base, range: ['today', 'yesterday', 'week'].includes(key) ? key : 'today' };
+    return { ...base, range: ['today', 'yesterday', 'week'].includes(key) ? key : key === 'shift' ? 'week' : 'today' };
   };
   const tabLabel = (f: FilterType) => (f === 'open' ? 'Open' : tOrders(tabLabelKey[f]));
   const chooseViewMode = (mode: 'cards' | 'list') => {
@@ -174,7 +183,7 @@ export default function OrdersPage() {
       setFilters((f) => ({ ...f, search }));
       setTabFilter('all');
       if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) { setDateRange('custom'); setCustomDate(date); }
-      if (Number.isInteger(openId) && openId > 0) setExpandedOrderId(openId);
+      if (Number.isInteger(openId) && openId > 0) setPanelOrderId(openId);
     });
   }, []);
 
@@ -536,6 +545,9 @@ export default function OrdersPage() {
     if (filters.search && !matchesOrderSearch(order, filters.search)) {
       return false;
     }
+    if (dateRange === 'shift' && shiftOpenedAt && Date.parse(order.created_at.includes('T') ? order.created_at : `${order.created_at.replace(' ', 'T')}Z`) < Date.parse(`${shiftOpenedAt.replace(' ', 'T')}Z`) && isOrderActive(order) === false) {
+      return false;
+    }
     // Filter by table
     if (filters.table && String(order.table_id) !== filters.table) {
       return false;
@@ -661,21 +673,6 @@ export default function OrdersPage() {
       toast.error(tOrders('printPreviewFailed'));
     } finally {
       setPreviewingBillId(null);
-    }
-  };
-
-  const deleteItem = async (orderId: number, itemId: number) => {
-    if (!canCancelItems) {
-      toast.error(tOrders('onlyOwnersRemove'));
-      return;
-    }
-    if (!await confirm(tOrders('removeItemConfirm'), { destructive: true, confirmLabel: tCommon('remove') })) return;
-    try {
-      await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: tOrders('removedByManager') });
-      toast.success(tOrders('itemRemoved'));
-      fetchOrders();
-    } catch {
-      toast.error(tOrders('removeItemFailed'));
     }
   };
 
@@ -969,10 +966,8 @@ export default function OrdersPage() {
               }}
               onCreateNewOrderForCustomer={handleCreateNewOrderForCustomer}
               onDownloadPrintPreview={handleDownloadPrintPreview}
-              onDeleteItem={deleteItem}
-              onVoidItem={(orderId, itemId, productName) =>
-                setVoidItemModal({ orderId, itemId, productName, overridePin: '' })
-              }
+              onDeleteItem={(orderId, itemId) => setVoidComp({ orderId, itemId, action: 'void' })}
+              onVoidItem={(orderId, itemId) => setVoidComp({ orderId, itemId, action: 'void' })}
               onRestoreItem={restoreItem}
             />
   );
@@ -982,20 +977,28 @@ export default function OrdersPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-foreground">{tNav('orders')}</h1>
+      </div>
+      <ShiftStrip refreshKey={orders.reduce((sum, o) => sum + Number(o.total || 0), orders.length)} onShift={setShiftOpenedAt} />
+      <div className="flex flex-wrap items-stretch gap-2">
         <div className="flex flex-wrap gap-2">
-          {MAIN_TABS.map((f) => (
-            <button
-              key={f}
-              onClick={() => setTabFilter(f)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium ${
-                tabFilter === f
-                  ? 'bg-brand text-white'
-                  : 'bg-card text-muted-foreground border border-border hover:border-gray-400'
-              }`}
-            >
-              {tabLabel(f)}
-            </button>
-          ))}
+          {MAIN_TABS.map((f) => {
+            const info = TAB_INFO[f];
+            const count = f === 'unpaid' ? loadedOrders.filter((o) => o.status !== 'cancelled' && ['unpaid', 'partial'].includes(paymentStatusOf(o) || '')).length : 0;
+            return (
+              <button
+                key={f}
+                onClick={() => setTabFilter(f)}
+                aria-pressed={tabFilter === f}
+                className={`rounded-xl border-2 px-4 py-1.5 text-start text-sm font-bold ${
+                  tabFilter === f ? 'border-blue-600 bg-blue-600 text-white' : 'border-border bg-card text-foreground hover:border-gray-400'
+                }`}
+              >
+                {info ? info[0] : tabLabel(f)}
+                {count > 0 && <span className="ms-2 rounded-full bg-amber-200 px-2 text-xs text-amber-900">{count}</span>}
+                {info && <small className={`block text-[11px] font-medium ${tabFilter === f ? 'text-blue-100' : 'text-muted-foreground'}`}>{info[1]}</small>}
+              </button>
+            );
+          })}
           <select
             aria-label="More order views"
             value={MORE_TABS.includes(tabFilter) ? tabFilter : ''}
@@ -1053,17 +1056,16 @@ export default function OrdersPage() {
           <option value="online">{tOrders('online')}</option>
         </select>
 
-        <select
-          aria-label="Date range"
-          value={dateRange}
-          onChange={(e) => setDateRange(e.target.value as DateRange)}
-          className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
-        >
-          <option value="today">Today</option>
-          <option value="yesterday">Yesterday</option>
-          <option value="week">Last 7 days</option>
-          <option value="custom">Pick a date</option>
-        </select>
+        <div className="flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Date range">
+          {([['shift', 'My shift'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['week', '7 days'], ['custom', '📅 Date']] as [DateRange, string][])
+            .filter(([key]) => key !== 'shift' || shiftOpenedAt)
+            .map(([key, label]) => (
+              <button key={key} type="button" onClick={() => setDateRange(key)} aria-pressed={dateRange === key}
+                className={`px-3 py-2 text-sm font-semibold ${dateRange === key ? 'bg-foreground text-background' : 'bg-card text-muted-foreground hover:bg-muted'}`}>
+                {label}
+              </button>
+            ))}
+        </div>
         {dateRange === 'custom' && (
           <input type="date" value={customDate} onChange={(e) => setCustomDate(e.target.value)} aria-label="Order date"
             className="px-3 py-2 border border-border bg-card rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand" />
@@ -1161,42 +1163,51 @@ export default function OrdersPage() {
             {filteredOrders.map((order) => renderOrderCard(order))}
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-border bg-card">
-            {filteredOrders.map((order) => {
-              const payStatus = paymentStatusOf(order);
-              const label = order.tab_name || order.table?.name || (order.type === 'takeaway' ? 'Takeaway' : order.type === 'dine_in' ? 'No table' : order.type);
-              const owed = Number(order.bill?.balance ?? order.total);
-              const minutesAgo = Math.max(0, Math.floor((now - new Date(order.created_at).getTime()) / 60000));
-              const ago = minutesAgo < 60 ? `${minutesAgo}m` : minutesAgo < 1440 ? `${Math.floor(minutesAgo / 60)}h` : `${Math.floor(minutesAgo / 1440)}d`;
-              const badge = order.status === 'cancelled'
-                ? { text: tOrders('cancelled'), cls: 'bg-gray-500/20 text-gray-400' }
-                : payStatus === 'paid'
-                  ? { text: tOrders('paid'), cls: 'bg-emerald-500/20 text-emerald-400' }
-                  : payStatus === 'partial'
-                    ? { text: `Owes ${fmt(owed)}`, cls: 'bg-amber-500/20 text-amber-400' }
-                    : { text: tOrders('unpaidBadge'), cls: 'bg-red-500/20 text-red-400' };
-              const canPay = payStatus === 'unpaid' || payStatus === 'partial';
-              const expanded = expandedOrderId === order.id;
-              return (
-                <div key={order.id} className="border-b border-border last:border-b-0">
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-                    <span className="w-40 shrink-0 text-sm font-bold text-foreground">#{order.order_number}</span>
-                    <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                      {label}
-                      <span className="ms-2 text-muted-foreground">{order.customer?.name || ''}</span>
-                    </span>
-                    <span className="w-12 shrink-0 text-xs text-muted-foreground">{ago}</span>
-                    <span className="w-24 shrink-0 text-end text-sm font-bold tabular-nums">{fmt(Number(order.total))}</span>
-                    <span className={`w-28 shrink-0 rounded-full px-2 py-1 text-center text-xs font-semibold ${badge.cls}`}>{badge.text}</span>
-                    {canPay && order.status !== 'cancelled' && (
-                      <Button size="sm" onClick={() => handleCheckout(order.id)} disabled={generatingBill === order.id}>{tOrders('checkout')}</Button>
-                    )}
-                    <Button size="sm" variant="outline" onClick={() => setExpandedOrderId(expanded ? null : order.id)}>{expanded ? 'Hide' : 'Details'}</Button>
-                  </div>
-                  {expanded && <div className="bg-muted/30 p-3">{renderOrderCard(order)}</div>}
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto rounded-xl border border-border bg-card">
+            <table className="w-full text-sm">
+              <thead><tr className="text-xs text-muted-foreground">
+                <th className="px-4 py-2 text-start font-semibold">Table</th><th className="px-2 py-2 text-start font-semibold">What</th>
+                <th className="px-2 py-2 text-start font-semibold">By</th><th className="px-2 py-2 text-start font-semibold">Time</th>
+                <th className="px-2 py-2 text-end font-semibold">Total</th><th className="px-2 py-2 text-start font-semibold">Status</th><th className="px-4 py-2" />
+              </tr></thead>
+              <tbody>
+              {filteredOrders.map((order) => {
+                const payStatus = paymentStatusOf(order);
+                const owed = Number(order.bill?.balance ?? order.total);
+                const created = new Date(order.created_at.includes('T') ? order.created_at : `${order.created_at.replace(' ', 'T')}Z`);
+                const minutesAgo = Math.max(0, Math.floor((now - created.getTime()) / 60000));
+                const ago = minutesAgo < 60 ? `${minutesAgo} min ago` : minutesAgo < 1440 ? `${Math.floor(minutesAgo / 60)} h ago` : `${Math.floor(minutesAgo / 1440)} d ago`;
+                const methods = order.paid_with || '';
+                const badge = order.status === 'cancelled'
+                  ? { text: tOrders('cancelled'), cls: 'bg-gray-200 text-gray-700' }
+                  : payStatus === 'paid'
+                    ? { text: methods ? `Paid · ${methods}` : tOrders('paid'), cls: 'bg-emerald-100 text-emerald-800' }
+                    : payStatus === 'partial'
+                      ? { text: `Owes ${fmt(owed)}`, cls: 'bg-amber-100 text-amber-800' }
+                      : { text: 'Not paid', cls: 'bg-amber-100 text-amber-800' };
+                const canPay = (payStatus === 'unpaid' || payStatus === 'partial' || payStatus === null) && order.status !== 'cancelled' && order.status !== 'completed';
+                const what = (order.items || []).filter((i) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(i.status))
+                  .map((i) => `${i.product_name}${i.quantity > 1 ? ` ×${i.quantity}` : ''}`).join(', ');
+                return (
+                  <tr key={order.id} onClick={() => setPanelOrderId(order.id)} className={`cursor-pointer border-t border-border hover:bg-muted/60 ${panelOrderId === order.id ? 'bg-blue-50 dark:bg-blue-950/40' : ''}`}>
+                    <td className="px-4 py-3"><div className="text-base font-extrabold">{orderPlace(order)}</div><div className="text-xs text-muted-foreground">#{order.order_number.split('-').pop()}</div></td>
+                    <td className="max-w-[18rem] truncate px-2 py-3 text-muted-foreground">{what || '—'}{order.customer?.name ? ` · ${order.customer.name}` : ''}</td>
+                    <td className="px-2 py-3">{order.staff_name || '—'}</td>
+                    <td className="px-2 py-3 whitespace-nowrap">{created.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}<div className="text-xs text-muted-foreground">{ago}</div></td>
+                    <td className="px-2 py-3 text-end text-base font-bold tabular-nums">{fmt(Number(order.total))}</td>
+                    <td className="px-2 py-3"><span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${badge.cls}`}>{badge.text}</span></td>
+                    <td className="px-4 py-3 text-end" onClick={(e) => e.stopPropagation()}>
+                      {canPay ? (
+                        <Button size="sm" onClick={() => handleCheckout(order.id)} disabled={generatingBill === order.id}>Take payment</Button>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => setPanelOrderId(order.id)}>View</Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              </tbody>
+            </table>
           </div>
         )
       )}
@@ -1209,6 +1220,43 @@ export default function OrdersPage() {
           )}
         </div>
       )}
+
+      {(() => {
+        const order = panelOrderId != null ? loadedOrders.find((o) => o.id === panelOrderId) : null;
+        if (!order) return null;
+        const paid = paymentStatusOf(order) === 'paid';
+        const billId = order.bill?.id ?? order.bills?.[0]?.id ?? null;
+        return (
+          <OrderSidePanel
+            order={order}
+            paid={paid}
+            cancelled={order.status === 'cancelled'}
+            onClose={() => setPanelOrderId(null)}
+            onTakePayment={() => { setPanelOrderId(null); handleCheckout(order.id); }}
+            onAddItems={() => { setPanelOrderId(null); openAddItemsModal(order); }}
+            onPrint={billId ? () => setConfirmPrintBillId(billId) : null}
+            onCustomer={() => { setLinkCustomerOrderId(order.id); setLinkCustomerSearch(''); setLinkCustomerResults([]); }}
+            onVoid={() => setVoidComp({ orderId: order.id, action: 'void' })}
+            onComp={() => setVoidComp({ orderId: order.id, action: 'comp' })}
+            onCancelOrder={() => setCancelModal({ order, reason: '', freeTable: true, overridePin: '' })}
+            onRefund={paid && canRefund ? () => setRefundModal({ order, bills: order.bills || [] }) : null}
+            moreOptions={renderOrderCard(order)}
+          />
+        );
+      })()}
+
+      {voidComp && (() => {
+        const order = loadedOrders.find((o) => o.id === voidComp.orderId);
+        return order ? (
+          <VoidCompDialog
+            order={order}
+            itemId={voidComp.itemId}
+            action={voidComp.action}
+            onClose={() => setVoidComp(null)}
+            onDone={() => { setVoidComp(null); fetchOrders(); }}
+          />
+        ) : null;
+      })()}
 
       {/* Payment Modal */}
       {paymentBill && (

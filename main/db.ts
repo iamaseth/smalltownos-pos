@@ -6025,6 +6025,40 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertType.run('full', 'Full', '14:00', '01:00', 4, at);
     },
   },
+  {
+    version: 108,
+    name: 'add_item_comps_and_approval_requests',
+    up: () => {
+      const addColumn = (table: string, column: string, ddl: string) => {
+        const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+        if (!cols.some((col) => col.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+      };
+      addColumn('order_items', 'comp_reason', 'comp_reason TEXT');
+      addColumn('order_items', 'comped_at', 'comped_at TEXT');
+      addColumn('order_items', 'comped_by', 'comped_by TEXT REFERENCES users(id)');
+      addColumn('order_items', 'comp_approved_by', 'comp_approved_by TEXT REFERENCES users(id)');
+      addColumn('telegram_recipients', 'approver_user_id', 'approver_user_id TEXT REFERENCES users(id)');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS item_approval_requests (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_id INTEGER NOT NULL REFERENCES orders(id),
+          order_item_id INTEGER NOT NULL REFERENCES order_items(id),
+          action TEXT NOT NULL CHECK (action IN ('void', 'comp')),
+          reason TEXT NOT NULL,
+          note TEXT,
+          requested_by TEXT NOT NULL REFERENCES users(id),
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled', 'used', 'expired')),
+          decided_by TEXT REFERENCES users(id),
+          decided_at TEXT,
+          telegram_messages TEXT NOT NULL DEFAULT '[]',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_item_approval_requests_item ON item_approval_requests(order_item_id, status);
+        CREATE INDEX IF NOT EXISTS idx_item_approval_requests_status ON item_approval_requests(status, created_at);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

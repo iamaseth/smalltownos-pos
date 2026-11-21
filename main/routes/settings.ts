@@ -441,6 +441,41 @@ router.put('/discount', requirePermission('settings.manage'), (req: Request, res
   }
 });
 
+// ─── Void / comp control ───────────────────────────────────────────────────
+
+function itemControl() {
+  const s = getAllSettings(getDatabase());
+  return {
+    item_removal_requires_approval: s.item_removal_requires_approval === 'true',
+    entertainer_comp_allowance: Math.max(0, parseInt(s.entertainer_comp_allowance || '0', 10) || 0),
+  };
+}
+
+router.get('/item-control', requirePermission('settings.view'), (_req: Request, res: Response) => {
+  try { res.json(itemControl()); } catch (error) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put('/item-control', requirePermission('settings.manage'), (req: Request, res: Response) => {
+  try {
+    const { item_removal_requires_approval, entertainer_comp_allowance } = req.body || {};
+    const allowance = entertainer_comp_allowance === undefined ? undefined : Number(entertainer_comp_allowance);
+    if (allowance !== undefined && (!Number.isInteger(allowance) || allowance < 0 || allowance > 50)) {
+      return res.status(400).json({ error: 'entertainer_comp_allowance must be a whole number from 0 to 50' });
+    }
+    upsertSettings(getDatabase(), {
+      ...(item_removal_requires_approval !== undefined && { item_removal_requires_approval: item_removal_requires_approval === true ? 'true' : 'false' }),
+      ...(allowance !== undefined && { entertainer_comp_allowance: String(allowance) }),
+    });
+    res.json(itemControl());
+  } catch (error) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── KDS settings (must come BEFORE /:key wildcard) ─────────────────────────
 
 // Mirrors KDS default view for the dashboard settings page.

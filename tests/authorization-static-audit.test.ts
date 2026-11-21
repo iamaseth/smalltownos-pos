@@ -24,6 +24,7 @@ export const allowedRolePolicyFiles: ReadonlySet<string> = new Set([
   'main/routes/staff.ts',
   'main/services/kds.ts',
   'main/services/refund.ts',
+  'main/services/item-approvals.ts',
   'main/kds-server.ts',
 ]);
 

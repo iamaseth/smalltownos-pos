@@ -188,6 +188,8 @@ export interface Order {
   online_platform?: string | null;
   external_order_id?: string | null;
   created_by: number;
+  staff_name?: string | null;
+  paid_with?: string | null;
   created_at: string;
   cancelled_at?: string | null;
   cancellation_reason?: string | null;
@@ -213,6 +215,8 @@ export interface OrderItem {
   discount_amount?: number | null;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   tax_snapshot?: TaxSnapshot | null;
+  comp_reason?: string | null;
+  comped_at?: string | null;
   addons: { id?: number | string | null; name: string; price?: number; quantity?: number }[] | null;
   special_instructions: string | null;
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided' | 'void_adjustment';

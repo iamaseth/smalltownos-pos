@@ -29,6 +29,7 @@ import { InitializeDatabaseDialog } from '@/components/settings/InitializeDataba
 import { CurrencyResetDialog } from '@/components/settings/CurrencyResetDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TelegramReportsCard } from '@/components/settings/TelegramReportsCard';
+import { VoidCompSettingsCard } from '@/components/settings/VoidCompSettingsCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { GeneralSettingsTab, type BusinessForm, type InvoiceResetPeriod, type OrderNumberForm } from '@/components/settings/GeneralSettingsTab';
@@ -4012,6 +4013,7 @@ export default function SettingsPage() {
           <TabsContent value="telegram">
             <SettingsTabShell>
               <TelegramReportsCard />
+              <VoidCompSettingsCard />
             </SettingsTabShell>
           </TabsContent>
         )}

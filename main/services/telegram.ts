@@ -5,7 +5,7 @@ import type { TelegramReport, TelegramReportType } from './telegram-reports';
 type Db = ReturnType<typeof getDatabase>;
 
 export interface TelegramSchedule { weeklyDay: number; weeklyTime: string; dailyFallbackTime: string; pdf: boolean; csv: boolean }
-export interface TelegramRecipient { id: number; chat_id: string; display_name: string; username: string | null; reports: TelegramReportType[]; is_active: number; created_at: string }
+export interface TelegramRecipient { id: number; chat_id: string; display_name: string; username: string | null; reports: TelegramReportType[]; is_active: number; created_at: string; approver_user_id: string | null }
 export interface TelegramStatus { tokenConfigured: boolean; enabled: boolean; connected: boolean; botUsername: string | null; error: string | null; schedule: TelegramSchedule }
 
 const DEFAULT_SCHEDULE: TelegramSchedule = { weeklyDay: 1, weeklyTime: '08:00', dailyFallbackTime: '10:00', pdf: true, csv: true };
@@ -130,16 +130,22 @@ function parseRecipient(row: Omit<TelegramRecipient, 'reports'> & { reports: str
 }
 
 export function listRecipients(db: Db = getDatabase()): TelegramRecipient[] {
-  return (db.prepare('SELECT id, chat_id, display_name, username, reports, is_active, created_at FROM telegram_recipients ORDER BY created_at').all() as Array<Omit<TelegramRecipient, 'reports'> & { reports: string }>).map(parseRecipient);
+  return (db.prepare('SELECT id, chat_id, display_name, username, reports, is_active, created_at, approver_user_id FROM telegram_recipients ORDER BY created_at').all() as Array<Omit<TelegramRecipient, 'reports'> & { reports: string }>).map(parseRecipient);
 }
 
-export function updateRecipient(id: number, input: { reports?: unknown; is_active?: unknown; display_name?: unknown }, db: Db = getDatabase()): TelegramRecipient {
+export function updateRecipient(id: number, input: { reports?: unknown; is_active?: unknown; display_name?: unknown; approver_user_id?: unknown }, db: Db = getDatabase()): TelegramRecipient {
   const current = listRecipients(db).find((r) => r.id === id);
   if (!current) throw Object.assign(new Error('Recipient not found'), { statusCode: 404 });
   const reports = Array.isArray(input.reports) ? [...new Set(input.reports.map(String))].filter((r): r is TelegramReportType => VALID_REPORTS.has(r as TelegramReportType)) : current.reports;
   const isActive = input.is_active === undefined ? current.is_active : (input.is_active ? 1 : 0);
   const name = typeof input.display_name === 'string' && input.display_name.trim() ? input.display_name.trim().slice(0, 80) : current.display_name;
-  db.prepare('UPDATE telegram_recipients SET reports = ?, is_active = ?, display_name = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(reports), isActive, name, now(), id);
+  let approver = current.approver_user_id;
+  if (input.approver_user_id !== undefined) {
+    approver = input.approver_user_id ? String(input.approver_user_id) : null;
+    const { isApprover } = require('./item-approvals') as typeof import('./item-approvals');
+    if (approver && !isApprover(db, approver, 'void')) throw Object.assign(new Error('Only an active owner or manager can approve'), { statusCode: 400 });
+  }
+  db.prepare('UPDATE telegram_recipients SET reports = ?, is_active = ?, display_name = ?, approver_user_id = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(reports), isActive, name, approver, now(), id);
   return listRecipients(db).find((r) => r.id === id)!;
 }
 
@@ -160,9 +166,80 @@ export function createLinkCode(createdBy: string, db: Db = getDatabase()): { cod
   throw new Error('Could not create a link code');
 }
 
-interface TelegramUpdate { update_id: number; message?: { text?: string; chat: { id: number | string; type: string; first_name?: string; last_name?: string; title?: string; username?: string } } }
+interface TelegramUpdate {
+  update_id: number;
+  message?: { text?: string; chat: { id: number | string; type: string; first_name?: string; last_name?: string; title?: string; username?: string } };
+  callback_query?: { id: string; data?: string; message?: { message_id: number; chat: { id: number | string } } };
+}
+
+// ---- Void / comp approvals ----
+
+/** Sends Approve / Reject buttons to every active recipient linked to an approving manager. */
+export async function sendApprovalRequest(requestId: number, db: Db = getDatabase()): Promise<number> {
+  const approvals = require('./item-approvals') as typeof import('./item-approvals');
+  const row = approvals.getRequest(db, requestId);
+  if (!row || row.status !== 'pending' || !botToken() || !isEnabled(db)) return 0;
+  const targets = listRecipients(db).filter((r) => r.is_active && approvals.isApprover(db, r.approver_user_id, row.action));
+  const text = approvals.describeRequest(db, row);
+  const sent: { chat_id: string; message_id: number }[] = [];
+  for (const target of targets) {
+    try {
+      const msg = await callApi<{ message_id: number }>('sendMessage', {
+        chat_id: target.chat_id, text, parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [[{ text: '✅ Approve', callback_data: `ap:${row.id}:y` }, { text: '❌ Reject', callback_data: `ap:${row.id}:n` }]] },
+      });
+      sent.push({ chat_id: target.chat_id, message_id: msg.message_id });
+    } catch (error) {
+      log('approval_send_failed', { error: error instanceof Error ? redact(error.message) : 'unknown' });
+    }
+  }
+  db.prepare('UPDATE item_approval_requests SET telegram_messages = ? WHERE id = ?').run(JSON.stringify(sent), row.id);
+  return sent.length;
+}
+
+export function approverCount(action: 'void' | 'comp', db: Db = getDatabase()): number {
+  if (!botToken() || !isEnabled(db)) return 0;
+  const { isApprover } = require('./item-approvals') as typeof import('./item-approvals');
+  return listRecipients(db).filter((r) => r.is_active && isApprover(db, r.approver_user_id, action)).length;
+}
+
+/** Updates the manager messages once a request is decided, cancelled or used. */
+export async function closeApprovalMessages(requestId: number, outcome: string, db: Db = getDatabase()): Promise<void> {
+  const approvals = require('./item-approvals') as typeof import('./item-approvals');
+  const row = approvals.getRequest(db, requestId);
+  if (!row || !botToken()) return;
+  let messages: { chat_id: string; message_id: number }[] = [];
+  try { messages = JSON.parse(row.telegram_messages || '[]'); } catch { messages = []; }
+  const text = `${approvals.describeRequest(db, row)}\n\n${outcome}`;
+  for (const m of messages) {
+    await callApi('editMessageText', { chat_id: m.chat_id, message_id: m.message_id, text, parse_mode: 'HTML' }).catch(() => undefined);
+  }
+}
+
+async function handleApprovalCallback(query: NonNullable<TelegramUpdate['callback_query']>, db: Db): Promise<'ignored' | 'rejected' | 'linked'> {
+  const match = /^ap:(\d+):([yn])$/.exec(query.data || '');
+  const chatId = query.message ? String(query.message.chat.id) : '';
+  if (!match || !chatId) return 'ignored';
+  const approvals = require('./item-approvals') as typeof import('./item-approvals');
+  const recipient = listRecipients(db).find((r) => r.chat_id === chatId && r.is_active);
+  const approve = match[2] === 'y';
+  const result = recipient?.approver_user_id
+    ? approvals.decideRequest(db, Number(match[1]), recipient.approver_user_id, approve)
+    : { ok: false, reason: 'not allowed' as string | undefined };
+  if (!result.ok) {
+    await callApi('answerCallbackQuery', { callback_query_id: query.id, text: result.reason === 'not allowed' ? 'You are not set up to approve.' : `This request is ${result.reason}.` }).catch(() => undefined);
+    return 'rejected';
+  }
+  const name = (db.prepare('SELECT name FROM users WHERE id = ?').get(recipient!.approver_user_id) as { name?: string } | undefined)?.name || 'manager';
+  const stamp = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: (require('../routes/cash-closures') as typeof import('../routes/cash-closures')).tenantTimezone() }).format(new Date());
+  await callApi('answerCallbackQuery', { callback_query_id: query.id, text: approve ? 'Approved' : 'Rejected' }).catch(() => undefined);
+  await closeApprovalMessages(Number(match[1]), approve ? `✅ Approved by ${name} · ${stamp}` : `❌ Rejected by ${name} · ${stamp}`, db);
+  log(approve ? 'approval_granted' : 'approval_rejected');
+  return 'linked';
+}
 
 export async function handleUpdate(update: TelegramUpdate, db: Db = getDatabase()): Promise<'linked' | 'rejected' | 'ignored'> {
+  if (update.callback_query) return handleApprovalCallback(update.callback_query, db);
   const message = update.message;
   if (!message?.text || !message.chat) return 'ignored';
   const chatId = String(message.chat.id);
@@ -461,7 +538,7 @@ async function pollLoop(): Promise<void> {
       const response = await fetch(`${apiBase()}/bot${token}/getUpdates`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ offset, timeout: 25, allowed_updates: ['message'] }),
+        body: JSON.stringify({ offset, timeout: 25, allowed_updates: ['message', 'callback_query'] }),
         signal: AbortSignal.any([pollAbort.signal, AbortSignal.timeout(35_000)]),
       });
       const data = await response.json() as { ok: boolean; result?: TelegramUpdate[] };
