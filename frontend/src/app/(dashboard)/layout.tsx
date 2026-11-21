@@ -12,6 +12,7 @@ import { usePrinterStatusSync } from '@/hooks/usePrinter';
 import { useRegisterAccess } from '@/hooks/useRegisterAccess';
 import RegisterLockScreen from '@/components/pos/RegisterLockScreen';
 import { useAuthStore } from '@/store/auth';
+import { RegisterOperatorProvider } from '@/hooks/register-operator-context';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -24,6 +25,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const registerAccess = useRegisterAccess(isRegister);
   // Sync printer status early so hardware and WebUSB reconnect before first print.
   usePrinterStatusSync();
+  // The signed-in staff member is shown in the POS top bar (PosTopbar), not
+  // as a floating badge that covers the order panel.
+  const operatorInfo = isRegister && registerAccess.operator
+    ? { name: registerAccess.operator.name, switchStaff: registerAccess.lock }
+    : null;
 
   return (
     <AuthGuard>
@@ -45,17 +51,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               ? 'flex-1 min-h-0 p-4 overflow-auto md:overflow-hidden min-w-0'
               : 'flex-1 p-4 overflow-auto min-w-0'
             }>
-              {children}
+              <RegisterOperatorProvider value={operatorInfo}>{children}</RegisterOperatorProvider>
             </div>
             <StatusBar showUpdateBadge={false} />
           </SidebarInset>
-          {isRegister && registerAccess.operator && (
-            <div className={`fixed end-3 z-[90] flex items-center gap-2 rounded-lg border bg-card/95 px-3 py-2 shadow-md ${normalizedPath === '/pos' ? 'top-14' : 'bottom-10'}`}>
+          {/* On the POS the staff chip lives in the top bar; other pages get a small corner chip. */}
+          {isRegister && normalizedPath !== '/pos' && registerAccess.operator && (
+            <div className="fixed bottom-10 end-3 z-[90] flex items-center gap-2 rounded-lg border bg-card/95 px-3 py-2 shadow-md">
               <span className="max-w-32 truncate text-xs font-medium">{registerAccess.operator.name}</span>
               <button type="button" onClick={registerAccess.lock}
                 className="rounded-md border px-2 py-1 text-xs font-semibold hover:bg-muted"
-                aria-label="Switch staff member">
-                Switch staff
+                aria-label="Log out staff member">
+                Log out
               </button>
             </div>
           )}
