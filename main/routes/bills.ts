@@ -9,6 +9,7 @@ import {
   now,
   parseItemJson,
   parseRowJson,
+  recordOrderAudit,
   utcTodayDate,
   verifyPin,
   withTxn,
@@ -2041,6 +2042,12 @@ function applyPaymentBatch(
   const newPaidCents = oldPaidCents + totalAppliedCents;
   const newBalanceCents = Math.max(0, totalCents - newPaidCents);
   const paymentStatus = newBalanceCents === 0 ? 'paid' : 'partial';
+  // Who took this payment: the staff member signed in at the till (their own
+  // PIN session token), recorded on every payment line and in the order log.
+  const takenBy = idempotencyUserId && idempotencyUserId !== 'legacy' ? idempotencyUserId : null;
+  const takenByName = takenBy
+    ? ((db.prepare('SELECT name FROM users WHERE id = ?').get(takenBy) as { name?: string } | undefined)?.name ?? null)
+    : null;
   const newPayments = prepared.map((line) => {
     const isCash = isCashTender(db, line.payment);
     const tenderedMajor = (line.tenderedCents || 0) / minorFactor;
@@ -2050,6 +2057,8 @@ function applyPaymentBatch(
     return {
       ...paymentRest,
       cash_session_id: activeSessionId,
+      taken_by: takenBy,
+      taken_by_name: takenByName,
       amount: line.amountCents / minorFactor,
       requested_amount: (line.tenderedCents || line.amountCents) / minorFactor,
       amount_omitted: Boolean(line.amountOmitted),
@@ -2076,6 +2085,14 @@ function applyPaymentBatch(
   }
   if (!bill.customer_id && effectiveCustomerId) db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?').run(effectiveCustomerId, changedAt, billId);
   db.prepare(`UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?, payment_details = ?, paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END, updated_at = ? WHERE id = ?`).run(newPaidCents / minorFactor, newBalanceCents / minorFactor, paymentStatus, JSON.stringify(allPayments), paymentStatus, paymentStatus === 'paid' ? changedAt : null, changedAt, billId);
+  if (takenBy && bill.order_id && totalAppliedCents > 0) {
+    recordOrderAudit(db, {
+      orderId: bill.order_id,
+      actorUserId: takenBy,
+      action: 'payment_recorded',
+      details: { bill_id: bill.id, amount: totalAppliedCents / minorFactor, methods: prepared.map((line) => line.payment.method), payment_status: paymentStatus },
+    });
+  }
   let loyaltyPointsEarned = 0;
   if (paymentStatus === 'paid') {
     const unpaidSibling = db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`).get(bill.order_id, bill.id);

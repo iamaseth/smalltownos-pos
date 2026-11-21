@@ -634,18 +634,18 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                           className="block w-full min-w-0 bg-transparent text-3xl font-extrabold text-white tabular-nums outline-none placeholder:text-neutral-600"
                         />
                       </label>
-                      <div className="grid grid-cols-3 gap-1.5" aria-label={`Add ${unit} note`}>
+                      {/* Quick-add notes: one quiet row of small chips under the amount,
+                          so the typed amount stays the focus. KHR shown as "k". */}
+                      <div className="flex flex-wrap gap-1" aria-label={`Add ${unit} note`}>
                         {BACKSTREET_CASH_NOTES[unit].map((note) => (
                           <button
                             key={`${unit}-${note}`}
                             type="button"
                             onClick={() => addCashNote(note, unit)}
                             aria-label={`Add ${unit === 'USD' ? `$${note}` : `${note.toLocaleString('en-US')} KHR`}`}
-                            className={`min-h-11 rounded-xl border-2 text-base font-extrabold ${unit === 'USD'
-                              ? 'border-green-600 bg-green-950 text-green-100 hover:bg-green-900'
-                              : 'border-yellow-600 bg-yellow-950 text-yellow-100 hover:bg-yellow-900'}`}
+                            className={`min-h-8 min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-800/60 px-1.5 text-xs font-semibold tabular-nums hover:bg-neutral-700 active:bg-neutral-600 ${unit === 'USD' ? 'text-green-300' : 'text-yellow-300'}`}
                           >
-                            +{unit === 'USD' ? `$${note}` : note.toLocaleString('en-US')}
+                            +{unit === 'USD' ? `$${note}` : `${note / 1000}k`}
                           </button>
                         ))}
                       </div>

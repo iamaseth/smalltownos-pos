@@ -8,7 +8,8 @@ import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown } from 'lucide-react';
+import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown, UserRound, LogOut } from 'lucide-react';
+import { useRegisterOperator } from '@/hooks/register-operator-context';
 import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { SidebarTrigger } from '@/components/ui/sidebar';
@@ -30,6 +31,8 @@ interface Props {
 export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen, searchSlotRef }: Props) {
   const cart = useCartStore();
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [staffOpen, setStaffOpen] = useState(false);
+  const operator = useRegisterOperator();
   const router = useRouter();
   // BackStreet: shifts open, close and hand over through the Cash Counter screen.
   const openCashScreen = () => router.push(shiftHasOpenSession ? '/cash?go=close' : '/cash?go=open');
@@ -45,7 +48,44 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
     <div className="pos-reference-font relative flex shrink-0 items-center justify-between gap-3 border-b border-[#1e293b] bg-[#0d1527] px-3 py-1.5 text-slate-100">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <SidebarTrigger className="hidden size-9 shrink-0 md:inline-flex" aria-label="Show or hide menu" />
-        {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={openCashScreen} className="hidden md:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
+        {operator ? (
+          /* Staff signed in by PIN: name chip with Switch staff + shift actions. */
+          <div className="relative shrink-0">
+            <button type="button" onClick={() => setStaffOpen(v => !v)} aria-expanded={staffOpen}
+              aria-label={`Signed in as ${operator.name}. Staff menu`}
+              className="flex max-w-44 items-center gap-1.5 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-100 hover:bg-[#243149]">
+              <UserRound size={15} className="shrink-0 text-sky-300" />
+              <span className="truncate">{operator.name}</span>
+              {canUseShift && (shiftHasOpenSession
+                ? <Lock size={12} className="shrink-0 text-emerald-400" aria-label="Shift open" />
+                : <LockOpen size={12} className="shrink-0 text-amber-400" aria-label="No shift open" />)}
+              <ChevronDown size={13} className="shrink-0 text-slate-400" />
+            </button>
+            {staffOpen && <>
+              <button type="button" className="fixed inset-0 z-40 cursor-default" aria-label="Close staff menu" onClick={() => setStaffOpen(false)} />
+              <div className="absolute start-0 top-full z-50 mt-2 w-56 space-y-1 rounded-xl border border-slate-700 bg-[#111a2e] p-2 shadow-2xl">
+                <p className="px-2 pb-1 text-xs text-slate-400">Signed in as <span className="font-semibold text-slate-200">{operator.name}</span></p>
+                <button type="button" onClick={() => {
+                  setStaffOpen(false);
+                  // Unsent items must not pass silently to the next cashier.
+                  const unsent = cart.items.length;
+                  if (unsent > 0 && !window.confirm(`${unsent} item${unsent > 1 ? 's are' : ' is'} in the cart and not sent yet.\n\nOK = clear the cart and log out\nCancel = stay logged in`)) return;
+                  if (unsent > 0) cart.clearCart();
+                  operator.switchStaff();
+                }}
+                  className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700">
+                  <LogOut size={16} /> Log out
+                </button>
+                {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined}
+                  onClick={() => { setStaffOpen(false); openCashScreen(); }}
+                  className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700 disabled:opacity-50">
+                  {shiftHasOpenSession ? <Lock size={16} /> : <LockOpen size={16} />}
+                  {shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
+                </button>}
+              </div>
+            </>}
+          </div>
+        ) : canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={openCashScreen} className="hidden md:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
           {shiftHasOpenSession ? <Lock size={15} className="text-emerald-400" /> : <LockOpen size={15} className="text-amber-400" />}
           <span>{shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}</span>
         </button>}
