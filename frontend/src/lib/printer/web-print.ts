@@ -496,7 +496,7 @@ function getPaperStyles(size: PaperSize): string {
   // Chrome's browser-print fallback must render opaque black text on thermal paper.
   // Keep these rules scoped to the receipt popup, not the POS screen.
   const thermalPrintStyles = `
-    @page { size: ${size === 'thermal80' ? '80mm' : '58mm'} auto; margin: 0; }
+    @page { margin: 0; }
     @media print {
       html, body { width: ${size === 'thermal80' ? '80mm' : '58mm'}; margin: 0 !important; padding: 0 !important; background: #fff !important; }
       .bill-container { width: 100% !important; max-width: 100% !important; padding: 2mm !important; overflow: visible !important; }
