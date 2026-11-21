@@ -1075,6 +1075,20 @@ export default function POSPage() {
     setCheckoutTable(table);
   };
 
+  const [tableFromLink, setTableFromLink] = useState<string | null>(null);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('table');
+    if (!id) return;
+    window.history.replaceState(null, '', window.location.pathname);
+    queueMicrotask(() => setTableFromLink(id));
+  }, []);
+  useEffect(() => {
+    if (!tableFromLink) return;
+    const table = tables.find((tb) => String(tb.id) === tableFromLink);
+    if (!table) return;
+    queueMicrotask(() => { setTableFromLink(null); setCheckoutTable(table); });
+  }, [tableFromLink, tables]);
+
   const handleNewTab = (name: string) => {
     setPendingOrder(null);
     cart.setTableId(null);
