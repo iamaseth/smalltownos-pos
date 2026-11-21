@@ -15,13 +15,15 @@
  */
 import { Router, Request, Response } from 'express';
 import { app } from 'electron';
-import { createHash } from 'crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getDatabase, getSettingValue, localDateInTimezone, now, tenantBusinessDayStartTime, withTxn } from '../db';
 import { requirePermission, hasPermission } from '../services/authorization';
 import { notifyTelegram } from '../services/telegram';
 import { getOpenSession, type CashSessionRow } from '../services/shift-session-gate';
+import { getJWTSecret } from '../security/jwt-secret';
+import QRCode from 'qrcode';
 import { closeSessionTxn, openSessionTxn } from './cash-sessions';
 import { listCashDrawerMovementsForSession, sessionExpectedCash, tenantTimezone } from './cash-closures';
 import {
@@ -76,7 +78,7 @@ function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
 }
 
-function sendError(res: Response, error: unknown, fallback: string): void {
+export function sendError(res: Response, error: unknown, fallback: string): void {
   const statusCode = error instanceof CashCountError ? 400
     : (typeof error === 'object' && error && 'statusCode' in error && typeof (error as { statusCode: unknown }).statusCode === 'number')
       ? (error as { statusCode: number }).statusCode : 500;
@@ -478,6 +480,7 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
     }
     const floatRetained = floatOut ?? parseAmountPair((req.body || {}).float_retained, 'float_retained');
     const explanation = optionalText((req.body || {}).explanation);
+    const passOpenTickets = (req.body || {}).pass_open_tickets === true;
     const result = withTxn(() => {
       const session = loadSession(db, sessionId);
       if (session.status !== 'open') throw httpError('Shift is already closed', 409);
@@ -491,7 +494,7 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
         WHERE b.payment_status NOT IN ('paid', 'refunded', 'partially_refunded') AND o.status != 'cancelled'
           AND COALESCE(b.balance, b.total, 0) > 0 AND b.created_at >= ?
       `).get(session.opened_at) as { c: number };
-      if (Number(unpaid.c) > 0) {
+      if (Number(unpaid.c) > 0 && !passOpenTickets) {
         throw httpError(`Cannot close: ${unpaid.c} unpaid bill(s). Take payment or cancel them first.`, 409);
       }
       const cutoff = now();
@@ -505,9 +508,27 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
         db.prepare(`INSERT INTO cash_reconciliation_notes (reconciliation_id, kind, body, author_id, author_role, created_at) VALUES (?, 'cashier_explanation', ?, ?, ?, ?)`)
           .run(done.id, explanation, me.id, me.role, now());
       }
-      return done;
+      let passedTo: { handover_id: number; tickets: number } | null = null;
+      if (Number(unpaid.c) > 0 && passOpenTickets) {
+        const floatTotals: CashCountTotals = {
+          method: 'manual', usd_cents: floatRetained.usd_cents, khr_riel: floatRetained.khr_riel, rate_khr_per_usd: totals.rate_khr_per_usd,
+          combined_usd_cents: combinedUsdCents(floatRetained.usd_cents, floatRetained.khr_riel, totals.rate_khr_per_usd), denominations: null,
+        };
+        const declaredId = insertCount(db, session.id, 'handover_float_declared', floatTotals, me.id, deviceOf(req));
+        const handoverId = Number(db.prepare(`
+          INSERT INTO cash_handovers (from_session_id, mode, cutoff_at, declared_count_id, status, initiated_by, created_at)
+          VALUES (?, 'standard', ?, ?, 'awaiting_incoming', ?, ?)
+        `).run(session.id, cutoff, declaredId, me.id, now()).lastInsertRowid);
+        const ticketHandoverId = snapshotTickets(db, session.id, handoverId, me.id);
+        const tickets = ticketHandoverId == null ? 0 : Number((db.prepare('SELECT COUNT(*) AS c FROM ticket_handover_items WHERE ticket_handover_id = ?').get(ticketHandoverId) as { c: number }).c);
+        passedTo = { handover_id: handoverId, tickets };
+      }
+      return { done, passedTo };
     });
-    res.json({ reconciliation: shapeReconciliation(result, true), notes: notesFor(db, result.id), needs_explanation: result.status === 'pending_review' && !explanation });
+    res.json({
+      reconciliation: shapeReconciliation(result.done, true), notes: notesFor(db, result.done.id),
+      needs_explanation: result.done.status === 'pending_review' && !explanation, passed_to_next_cashier: result.passedTo,
+    });
     notifyTelegram('shift_close', { sessionId });
   } catch (error) { sendError(res, error, 'Failed to submit closing count'); }
 });
@@ -731,27 +752,145 @@ router.post('/media', requirePermission('cash.shifts.view'), (req: AuthedRequest
       const existing = db.prepare(`SELECT id, kind, mime, bytes, sha256, session_id, created_at FROM media_uploads WHERE idempotency_key = ?`).get(idempotencyKey);
       if (existing) return res.json({ media: existing, duplicate: true });
     }
-    const dataUri = typeof body.data === 'string' ? body.data : '';
-    const match = /^data:([a-z/+.-]+);base64,([A-Za-z0-9+/=\s]+)$/.exec(dataUri);
-    if (!match) throw httpError('data must be a base64 image data URI', 400);
-    const mime = match[1].toLowerCase();
-    const ext = PHOTO_MIME.get(mime);
-    if (!ext) throw httpError('Photo must be JPEG, PNG, WebP or HEIC', 400);
-    const bytes = Buffer.from(match[2], 'base64');
-    if (bytes.length === 0 || bytes.length > MAX_PHOTO_BYTES) throw httpError('Photo is empty or larger than 12 MB', 400);
     const sessionId = body.session_id == null ? null : parseId(body.session_id, 'session id');
     if (sessionId) loadSession(db, sessionId);
-    const sha256 = createHash('sha256').update(bytes).digest('hex');
-    const dir = path.join(uploadsDir(), new Date().toISOString().slice(0, 7));
-    fs.mkdirSync(dir, { recursive: true });
-    const filePath = path.join(dir, `${kind}-${Date.now()}-${sha256.slice(0, 12)}.${ext}`);
-    fs.writeFileSync(filePath, bytes, { flag: 'wx' });
-    const inserted = db.prepare(`
-      INSERT INTO media_uploads (kind, idempotency_key, file_path, mime, bytes, sha256, session_id, uploaded_by, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(kind, idempotencyKey, filePath, mime, bytes.length, sha256, sessionId, me.id, now());
-    res.json({ media: { id: Number(inserted.lastInsertRowid), kind, mime, bytes: bytes.length, sha256, session_id: sessionId } });
+    res.json({ media: storeCashPhoto(db, { kind, data: body.data, sessionId, userId: me.id, idempotencyKey }) });
   } catch (error) { sendError(res, error, 'Failed to store photo'); }
+});
+
+/** Writes a photo to the data volume and records it; the file never goes into SQLite. */
+export function storeCashPhoto(db: Db, input: { kind: 'envelope' | 'purchase_receipt'; data: unknown; sessionId: number | null; userId: string; idempotencyKey: string | null }) {
+  const dataUri = typeof input.data === 'string' ? input.data : '';
+  const match = /^data:([a-z/+.-]+);base64,([A-Za-z0-9+/=\s]+)$/.exec(dataUri);
+  if (!match) throw httpError('data must be a base64 image data URI', 400);
+  const mime = match[1].toLowerCase();
+  const ext = PHOTO_MIME.get(mime);
+  if (!ext) throw httpError('Photo must be JPEG, PNG, WebP or HEIC', 400);
+  const bytes = Buffer.from(match[2], 'base64');
+  if (bytes.length === 0 || bytes.length > MAX_PHOTO_BYTES) throw httpError('Photo is empty or larger than 12 MB', 400);
+  const sha256 = createHash('sha256').update(bytes).digest('hex');
+  const dir = path.join(uploadsDir(), new Date().toISOString().slice(0, 7));
+  fs.mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, `${input.kind}-${Date.now()}-${sha256.slice(0, 12)}.${ext}`);
+  fs.writeFileSync(filePath, bytes, { flag: 'wx' });
+  const inserted = db.prepare(`
+    INSERT INTO media_uploads (kind, idempotency_key, file_path, mime, bytes, sha256, session_id, uploaded_by, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(input.kind, input.idempotencyKey, filePath, mime, bytes.length, sha256, input.sessionId, input.userId, now());
+  return { id: Number(inserted.lastInsertRowid), kind: input.kind, mime, bytes: bytes.length, sha256, session_id: input.sessionId };
+}
+
+/* ── phone receipt upload (QR on the Purchases step) ──────────────────── */
+
+const PHONE_KEY_PREFIX = 'phone:';
+const PHONE_DISMISSED_PREFIX = 'phone-dismissed:';
+export const PHONE_UPLOAD_MAX_PHOTOS = 20;
+const PHONE_LINK_MINUTES = 30;
+
+function phoneLinkKey(): Buffer {
+  return createHmac('sha256', getJWTSecret()).update('cash-receipt-phone-upload').digest();
+}
+
+/** Short-lived link token for one shift. Signed with a key derived from, but different to, the login secret. */
+export function createPhoneUploadToken(sessionId: number, userId: string): { token: string; expires_at: string } {
+  const exp = Date.now() + PHONE_LINK_MINUTES * 60 * 1000;
+  const payload = Buffer.from(JSON.stringify({ s: sessionId, u: userId, e: exp })).toString('base64url');
+  const sig = createHmac('sha256', phoneLinkKey()).update(payload).digest('base64url');
+  return { token: `${payload}.${sig}`, expires_at: new Date(exp).toISOString() };
+}
+
+export function verifyPhoneUploadToken(token: unknown): { sessionId: number; userId: string; expiresAt: number } {
+  if (typeof token !== 'string' || token.length > 600) throw httpError('This link is not valid', 401);
+  const [payload, sig] = token.split('.');
+  if (!payload || !sig) throw httpError('This link is not valid', 401);
+  const expected = createHmac('sha256', phoneLinkKey()).update(payload).digest();
+  const given = Buffer.from(sig, 'base64url');
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) throw httpError('This link is not valid', 401);
+  let data: { s?: unknown; u?: unknown; e?: unknown };
+  try { data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')); } catch { throw httpError('This link is not valid', 401); }
+  if (typeof data.s !== 'number' || typeof data.u !== 'string' || typeof data.e !== 'number') throw httpError('This link is not valid', 401);
+  if (Date.now() > data.e) throw httpError('This link has expired. Scan the new code on the till.', 401);
+  return { sessionId: data.s, userId: data.u, expiresAt: data.e };
+}
+
+/** Photos sent from the phone for this shift that are not yet a cash-spent line or dismissed. */
+export function pendingPhoneReceipts(db: Db, sessionId: number) {
+  return db.prepare(`
+    SELECT m.id, m.created_at FROM media_uploads m
+    WHERE m.session_id = ? AND m.kind = 'purchase_receipt' AND m.idempotency_key LIKE '${PHONE_KEY_PREFIX}%'
+      AND NOT EXISTS (SELECT 1 FROM purchase_receipts p WHERE p.media_id = m.id)
+    ORDER BY m.id
+  `).all(sessionId) as { id: number; created_at: string }[];
+}
+
+export function phoneUploadCount(db: Db, sessionId: number): number {
+  return Number((db.prepare(`
+    SELECT COUNT(*) AS c FROM media_uploads WHERE session_id = ? AND kind = 'purchase_receipt'
+      AND (idempotency_key LIKE '${PHONE_KEY_PREFIX}%' OR idempotency_key LIKE '${PHONE_DISMISSED_PREFIX}%')
+  `).get(sessionId) as { c: number }).c);
+}
+
+/** Stores one phone photo for an open shift, within the per-shift limit. */
+export function storePhoneReceipt(db: Db, token: unknown, data: unknown) {
+  const link = verifyPhoneUploadToken(token);
+  return withTxn(() => {
+    const session = loadSession(db, link.sessionId);
+    if (session.status !== 'open') throw httpError('This shift is closed. Scan the new code on the till.', 409);
+    if (phoneUploadCount(db, session.id) >= PHONE_UPLOAD_MAX_PHOTOS) throw httpError(`Limit of ${PHONE_UPLOAD_MAX_PHOTOS} photos for this shift`, 429);
+    return storeCashPhoto(db, { kind: 'purchase_receipt', data, sessionId: session.id, userId: link.userId, idempotencyKey: `${PHONE_KEY_PREFIX}${randomUUID()}` });
+  });
+}
+
+export function phoneUploadInfo(db: Db, token: unknown) {
+  const link = verifyPhoneUploadToken(token);
+  const session = loadSession(db, link.sessionId);
+  return {
+    open: session.status === 'open',
+    cashier: (session as SessionRow & { opened_by_name?: string | null }).opened_by_name ?? null,
+    uploaded: phoneUploadCount(db, session.id),
+    max_photos: PHONE_UPLOAD_MAX_PHOTOS,
+    expires_at: new Date(link.expiresAt).toISOString(),
+  };
+}
+
+router.post('/sessions/:id/phone-upload-link', requirePermission('cash.shifts.close'), async (req: AuthedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const me = actor(req);
+    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), me);
+    let origin: string;
+    try {
+      const parsed = new URL(String((req.body || {}).origin || ''));
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('bad protocol');
+      origin = parsed.origin;
+    } catch { throw httpError('origin must be the address of this POS', 400); }
+    const link = createPhoneUploadToken(session.id, me.id);
+    const url = `${origin}/receipt-upload/?t=${encodeURIComponent(link.token)}`;
+    const qr = await QRCode.toDataURL(url, { margin: 1, width: 320 });
+    res.json({ ...link, url, qr });
+  } catch (error) { sendError(res, error, 'Failed to create the phone link'); }
+});
+
+router.get('/sessions/:id/phone-receipts', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), actor(req));
+    res.json({ photos: pendingPhoneReceipts(db, session.id), max_photos: PHONE_UPLOAD_MAX_PHOTOS });
+  } catch (error) { sendError(res, error, 'Failed to load phone photos'); }
+});
+
+/** Hides a phone photo from the list; the file and its record are kept. */
+router.post('/sessions/:id/phone-receipts/:mediaId/dismiss', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), actor(req));
+    const result = db.prepare(`
+      UPDATE media_uploads SET idempotency_key = '${PHONE_DISMISSED_PREFIX}' || substr(idempotency_key, ${PHONE_KEY_PREFIX.length + 1})
+      WHERE id = ? AND session_id = ? AND idempotency_key LIKE '${PHONE_KEY_PREFIX}%'
+    `).run(parseId(req.params.mediaId, 'media id'), session.id);
+    if (result.changes === 0) throw httpError('Photo not found', 404);
+    res.json({ ok: true });
+  } catch (error) { sendError(res, error, 'Failed to remove the photo'); }
 });
 
 /** Streams a stored photo to managers/owners or to the uploader. */
