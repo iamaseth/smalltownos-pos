@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { printerService, type PrinterStatus, type PrinterInfo, type PrintMode } from '@/lib/printer/PrinterService';
-import { runPrintJob, itemBatchHash, type PrintTransport } from '@/lib/printer/print-jobs';
+import { runPrintJob, itemBatchHash, PrintSkippedError, type PrintTransport } from '@/lib/printer/print-jobs';
 import {
   buildClassicReceiptBytes,
   buildCompactReceiptBytes,
@@ -110,7 +110,8 @@ interface PrinterState {
   disconnect: () => Promise<void>;
   /** 'cloud' on the Railway POS (print from this computer only), 'desktop' in the app. */
   runtime: 'cloud' | 'desktop' | null;
-  printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions & { skipPrintLedger?: boolean }) => Promise<PrintWarning[]>;
+  /** `userRequested`: a staff tap on Print/Bill; if this bill was already printed it prints again marked REPRINT. */
+  printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions & { skipPrintLedger?: boolean; userRequested?: boolean }) => Promise<PrintWarning[]>;
   printBillDirect: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
   printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
   printKot: (order: Order, opts?: KotOptions & { items?: OrderItem[]; skipPrintLedger?: boolean }) => Promise<PrintWarning[]>;
@@ -189,13 +190,19 @@ export const usePrinterStore = create<PrinterState>()(
         await printerService.awaitPendingReconnect();
         const isReprint = opts?.isReprint ?? false;
         const stage = bill.payment_status === 'paid' ? 'paid' : 'check';
-        return runPrintJob({
-          jobKey: isReprint ? `bill:${bill.id}:reprint:${Date.now()}` : `bill:${bill.id}:${stage}`,
+        const run = (reprint: boolean) => runPrintJob({
+          jobKey: reprint ? `bill:${bill.id}:reprint:${Date.now()}` : `bill:${bill.id}:${stage}`,
           kind: 'receipt',
-          label: `Receipt ${bill.bill_number ?? bill.id}${isReprint ? ' (reprint)' : ''}`,
+          label: `Receipt ${bill.bill_number ?? bill.id}${reprint ? ' (reprint)' : ''}`,
           transport: get().currentTransport(),
-          payload: { billId: bill.id, isReprint },
-        }, () => get().printBillDirect(bill, tenant, opts));
+          payload: { billId: bill.id, isReprint: reprint },
+        }, () => get().printBillDirect(bill, tenant, { ...opts, isReprint: reprint }));
+        try {
+          return await run(isReprint);
+        } catch (error) {
+          if (!isReprint && opts?.userRequested && error instanceof PrintSkippedError && error.reason !== 'in_progress') return run(true);
+          throw error;
+        }
       },
 
       printBillDirect: async (bill, tenant, opts) => {

@@ -645,7 +645,7 @@ export default function OrdersPage() {
           number_digits: currentTenant?.number_digits,
           calendar: currentTenant?.calendar,
         },
-        { isReprint }
+        { isReprint, userRequested: true }
       );
       toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
       showPrintWarningsToast(printWarnings);

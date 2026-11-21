@@ -475,12 +475,12 @@ export default function POSPage() {
     return data.bill as Bill;
   };
 
-  const printBillForTenant = async (bill: Bill, force = false) => {
+  const printBillForTenant = async (bill: Bill, force = false, userRequested = false) => {
     if (!currentTenant) return;
     if (!force && !autoPrintBill) return;
 
     try {
-      const printWarnings = await printBill(bill, currentTenant);
+      const printWarnings = await printBill(bill, currentTenant, userRequested ? { userRequested: true } : undefined);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       if (err instanceof PrintSkippedError) { toast(err.message, { icon: '🖨️' }); return; }
@@ -1252,7 +1252,7 @@ export default function POSPage() {
   const printCustomerBill = async (orderId: number | string) => {
     try {
       const { data } = await api.post('/bills/generate', { order_id: Number(orderId) });
-      await printBillForTenant(await fetchLatestBill(data.bill.id), true);
+      await printBillForTenant(await fetchLatestBill(data.bill.id), true, true);
     } catch {
       toast.error(t('receiptPrintFailed'));
     }
