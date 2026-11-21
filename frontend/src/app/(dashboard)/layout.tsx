@@ -18,9 +18,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const normalizedPath = pathname?.replace(/\/+$/, '') || '/';
   const isPos = normalizedPath === '/pos' || normalizedPath === '/kds';
   const isSettings = normalizedPath === '/settings';
-  // The PIN lock guards the till only. The kitchen display must never lock
-  // after idle time, or the kitchen loses sight of open tickets.
-  const isRegister = normalizedPath === '/pos';
+  // The staff PIN covers every page so one unlock lasts the shift until 5 idle minutes.
+  // The kitchen display must never lock, or the kitchen loses sight of open tickets.
+  const isRegister = normalizedPath !== '/kds';
   const registerAccess = useRegisterAccess(isRegister);
   // Sync printer status early so hardware and WebUSB reconnect before first print.
   usePrinterStatusSync();
@@ -50,7 +50,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <StatusBar showUpdateBadge={false} />
           </SidebarInset>
           {isRegister && registerAccess.operator && (
-            <div className="fixed end-3 top-14 z-[90] flex items-center gap-2 rounded-lg border bg-card/95 px-3 py-2 shadow-md">
+            <div className={`fixed end-3 z-[90] flex items-center gap-2 rounded-lg border bg-card/95 px-3 py-2 shadow-md ${normalizedPath === '/pos' ? 'top-14' : 'bottom-10'}`}>
               <span className="max-w-32 truncate text-xs font-medium">{registerAccess.operator.name}</span>
               <button type="button" onClick={registerAccess.lock}
                 className="rounded-md border px-2 py-1 text-xs font-semibold hover:bg-muted"

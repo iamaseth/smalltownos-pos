@@ -23,6 +23,9 @@ import { resolveTaxComponents } from './tax-components';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 
 /** Business contact facts and visibility flags for one bill print run. */
+
+/** Removed lines (and their void offsets) are not shown to the customer; totals already exclude them. */
+const REMOVED_ITEM_STATUSES = new Set(['cancelled', 'voided', 'void_adjustment']);
 export interface BillBusinessOptions {
   businessName?: string;
   address?: string;
@@ -138,7 +141,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
   const rasterCustomerPhone = customerCountryCode && customerPhone && !customerPhone.startsWith(customerCountryCode)
     ? `${customerCountryCode} ${customerPhone}`
     : customerPhone;
-  const items = order?.items ?? [];
+  const items = (order?.items ?? []).filter((item) => !REMOVED_ITEM_STATUSES.has(String(item?.status ?? '')));
 
   const showTaxId = opts.includeTaxId === true && !!opts.taxRegistrationNumber;
 

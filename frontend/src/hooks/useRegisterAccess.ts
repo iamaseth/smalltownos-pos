@@ -1,12 +1,14 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import api, { setRegisterSessionToken } from '@/lib/api';
+import api, { readRegisterSession, REGISTER_IDLE_TIMEOUT_MS, setRegisterSessionToken, touchRegisterSession, type RegisterOperator as Operator } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 
-export const REGISTER_IDLE_TIMEOUT_MS = 300000;
+export { REGISTER_IDLE_TIMEOUT_MS };
 
-type Operator = { id: string; name: string; role: string; permissions: string[] };
-
+/**
+ * Staff PIN access for every staff page except the kitchen display. One PIN unlock lasts
+ * across pages and reloads until 5 minutes without activity, then the PIN screen returns.
+ */
 export function useRegisterAccess(onRegister: boolean) {
   // null = not known yet. The lock only applies once staff PINs exist.
   const [pinLockEnabled, setPinLockEnabled] = useState<boolean | null>(null);
@@ -29,6 +31,12 @@ export function useRegisterAccess(onRegister: boolean) {
   }, []);
 
   useEffect(() => {
+    const saved = readRegisterSession();
+    if (!saved?.operator) return;
+    queueMicrotask(() => { setOperator(saved.operator); setLocked(false); });
+  }, []);
+
+  useEffect(() => {
     if (!onRegister) return;
     let active = true;
     api.get('/register-access/status')
@@ -40,8 +48,12 @@ export function useRegisterAccess(onRegister: boolean) {
 
   useEffect(() => {
     if (!enabled || locked) return;
-    let lastActivity = Date.now();
-    const activity = () => { lastActivity = Date.now(); };
+    let lastActivity = readRegisterSession()?.lastActivity ?? Date.now();
+    let lastSaved = 0;
+    const activity = () => {
+      lastActivity = Date.now();
+      if (lastActivity - lastSaved > 5000) { lastSaved = lastActivity; touchRegisterSession(); }
+    };
     const check = () => {
       if (Date.now() - lastActivity >= REGISTER_IDLE_TIMEOUT_MS && !switching.current) {
         void restoreAppUser();
@@ -68,11 +80,11 @@ export function useRegisterAccess(onRegister: boolean) {
   }, []);
 
   useEffect(() => {
-    if (enabled || !operator) return;
+    if (enabled || !operator || (onRegister && pinLockEnabled === null)) return;
     // Defer the identity restore until after this route-state effect.
     const restore = window.setTimeout(() => { void restoreAppUser(); }, 0);
     return () => window.clearTimeout(restore);
-  }, [enabled, operator, restoreAppUser]);
+  }, [enabled, operator, onRegister, pinLockEnabled, restoreAppUser]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -91,7 +103,7 @@ export function useRegisterAccess(onRegister: boolean) {
         setError('Employee session could not be created');
         return false;
       }
-      setRegisterSessionToken(data.access_token);
+      setRegisterSessionToken(data.access_token, data.operator);
       await useAuthStore.getState().refreshAuthContext();
       const freshTenant = useAuthStore.getState().currentTenant;
       if (!freshTenant?.permission_ids?.includes('pos.use')) {

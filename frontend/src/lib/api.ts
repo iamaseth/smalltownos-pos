@@ -1,11 +1,47 @@
 import axios from 'axios';
 
 let authRedirectInProgress = false;
-let registerSessionToken: string | null = null;
+export const REGISTER_IDLE_TIMEOUT_MS = 300000;
+const REGISTER_SESSION_KEY = 'flo.registerSession';
 
-/** Ephemeral employee token; deliberately never written to localStorage. */
-export function setRegisterSessionToken(token: string | null): void {
+export type RegisterOperator = { id: string; name: string; role: string; permissions: string[] };
+type StoredRegisterSession = { token: string; operator: RegisterOperator | null; lastActivity: number };
+
+/**
+ * The staff PIN session survives page changes and reloads in this browser tab
+ * (sessionStorage, never localStorage) until it has been idle for the timeout.
+ */
+export function readRegisterSession(): StoredRegisterSession | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(REGISTER_SESSION_KEY) || 'null') as StoredRegisterSession | null;
+    if (!stored?.token || Date.now() - Number(stored.lastActivity || 0) >= REGISTER_IDLE_TIMEOUT_MS) {
+      window.sessionStorage.removeItem(REGISTER_SESSION_KEY);
+      return null;
+    }
+    return stored;
+  } catch {
+    return null;
+  }
+}
+
+let registerSessionToken: string | null = readRegisterSession()?.token ?? null;
+
+export function setRegisterSessionToken(token: string | null, operator: RegisterOperator | null = null): void {
   registerSessionToken = token;
+  if (typeof window === 'undefined') return;
+  try {
+    if (token) window.sessionStorage.setItem(REGISTER_SESSION_KEY, JSON.stringify({ token, operator, lastActivity: Date.now() }));
+    else window.sessionStorage.removeItem(REGISTER_SESSION_KEY);
+  } catch { /* storage unavailable: the session still lives in memory */ }
+}
+
+export function touchRegisterSession(): void {
+  if (!registerSessionToken || typeof window === 'undefined') return;
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(REGISTER_SESSION_KEY) || 'null') as StoredRegisterSession | null;
+    if (stored?.token === registerSessionToken) window.sessionStorage.setItem(REGISTER_SESSION_KEY, JSON.stringify({ ...stored, lastActivity: Date.now() }));
+  } catch { /* ignore */ }
 }
 
 // Base URL derived from window.location.origin so LAN clients connect to host IP.

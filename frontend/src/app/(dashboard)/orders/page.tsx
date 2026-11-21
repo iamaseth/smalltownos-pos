@@ -141,9 +141,9 @@ export default function OrdersPage() {
   const [shiftOpenedAt, setShiftOpenedAt] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
     try {
-      return typeof window !== 'undefined' && window.localStorage.getItem('orders-view-mode') === 'list' ? 'list' : 'cards';
+      return typeof window !== 'undefined' && window.localStorage.getItem('orders-view-mode') === 'cards' ? 'cards' : 'list';
     } catch {
-      return 'cards';
+      return 'list';
     }
   });
   type DateRange = 'shift' | 'today' | 'yesterday' | 'week' | 'custom';
@@ -564,6 +564,22 @@ export default function OrdersPage() {
     try {
       const { data } = await api.post('/bills/generate', { order_id: orderId });
       setPaymentBill(data.bill);
+    } catch {
+      toast.error(tOrders('generateBillFailed'));
+    } finally {
+      setGeneratingBill(null);
+    }
+  };
+
+  /** Bill for the customer to check before paying: creates the bill first if there isn't one yet. */
+  const printCustomerBill = async (order: Order) => {
+    const existing = order.bill?.id ?? order.bills?.find((b) => b.payment_status !== 'paid')?.id ?? order.bills?.[0]?.id;
+    if (existing) { setConfirmPrintBillId(existing); return; }
+    setGeneratingBill(order.id);
+    try {
+      const { data } = await api.post('/bills/generate', { order_id: order.id });
+      await fetchOrders();
+      setConfirmPrintBillId(data.bill.id);
     } catch {
       toast.error(tOrders('generateBillFailed'));
     } finally {
@@ -1198,7 +1214,12 @@ export default function OrdersPage() {
                     <td className="px-2 py-3"><span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold ${badge.cls}`}>{badge.text}</span></td>
                     <td className="px-4 py-3 text-end" onClick={(e) => e.stopPropagation()}>
                       {canPay ? (
-                        <Button size="sm" onClick={() => handleCheckout(order.id)} disabled={generatingBill === order.id}>Take payment</Button>
+                        <div className="flex justify-end gap-2">
+                          <Button size="sm" variant="outline" onClick={() => printCustomerBill(order)} disabled={generatingBill === order.id} aria-label={`Print bill for ${orderPlace(order)}`}>
+                            <Printer className="size-4" /> Bill
+                          </Button>
+                          <Button size="sm" onClick={() => handleCheckout(order.id)} disabled={generatingBill === order.id}>Take payment</Button>
+                        </div>
                       ) : (
                         <Button size="sm" variant="outline" onClick={() => setPanelOrderId(order.id)}>View</Button>
                       )}
@@ -1225,7 +1246,6 @@ export default function OrdersPage() {
         const order = panelOrderId != null ? loadedOrders.find((o) => o.id === panelOrderId) : null;
         if (!order) return null;
         const paid = paymentStatusOf(order) === 'paid';
-        const billId = order.bill?.id ?? order.bills?.[0]?.id ?? null;
         return (
           <OrderSidePanel
             order={order}
@@ -1234,7 +1254,7 @@ export default function OrdersPage() {
             onClose={() => setPanelOrderId(null)}
             onTakePayment={() => { setPanelOrderId(null); handleCheckout(order.id); }}
             onAddItems={() => { setPanelOrderId(null); openAddItemsModal(order); }}
-            onPrint={billId ? () => setConfirmPrintBillId(billId) : null}
+            onPrint={order.status === 'cancelled' ? null : () => { void printCustomerBill(order); }}
             onCustomer={() => { setLinkCustomerOrderId(order.id); setLinkCustomerSearch(''); setLinkCustomerResults([]); }}
             onVoid={() => setVoidComp({ orderId: order.id, action: 'void' })}
             onComp={() => setVoidComp({ orderId: order.id, action: 'comp' })}
