@@ -6,9 +6,9 @@ name: CI
 
 on:
   push:
-    branches: [main, ui/backstreet-payment-touch-keypad]
+    branches: [main, ui/backstreet-payment-touch-keypad, fix/backstreet-thermal-receipt-current]
   pull_request:
-    branches: [main, deploy/backstreet-v100]
+    branches: [main, deploy/backstreet-v100, feat/pos-print-bill-2]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

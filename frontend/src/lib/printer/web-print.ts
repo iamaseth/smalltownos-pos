@@ -426,15 +426,35 @@ function getPaperStyles(size: PaperSize): string {
     .text-italic { font-style: italic; color: #888; }
   `;
 
+  // Thermal printers are monochrome. Force the browser receipt to send solid,
+  // opaque black text instead of gray shades that become faint dots.
+  // These rules apply only to thermal receipt print output, not the POS screen.
+  const thermalPrintStyles = `
+    @media print {
+      html, body { background: #fff !important; }
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .bill-container { background: #fff !important; }
+      .bill-container, .bill-container * {
+        color: #000 !important;
+        -webkit-text-fill-color: #000 !important;
+        opacity: 1 !important;
+        text-shadow: none !important;
+      }
+      .bill-container table { width: 100% !important; }
+      .bill-container td, .bill-container th { overflow-wrap: anywhere; }
+      .bill-container .num { overflow-wrap: normal; }
+    }
+  `;
+
   switch (size) {
     case 'thermal58':
-      return baseStyles + `
+      return baseStyles + thermalPrintStyles + `
         .bill-container { padding: 5px; max-width: 58mm; font-size: 10px; }
         .header h1 { font-size: 14px; }
         .items-table th, .items-table td, .tax-table td, .totals-table td, .payments-table td { padding: 2px 4px; }
       `;
     case 'thermal80':
-      return baseStyles + `
+      return baseStyles + thermalPrintStyles + `
         .bill-container { padding: 10px; max-width: 80mm; font-size: 11px; }
         .header h1 { font-size: 16px; }
       `;

@@ -183,6 +183,12 @@ async function run() {
     });
 
     assert('HTML contains lang="fa-IR" and dir="rtl"', html.includes('<html lang="fa-IR" dir="rtl">'));
+    assert('Thermal receipt print CSS forces opaque black text',
+      html.includes('color: #000 !important;') &&
+      html.includes('-webkit-text-fill-color: #000 !important;') &&
+      html.includes('opacity: 1 !important;') &&
+      html.includes('print-color-adjust: exact;')
+    );
     assert('CSS contains RTL logical properties and bidi styles',
       html.includes('.text-end { text-align: end !important; }') &&
       html.includes('.num { unicode-bidi: isolate; white-space: nowrap; }') &&
