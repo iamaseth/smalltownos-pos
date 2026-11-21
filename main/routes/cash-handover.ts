@@ -899,9 +899,11 @@ router.get('/media/:id', requirePermission('cash.shifts.view'), (req: AuthedRequ
     const db = getDatabase();
     const me = actor(req);
     const row = db.prepare(`SELECT * FROM media_uploads WHERE id = ?`).get(parseId(req.params.id, 'media id')) as
-      { file_path: string; mime: string; uploaded_by: string } | undefined;
+      { file_path: string; mime: string; uploaded_by: string; session_id: number | null } | undefined;
     if (!row) throw httpError('Photo not found', 404);
-    if (row.uploaded_by !== me.id && !canResolve(me.id) && !hasPermission(me.id, 'cash.history.view')) throw httpError('Not allowed', 403);
+    const ownShift = row.session_id != null
+      && (db.prepare(`SELECT opened_by FROM cash_sessions WHERE id = ?`).get(row.session_id) as { opened_by: string } | undefined)?.opened_by === me.id;
+    if (row.uploaded_by !== me.id && !ownShift && !canResolve(me.id) && !hasPermission(me.id, 'cash.history.view')) throw httpError('Not allowed', 403);
     if (!fs.existsSync(row.file_path)) throw httpError('Photo file is missing on the server', 410);
     res.type(row.mime).send(fs.readFileSync(row.file_path));
   } catch (error) { sendError(res, error, 'Failed to read photo'); }

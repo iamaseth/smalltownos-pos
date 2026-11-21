@@ -145,6 +145,7 @@ export default function CashPage() {
   const [explanation, setExplanation] = useState('');
   const [disputes, setDisputes] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
+  const [openStep, setOpenStep] = useState<'bills' | 'float'>('bills');
   const rate = status?.rate_khr_per_usd ?? 4100;
 
   const load = useCallback(async () => {
@@ -168,6 +169,11 @@ export default function CashPage() {
         if (entry === 'open' && !s && st.awaiting_incoming.length === 0) {
           setFromPos(true);
           setView({ name: 'open' });
+        } else if (entry === 'open' && !s && st.awaiting_incoming.length > 0) {
+          const h = st.awaiting_incoming[0];
+          setFromPos(true);
+          setOpenStep(h.tickets.length > 0 ? 'bills' : 'float');
+          setView({ name: 'receive', handoverId: h.id, fromCashier: h.from_cashier });
         } else if (entry === 'close' && s && (s.is_mine || st.can_resolve)) {
           setFromPos(true);
           setView({ name: 'close', sessionId: s.id });
@@ -225,8 +231,8 @@ export default function CashPage() {
           <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No shift open</div>
         )}
         {!s && status.awaiting_incoming.map((h) => (
-          <BigButton key={h.id} tone="primary" onClick={() => go({ name: 'receive', handoverId: h.id, fromCashier: h.from_cashier })}>
-            Receive drawer from {h.from_cashier} — count the float
+          <BigButton key={h.id} tone="primary" onClick={() => { setOpenStep(h.tickets.length > 0 ? 'bills' : 'float'); go({ name: 'receive', handoverId: h.id, fromCashier: h.from_cashier }); }}>
+            Open shift{h.tickets.length > 0 ? ` (${h.tickets.length} bills from ${h.from_cashier})` : ` after ${h.from_cashier}`}
           </BigButton>
         ))}
         {!s && status.awaiting_incoming.length === 0 && (
@@ -262,7 +268,9 @@ export default function CashPage() {
     body = (
       <div className="space-y-4">
         {header('Open shift')}
-        <p className="text-sm text-muted-foreground">Count the float (starting cash) in the drawer. Use − if you tap too many.</p>
+        <StepDots steps={['Float', 'POS']} current={0} />
+        <h2 className="text-2xl font-bold">Count the float</h2>
+        <p className="text-base text-muted-foreground">Count the money in the drawer. Use − if you tap too many.</p>
         <CashCounter value={count} onChange={setCount} rate={rate} />
         <BigButton tone="primary" disabled={busy || countIsEmpty} onClick={() => submit(async () => {
           try {
@@ -270,7 +278,7 @@ export default function CashPage() {
             toast.success(`Shift opened with ${floatText}`);
             router.push('/pos');
           } catch (error) { toast.error(errorText(error, 'Could not open shift')); }
-        })}>{countIsEmpty ? 'Count the float to open the shift' : `Open shift with ${floatText}`}</BigButton>
+        })}>{countIsEmpty ? 'Count the float first' : `Start with ${floatText}: go to POS`}</BigButton>
       </div>
     );
   }
@@ -278,66 +286,57 @@ export default function CashPage() {
   if (view.name === 'receive') {
     const tickets = status.awaiting_incoming.find((h) => h.id === view.handoverId)?.tickets ?? [];
     const disputedOrders = Object.entries(disputes).map(([orderId, reason]) => ({ order_id: Number(orderId), reason: reason.trim() }));
-    const missingReason = disputedOrders.some((d) => !d.reason);
+    const steps = tickets.length > 0 ? ['Open bills', 'Float', 'POS'] : ['Float', 'POS'];
+    const step = tickets.length > 0 && openStep === 'bills' ? 'bills' : 'float';
+    const owed = tickets.reduce((sum, t) => sum + Number(t.balance || 0), 0);
+    const openTotals = cashCountTotals(count, rate);
     body = (
       <div className="space-y-4">
-        {header('Receive drawer')}
-        <p className="text-sm text-muted-foreground">
-          Count the float {view.fromCashier} left in the drawer. Count it yourself — your count becomes your opening float.
-        </p>
-        <CashCounter value={count} onChange={setCount} rate={rate} title="Float in the drawer" />
-        {tickets.length > 0 && (
-          <section className="rounded-xl border bg-card p-4">
-            <h3 className="font-semibold">Open tickets from {view.fromCashier} ({tickets.length})</h3>
-            <p className="mb-2 text-xs text-muted-foreground">Check each ticket. Tick Dispute and say why if one is wrong; the rest are accepted.</p>
-            <ul className="divide-y">
-              {tickets.map((ticket) => {
-                const disputed = ticket.order_id in disputes;
-                return (
-                  <li key={ticket.order_id} className="py-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm">
-                        <span className="font-medium">{ticket.order_number}</span>
-                        {ticket.table_label ? ` · ${ticket.table_label}` : ''}
-                        <span className="text-muted-foreground"> · {formatUsdCents(Math.round(ticket.balance * 100))} due</span>
-                      </span>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input type="checkbox" className="size-5" checked={disputed}
-                          onChange={(e) => setDisputes((current) => {
-                            const next = { ...current };
-                            if (e.target.checked) next[ticket.order_id] = ''; else delete next[ticket.order_id];
-                            return next;
-                          })} />
-                        Dispute
-                      </label>
-                    </div>
-                    {disputed && (
-                      <input value={disputes[ticket.order_id]} placeholder="What is wrong with this ticket?" maxLength={200}
-                        onChange={(e) => setDisputes((current) => ({ ...current, [ticket.order_id]: e.target.value }))}
-                        className="mt-2 w-full rounded-lg border px-3 py-2 text-sm" />
-                    )}
-                  </li>
-                );
-              })}
+        {header('Open shift')}
+        <StepDots steps={steps} current={step === 'bills' ? 0 : steps.length - 2} />
+        {step === 'bills' && (
+          <>
+            <h2 className="text-2xl font-bold">Take these open bills?</h2>
+            <p className="text-base text-muted-foreground">From {view.fromCashier} · {formatUsdCents(Math.round(owed * 100))}</p>
+            <ul className="space-y-2">
+              {tickets.map((ticket) => (
+                <li key={ticket.order_id} className="flex items-center justify-between rounded-xl border-2 px-4 py-3 text-lg">
+                  <span className="font-semibold">{ticket.table_label || `#${String(ticket.order_number).split('-').pop()}`}</span>
+                  <span className="tabular-nums">{formatUsdCents(Math.round(ticket.balance * 100))}</span>
+                </li>
+              ))}
             </ul>
-            {missingReason && <p className="mt-2 text-xs text-red-600">Add a reason for each disputed ticket.</p>}
-          </section>
+            <BigButton tone="primary" onClick={() => { setDisputes({}); setOpenStep('float'); }}>Yes, I take them</BigButton>
+            <BigButton onClick={() => {
+              setDisputes(Object.fromEntries(tickets.map((t) => [t.order_id, 'Not right: call manager'])));
+              setOpenStep('float');
+              toast('The manager will check these bills.', { icon: '⚠️' });
+            }}>Not right: call manager</BigButton>
+          </>
         )}
-        <BigButton tone="primary" disabled={busy || countIsEmpty || missingReason} onClick={() => submit(async () => {
-          try {
-            const res = await api.post(`/cash-handover/handovers/${view.handoverId}/receive`, {
-              count: cashCountPayload(count), device: 'pos', disputed_orders: disputedOrders,
-            });
-            const h = res.data.handover;
-            if (h.status === 'flagged') {
-              toast(`Difference vs ${view.fromCashier}: ${formatUsdCents(h.diff.usd_cents)} · ${formatKhr(h.diff.khr_riel)} — flagged for the manager`, { icon: '⚠️', duration: 8000 });
-            } else {
-              toast.success('Float matches. Shift opened.');
-            }
-            go({ name: 'home' });
-            await load();
-          } catch (error) { toast.error(errorText(error, 'Could not receive drawer')); }
-        })}>Confirm my count and start</BigButton>
+        {step === 'float' && (
+          <>
+            <h2 className="text-2xl font-bold">Count the float</h2>
+            <p className="text-base text-muted-foreground">Count the money {view.fromCashier} left in the drawer.</p>
+            {disputedOrders.length > 0 && <p className="rounded-lg bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-800">The manager will check the open bills.</p>}
+            <CashCounter value={count} onChange={setCount} rate={rate} title="Float" />
+            <BigButton tone="primary" disabled={busy || countIsEmpty} onClick={() => submit(async () => {
+              try {
+                const res = await api.post(`/cash-handover/handovers/${view.handoverId}/receive`, {
+                  count: cashCountPayload(count), device: 'pos', disputed_orders: disputedOrders,
+                });
+                const h = res.data.handover;
+                if (h.status === 'flagged') {
+                  toast(`Float is different from ${view.fromCashier}: ${formatUsdCents(h.diff.usd_cents)} · ${formatKhr(h.diff.khr_riel)}. The manager will check.`, { icon: '⚠️', duration: 8000 });
+                } else {
+                  toast.success('Float OK. Shift open.');
+                }
+                router.push('/pos');
+              } catch (error) { toast.error(errorText(error, 'Could not open the shift')); }
+            })}>{countIsEmpty ? 'Count the float first' : `Start with ${formatUsdCents(openTotals.usd)} + ${formatKhr(openTotals.khr)}: go to POS`}</BigButton>
+            {tickets.length > 0 && <button type="button" className="text-sm underline" onClick={() => setOpenStep('bills')}>Back</button>}
+          </>
+        )}
       </div>
     );
   }
@@ -368,8 +367,7 @@ export default function CashPage() {
   if (view.name === 'close' && status.open_session) {
     body = (
       <SimpleClose header={header} sessionId={view.sessionId} rate={rate} openingFloat={status.open_session.opening_float}
-        onClosed={() => { if (fromPos) { router.push('/pos'); return; } go({ name: 'home' }); void load(); }}
-        onHandover={() => go({ name: 'handover', sessionId: view.sessionId })} />
+        onClosed={() => { if (fromPos) { router.push('/pos'); return; } go({ name: 'home' }); void load(); }} />
     );
   }
 
@@ -458,17 +456,21 @@ interface ClosePreview {
   untracked_cash_lines: number;
 }
 
-const STEPS = ['Take out float', 'Count cash', 'Cash spent', 'Check & close'] as const;
+type CloseStep = 'bills' | 'float' | 'sales' | 'purchases' | 'result';
+const CLOSE_STEP_LABELS: Record<CloseStep, string> = { bills: 'Open bills', float: 'Float', sales: 'Cash sales', purchases: 'Purchases', result: 'Result' };
 
-function StepDots({ step }: { step: number }) {
+function StepDots({ steps, current }: { steps: string[]; current: number }) {
   return (
-    <ol className="mb-4 grid grid-cols-4 gap-1 text-center text-xs">
-      {STEPS.map((label, i) => (
-        <li key={label} className={`rounded-lg px-1 py-2 ${i === step ? 'bg-emerald-600 font-semibold text-white' : i < step ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-muted-foreground'}`}>
-          {i + 1}. {label}
-        </li>
-      ))}
-    </ol>
+    <div className="mb-4">
+      <p className="mb-1 text-sm font-semibold text-muted-foreground">Step {current + 1} of {steps.length}</p>
+      <ol className="grid gap-1 text-center text-xs" style={{ gridTemplateColumns: `repeat(${steps.length}, minmax(0, 1fr))` }}>
+        {steps.map((label, i) => (
+          <li key={label} className={`rounded-lg px-1 py-2 ${i === current ? 'bg-emerald-600 font-semibold text-white' : i < current ? 'bg-emerald-100 text-emerald-800' : 'bg-muted text-muted-foreground'}`}>
+            {i + 1}. {label}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
@@ -528,18 +530,18 @@ function ReceiptPhotoButtons({ sessionId, mediaId, onUploaded }: {
   );
 }
 
-function SimpleClose({ header, sessionId, rate, openingFloat, onClosed, onHandover }: {
+function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
   header: (t: string) => React.ReactNode;
   sessionId: number;
   rate: number;
   openingFloat: { usd_cents: number; khr_riel: number };
   onClosed: () => void;
-  /** Hand the open (unpaid) tables to the next cashier instead of closing. */
-  onHandover: () => void;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState(0);
-  const [openTickets, setOpenTickets] = useState<{ order_id: number; order_number: string; table_label: string | null; balance: number }[]>([]);
+  const [stepKey, setStepKey] = useState<CloseStep>('bills');
+  const [openTickets, setOpenTickets] = useState<{ order_id: number; order_number: string; table_label: string | null; balance: number }[] | null>(null);
+  const [passBills, setPassBills] = useState(false);
+  const [phonePending, setPhonePending] = useState(0);
   const [floatCount, setFloatCount] = useState<CashCountValue>(emptyCashCount());
   const [count, setCount] = useState<CashCountValue>(emptyCashCount());
   const [spent, setSpent] = useState<SpentItem[]>([]);
@@ -553,7 +555,12 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed, onHandov
 
   useEffect(() => {
     let active = true;
-    api.get('/cash-handover/open-tickets').then(({ data }) => { if (active) setOpenTickets(data.tickets || []); }).catch(() => {});
+    api.get('/cash-handover/open-tickets').then(({ data }) => {
+      if (!active) return;
+      const tickets = data.tickets || [];
+      setOpenTickets(tickets);
+      if (tickets.length === 0) setStepKey((k) => (k === 'bills' ? 'float' : k));
+    }).catch(() => { if (active) { setOpenTickets([]); setStepKey((k) => (k === 'bills' ? 'float' : k)); } });
     api.get(`/cash-handover/sessions/${sessionId}/cash-spent`)
       .then((res) => { if (active) setSpent(res.data.items); })
       .catch((error) => toast.error(errorText(error, 'Could not load cash spent')));
@@ -620,16 +627,18 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed, onHandov
     try {
       const res = await api.post(`/cash-handover/sessions/${sessionId}/close-preview`, { count: cashCountPayload(count), float_out: floatPayload });
       setPreview(res.data);
-      setStep(3);
+      setStepKey('result');
     } catch (error) { toast.error(errorText(error, 'Could not check the count')); }
   });
 
   const closeShift = () => run(async () => {
     try {
-      await api.post(`/cash-handover/sessions/${sessionId}/closing-count`, {
+      const res = await api.post(`/cash-handover/sessions/${sessionId}/closing-count`, {
         count: cashCountPayload(count), float_out: floatPayload, explanation: reason.trim() || undefined, device: 'pos',
+        pass_open_tickets: passBills || undefined,
       });
-      toast.success('Shift closed');
+      const passed = res.data?.passed_to_next_cashier;
+      toast.success(passed?.tickets ? `Shift closed. ${passed.tickets} bills go to the next cashier.` : 'Shift closed', { duration: 6000 });
       try {
         await printReportReceipt({ kind: 'shift', sessionId }, { auto: true });
       } catch (printError) {
@@ -642,50 +651,56 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed, onHandov
   const openingText = `${formatUsdCents(openingFloat.usd_cents)} + ${formatKhr(openingFloat.khr_riel)}`;
   const noLines = spent.length === 0 && !draftStarted;
 
-  const openOwed = openTickets.reduce((sum, t) => sum + Number(t.balance || 0), 0);
+  const tickets = openTickets ?? [];
+  const openOwed = tickets.reduce((sum, t) => sum + Number(t.balance || 0), 0);
+  const stepKeys: CloseStep[] = tickets.length > 0 ? ['bills', 'float', 'sales', 'purchases', 'result'] : ['float', 'sales', 'purchases', 'result'];
+  const stepIndex = Math.max(0, stepKeys.indexOf(stepKey));
 
   return (
     <div className="space-y-4">
       {header('Close shift')}
-      {openTickets.length > 0 && (
-        <div className="space-y-3 rounded-xl border border-orange-300 bg-orange-50 p-4 text-sm text-orange-900">
-          <p>
-            <b>{openTickets.length} {openTickets.length === 1 ? 'bill is' : 'bills are'} still not paid</b> (${openOwed.toFixed(2)}):{' '}
-            {openTickets.slice(0, 6).map((t) => t.table_label || `#${String(t.order_number).split('-').pop()}`).join(', ')}{openTickets.length > 6 ? '…' : ''}.
-            {' '}Take payment or cancel them before closing, or hand them over to the next cashier.
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => router.push('/orders')}
-              className="rounded-xl border-2 border-orange-400 bg-white px-3 py-3 font-semibold">Go to Orders</button>
-            <button type="button" onClick={onHandover}
-              className="rounded-xl bg-orange-600 px-3 py-3 font-semibold text-white">Hand over to next cashier</button>
+      {openTickets === null ? <p className="text-muted-foreground">Loading…</p> : <StepDots steps={stepKeys.map((k) => CLOSE_STEP_LABELS[k])} current={stepIndex} />}
+
+      {openTickets !== null && stepKey === 'bills' && (
+        <>
+          <h2 className="text-2xl font-bold">{tickets.length} {tickets.length === 1 ? 'bill' : 'bills'} not paid <span className="font-semibold text-muted-foreground">({formatUsdCents(Math.round(openOwed * 100))})</span></h2>
+          <div className="flex flex-wrap gap-2">
+            {tickets.map((t) => (
+              <span key={t.order_id} className="rounded-xl border-2 px-4 py-2 text-lg font-semibold">{t.table_label || `#${String(t.order_number).split('-').pop()}`}</span>
+            ))}
           </div>
-        </div>
-      )}
-      <StepDots step={step} />
-
-      {step === 0 && (
-        <>
-          <p className="text-sm text-muted-foreground">
-            Take the float out of the drawer and count it. The shift started with <b>{openingText}</b>.
-          </p>
-          <CashCounter value={floatCount} onChange={setFloatCount} rate={rate} title="Float taken out" />
-          <BigButton tone="primary" disabled={floatIsEmpty} onClick={() => setStep(1)}>I&apos;ve taken the float out: next</BigButton>
+          <BigButton tone="warning" onClick={() => { setPassBills(true); setStepKey('float'); }}>Pass to next cashier</BigButton>
+          <BigButton onClick={() => router.push('/orders')}>Take payment first</BigButton>
         </>
       )}
 
-      {step === 1 && (
+      {stepKey === 'float' && (
         <>
-          <p className="text-sm text-muted-foreground">Now count all the money left in the drawer.</p>
-          <CashCounter value={count} onChange={setCount} rate={rate} title="Money in the drawer" />
-          <BigButton tone="primary" disabled={countIsEmpty} onClick={() => setStep(2)}>I&apos;ve finished counting the cash: next</BigButton>
-          <button type="button" className="text-sm underline" onClick={() => setStep(0)}>Back</button>
+          <h2 className="text-2xl font-bold">Count the float</h2>
+          <p className="text-base text-muted-foreground">Take the float out of the drawer. Count it. Start was <b>{openingText}</b>.</p>
+          {passBills && <p className="rounded-lg bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-800">{tickets.length} bills go to the next cashier.</p>}
+          <CashCounter value={floatCount} onChange={setFloatCount} rate={rate} title="Float" />
+          <BigButton tone="primary" disabled={floatIsEmpty} onClick={() => setStepKey('sales')}>Next</BigButton>
+          {tickets.length > 0 && <button type="button" className="text-sm underline" onClick={() => { setPassBills(false); setStepKey('bills'); }}>Back</button>}
         </>
       )}
 
-      {step === 2 && (
+      {stepKey === 'sales' && (
         <>
-          <p className="text-sm text-muted-foreground">Was any money from the drawer used to pay for something? Add one line each.</p>
+          <h2 className="text-2xl font-bold">Count cash sales</h2>
+          <p className="text-base text-muted-foreground">Count all the money left in the drawer. Not ABA. Not card.</p>
+          <CashCounter value={count} onChange={setCount} rate={rate} title="Cash sales" />
+          <BigButton tone="primary" disabled={countIsEmpty} onClick={() => setStepKey('purchases')}>Next</BigButton>
+          <button type="button" className="text-sm underline" onClick={() => setStepKey('float')}>Back</button>
+        </>
+      )}
+
+      {stepKey === 'purchases' && (
+        <>
+          <h2 className="text-2xl font-bold">Purchases</h2>
+          <p className="text-base text-muted-foreground">Did you pay for anything with drawer money? Add each one.</p>
+          <PhoneReceipts sessionId={sessionId} onPendingChange={setPhonePending}
+            onAdded={(item) => setSpent((items) => [...items, item])} />
           <div className="overflow-hidden rounded-xl border">
             <div className="grid grid-cols-[1fr_1.4fr_7rem_5.5rem] gap-2 bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
               <span>Paid to</span><span>What for</span><span>Amount</span><span>Receipt</span>
@@ -730,14 +745,15 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed, onHandov
             <button type="button" disabled={busy} onClick={() => run(async () => { if (await saveDraft()) paidToRef.current?.focus(); })}
               className="text-sm font-semibold text-emerald-700 underline">+ Add another line</button>
           )}
-          <BigButton tone="primary" disabled={busy} onClick={checkResult}>
-            {noLines ? 'No cash spent today: next' : 'Next: check the result'}
+          {phonePending > 0 && <p className="text-base font-semibold text-orange-700">{phonePending} {phonePending === 1 ? 'photo needs' : 'photos need'} details.</p>}
+          <BigButton tone="primary" disabled={busy || phonePending > 0} onClick={checkResult}>
+            {noLines ? 'No purchases: next' : 'Next'}
           </BigButton>
-          <button type="button" className="text-sm underline" onClick={() => setStep(1)}>Back</button>
+          <button type="button" className="text-sm underline" onClick={() => setStepKey('sales')}>Back</button>
         </>
       )}
 
-      {step === 3 && preview && (() => {
+      {stepKey === 'result' && preview && (() => {
         const floatOutCents = combinedUsdCents(floatPayload.usd_cents, floatPayload.khr_riel, preview.rate_khr_per_usd);
         const moneyInHand = preview.counted_usd_cents - floatOutCents;
         const shouldBeInHand = preview.cash_sales_usd_cents - preview.cash_spent_usd_cents;
@@ -745,16 +761,21 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed, onHandov
         const diff = preview.difference_usd_cents;
         return (
           <>
+            <div className={`rounded-2xl px-4 py-6 text-center ${preview.matches ? 'bg-emerald-100 text-emerald-800' : diff < 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'}`}>
+              <div className="text-sm font-semibold">Result</div>
+              <div className="text-4xl font-black">{preview.matches ? 'OK' : `${diff < 0 ? 'Short' : 'Over'} ${formatUsdCents(Math.abs(diff))}`}</div>
+            </div>
+            {passBills && <p className="rounded-lg bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-800">{tickets.length} bills go to the next cashier.</p>}
             <div className="rounded-xl border p-4">
               <ResultLine n={1} label="Cash sales" value={formatUsdCents(preview.cash_sales_usd_cents)} />
-              <ResultLine n={2} label="Cash spent" value={`−${formatUsdCents(preview.cash_spent_usd_cents)}`} tone="minus" />
+              <ResultLine n={2} label="Purchases" value={`−${formatUsdCents(preview.cash_spent_usd_cents)}`} tone="minus" />
               <div className="flex justify-between border-t py-1 text-sm text-muted-foreground">
                 <span>Should be in hand</span><span className="tabular-nums">{formatUsdCents(shouldBeInHand)}</span>
               </div>
               <ResultLine n={3} label="Money in hand (counted, without float)" value={formatUsdCents(moneyInHand)} />
-              <div className={`mt-2 flex items-baseline justify-between rounded-lg px-3 py-3 text-lg font-bold ${preview.matches ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
-                <span><span className="me-2 font-normal text-muted-foreground">4.</span>{preview.matches ? 'Match ✓' : diff < 0 ? 'Short' : 'Over'}</span>
-                <span className="tabular-nums">{preview.matches ? signedUsd(diff) : formatUsdCents(Math.abs(diff))}</span>
+              <div className="flex items-baseline justify-between border-t py-2 text-base font-semibold">
+                <span><span className="me-2 font-normal text-muted-foreground">4.</span>Difference</span>
+                <span className="tabular-nums">{signedUsd(diff)}</span>
               </div>
               {floatGap !== 0 && (
                 <p className="mt-2 text-xs text-muted-foreground">
@@ -777,16 +798,139 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed, onHandov
             )}
             {!preview.matches && (
               <>
-                <BigButton tone="warning" onClick={() => { setStep(1); setPreview(null); }}>Recount the cash</BigButton>
+                <BigButton tone="warning" onClick={() => { setStepKey('sales'); setPreview(null); }}>Count again</BigButton>
                 <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500}
                   placeholder="Reason for the difference (optional)" className="w-full rounded-xl border px-4 py-3 text-sm" />
               </>
             )}
             <BigButton tone="primary" disabled={busy} onClick={closeShift}>Close shift &amp; print Z report</BigButton>
-            <button type="button" className="text-sm underline" onClick={() => setStep(2)}>Back to cash spent</button>
+            <button type="button" className="text-sm underline" onClick={() => setStepKey('purchases')}>Back to purchases</button>
           </>
         );
       })()}
+    </div>
+  );
+}
+
+type PhonePhoto = { id: number; created_at: string };
+
+/** QR code for sending receipt photos from a phone, and the photos waiting for details. */
+function PhoneReceipts({ sessionId, onAdded, onPendingChange }: {
+  sessionId: number;
+  onAdded: (item: SpentItem) => void;
+  onPendingChange: (count: number) => void;
+}) {
+  const [link, setLink] = useState<{ qr: string; expires_at: string } | null>(null);
+  const [photos, setPhotos] = useState<PhonePhoto[]>([]);
+  const [thumbs, setThumbs] = useState<Record<number, string>>({});
+  const [drafts, setDrafts] = useState<Record<number, { paidTo: string; what: string; amount: string; currency: string }>>({});
+  const [saving, setSaving] = useState<number | null>(null);
+  const [zoom, setZoom] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const makeLink = () => api.post(`/cash-handover/sessions/${sessionId}/phone-upload-link`, { origin: window.location.origin })
+      .then(({ data }) => { if (active) setLink({ qr: data.qr, expires_at: data.expires_at }); })
+      .catch(() => { if (active) setLink(null); });
+    void makeLink();
+    const renew = window.setInterval(makeLink, 25 * 60 * 1000);
+    return () => { active = false; window.clearInterval(renew); };
+  }, [sessionId]);
+
+  useEffect(() => {
+    let active = true;
+    const poll = () => api.get(`/cash-handover/sessions/${sessionId}/phone-receipts`)
+      .then(({ data }) => { if (active) setPhotos(data.photos || []); })
+      .catch(() => {});
+    void poll();
+    const timer = window.setInterval(poll, 4000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [sessionId]);
+
+  useEffect(() => { onPendingChange(photos.length); }, [photos.length, onPendingChange]);
+
+  useEffect(() => {
+    for (const photo of photos) {
+      if (thumbs[photo.id]) continue;
+      api.get(`/cash-handover/media/${photo.id}`, { responseType: 'blob' })
+        .then(({ data }) => {
+          const reader = new FileReader();
+          reader.onload = () => setThumbs((t) => ({ ...t, [photo.id]: String(reader.result) }));
+          reader.readAsDataURL(data as Blob);
+        })
+        .catch(() => {});
+    }
+  }, [photos, thumbs]);
+
+  const draftOf = (id: number) => drafts[id] ?? { paidTo: '', what: '', amount: '', currency: 'USD' };
+  const setDraft = (id: number, patch: Partial<{ paidTo: string; what: string; amount: string; currency: string }>) =>
+    setDrafts((d) => ({ ...d, [id]: { ...draftOf(id), ...patch } }));
+
+  const save = async (id: number) => {
+    const d = draftOf(id);
+    const amount = Number.parseFloat(d.amount) || 0;
+    if (!d.what.trim() || amount <= 0) { toast.error('Add what it was and the amount'); return; }
+    setSaving(id);
+    try {
+      const what = (d.paidTo.trim() ? `${d.paidTo.trim()}: ${d.what.trim()}` : d.what.trim()).slice(0, 120);
+      const res = await api.post(`/cash-handover/sessions/${sessionId}/cash-spent`, {
+        currency: d.currency, amount_minor: d.currency === 'USD' ? Math.round(amount * 100) : Math.round(amount), what, media_id: id,
+      });
+      onAdded(res.data.item);
+      setPhotos((p) => p.filter((x) => x.id !== id));
+    } catch (error) { toast.error(errorText(error, 'Could not save')); } finally { setSaving(null); }
+  };
+
+  const dismiss = async (id: number) => {
+    setSaving(id);
+    try {
+      await api.post(`/cash-handover/sessions/${sessionId}/phone-receipts/${id}/dismiss`);
+      setPhotos((p) => p.filter((x) => x.id !== id));
+    } catch (error) { toast.error(errorText(error, 'Could not remove the photo')); } finally { setSaving(null); }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-4 rounded-xl bg-muted p-3">
+        {link
+          ? <img src={link.qr} alt="QR code to send receipt photos from a phone" className="size-28 shrink-0 rounded-lg bg-white p-1" />
+          : <div className="size-28 shrink-0 rounded-lg bg-background" />}
+        <div>
+          <p className="text-lg font-bold">Scan with your phone</p>
+          <p className="text-sm text-muted-foreground">Take photos of receipts. They appear here.</p>
+        </div>
+      </div>
+      {photos.map((photo) => {
+        const d = draftOf(photo.id);
+        return (
+          <div key={photo.id} className="flex flex-wrap items-center gap-2 rounded-xl border-2 border-orange-300 p-2">
+            {thumbs[photo.id]
+              ? <button type="button" onClick={() => setZoom(thumbs[photo.id])} aria-label="Show receipt photo larger"><img src={thumbs[photo.id]} alt="Receipt from phone" className="size-16 rounded-lg object-cover" /></button>
+              : <div className="size-16 rounded-lg bg-muted" />}
+            <input value={d.paidTo} onChange={(e) => setDraft(photo.id, { paidTo: e.target.value })} placeholder="Paid to" aria-label="Paid to" maxLength={40}
+              className="min-w-0 flex-1 rounded-md border px-2 py-3 text-base" />
+            <input value={d.what} onChange={(e) => setDraft(photo.id, { what: e.target.value })} placeholder="What" aria-label="What" maxLength={80}
+              className="min-w-0 flex-1 rounded-md border px-2 py-3 text-base" />
+            <div className="flex gap-1">
+              <input value={d.amount} inputMode="decimal" onChange={(e) => setDraft(photo.id, { amount: e.target.value.replace(/[^\d.]/g, '') })}
+                placeholder="0" aria-label="Amount" className="w-20 rounded-md border px-2 py-3 text-base tabular-nums" />
+              <select value={d.currency} onChange={(e) => setDraft(photo.id, { currency: e.target.value })} aria-label="Currency" className="rounded-md border px-1">
+                <option value="USD">$</option><option value="KHR">៛</option>
+              </select>
+            </div>
+            <button type="button" disabled={saving === photo.id} onClick={() => save(photo.id)}
+              className="h-12 rounded-lg bg-emerald-600 px-4 font-bold text-white disabled:opacity-40">Save</button>
+            <button type="button" disabled={saving === photo.id} onClick={() => dismiss(photo.id)} aria-label="Remove photo"
+              className="h-12 rounded-lg px-3 text-red-600 hover:bg-red-50">✕</button>
+          </div>
+        );
+      })}
+      {zoom && (
+        <button type="button" onClick={() => setZoom(null)} aria-label="Close photo"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <img src={zoom} alt="Receipt from phone" className="max-h-full max-w-full rounded-lg" />
+        </button>
+      )}
     </div>
   );
 }
