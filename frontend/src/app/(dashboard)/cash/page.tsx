@@ -368,7 +368,8 @@ export default function CashPage() {
   if (view.name === 'close' && status.open_session) {
     body = (
       <SimpleClose header={header} sessionId={view.sessionId} rate={rate} openingFloat={status.open_session.opening_float}
-        onClosed={() => { if (fromPos) { router.push('/pos'); return; } go({ name: 'home' }); void load(); }} />
+        onClosed={() => { if (fromPos) { router.push('/pos'); return; } go({ name: 'home' }); void load(); }}
+        onHandover={() => go({ name: 'handover', sessionId: view.sessionId })} />
     );
   }
 
@@ -527,14 +528,18 @@ function ReceiptPhotoButtons({ sessionId, mediaId, onUploaded }: {
   );
 }
 
-function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
+function SimpleClose({ header, sessionId, rate, openingFloat, onClosed, onHandover }: {
   header: (t: string) => React.ReactNode;
   sessionId: number;
   rate: number;
   openingFloat: { usd_cents: number; khr_riel: number };
   onClosed: () => void;
+  /** Hand the open (unpaid) tables to the next cashier instead of closing. */
+  onHandover: () => void;
 }) {
+  const router = useRouter();
   const [step, setStep] = useState(0);
+  const [openTickets, setOpenTickets] = useState<{ order_id: number; order_number: string; table_label: string | null; balance: number }[]>([]);
   const [floatCount, setFloatCount] = useState<CashCountValue>(emptyCashCount());
   const [count, setCount] = useState<CashCountValue>(emptyCashCount());
   const [spent, setSpent] = useState<SpentItem[]>([]);
@@ -548,6 +553,7 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
 
   useEffect(() => {
     let active = true;
+    api.get('/cash-handover/open-tickets').then(({ data }) => { if (active) setOpenTickets(data.tickets || []); }).catch(() => {});
     api.get(`/cash-handover/sessions/${sessionId}/cash-spent`)
       .then((res) => { if (active) setSpent(res.data.items); })
       .catch((error) => toast.error(errorText(error, 'Could not load cash spent')));
@@ -636,9 +642,26 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
   const openingText = `${formatUsdCents(openingFloat.usd_cents)} + ${formatKhr(openingFloat.khr_riel)}`;
   const noLines = spent.length === 0 && !draftStarted;
 
+  const openOwed = openTickets.reduce((sum, t) => sum + Number(t.balance || 0), 0);
+
   return (
     <div className="space-y-4">
       {header('Close shift')}
+      {openTickets.length > 0 && (
+        <div className="space-y-3 rounded-xl border border-orange-300 bg-orange-50 p-4 text-sm text-orange-900">
+          <p>
+            <b>{openTickets.length} {openTickets.length === 1 ? 'bill is' : 'bills are'} still not paid</b> (${openOwed.toFixed(2)}):{' '}
+            {openTickets.slice(0, 6).map((t) => t.table_label || `#${String(t.order_number).split('-').pop()}`).join(', ')}{openTickets.length > 6 ? '…' : ''}.
+            {' '}Take payment or cancel them before closing, or hand them over to the next cashier.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => router.push('/orders')}
+              className="rounded-xl border-2 border-orange-400 bg-white px-3 py-3 font-semibold">Go to Orders</button>
+            <button type="button" onClick={onHandover}
+              className="rounded-xl bg-orange-600 px-3 py-3 font-semibold text-white">Hand over to next cashier</button>
+          </div>
+        </div>
+      )}
       <StepDots step={step} />
 
       {step === 0 && (
