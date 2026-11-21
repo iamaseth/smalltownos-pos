@@ -657,7 +657,7 @@ export default function POSPage() {
 
   // thenPay: send the order, then open the payment screen for its bill.
   // forceToGo: the cashier just chose To Go from the Pay prompt, before the cart state has re-rendered.
-  const placeOrder = async (thenPay: boolean, forceToGo = false) => {
+  const placeOrder = async (thenPay: boolean, forceToGo = false, thenPrintBill = false) => {
     if (submitting) return;
     if (cart.items.length === 0) {
       toast.error(t('cartEmpty'));
@@ -774,6 +774,7 @@ export default function POSPage() {
       await refreshTables();
 
       await printKotIfEnabled(orderForKot);
+      if (thenPrintBill) await printCustomerBill(orderForKot.id);
 
       if (thenPay && createdOrder) {
         try {
@@ -1303,6 +1304,7 @@ export default function POSPage() {
     onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
     onPrintBill: pendingOrder ? () => { void printCustomerBill(pendingOrder.id); } : undefined,
+    onSendAndPrintBill: () => { void placeOrder(false, false, true); },
   };
 
   const itemCount = cart.itemCount();

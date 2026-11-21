@@ -34,6 +34,8 @@ interface Props {
   onPayNow: () => void;
   /** Prints the open order's bill for the customer before payment. */
   onPrintBill?: () => void;
+  /** Sends the unsent cart items, then prints the bill. */
+  onSendAndPrintBill?: () => void;
   onEditItem?: (item: CartItem) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
@@ -133,7 +135,7 @@ function ItemQuantityControl({
   );
 }
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, destination, showTableOption = true, onSelectTable, onSelectTab, onSelectToGo, onClearCart, onPayExisting, onShowTabs, openTabCount = 0, onPayNow, onEditItem, variant = 'sidebar', existingOrder, onPrintBill }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, destination, showTableOption = true, onSelectTable, onSelectTab, onSelectToGo, onClearCart, onPayExisting, onShowTabs, openTabCount = 0, onPayNow, onEditItem, variant = 'sidebar', existingOrder, onPrintBill, onSendAndPrintBill }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -282,10 +284,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
           const side = 'flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border-2 border-[#3d4f7c] bg-[#22325a] text-white disabled:opacity-40';
           const secondary = 'flex h-12 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-[#3d4f7c] bg-[#22325a] px-2 text-[16px] font-bold text-white disabled:opacity-40';
           const payButton = 'flex h-12 min-w-0 flex-[1.4] items-center justify-center gap-1.5 rounded-xl bg-[#22c55e] px-2 text-[18px] font-black text-black disabled:opacity-40';
-          const canPrintBill = Boolean(onPrintBill) && cart.items.length === 0;
-          const printButton = <button type="button" disabled={!canPrintBill || submitting} onClick={onPrintBill}
-            title={!onPrintBill ? 'Open a table or tab to print its bill' : cart.items.length > 0 ? 'Send the new items first' : 'Print bill for the customer'}
-            aria-label="Print bill" className={side}><Printer size={20}/></button>;
+          const sendFirst = cart.items.length > 0 && Boolean(onSendAndPrintBill) && billingType !== 'prepaid';
+          const canPrintBill = sendFirst || (Boolean(onPrintBill) && cart.items.length === 0);
+          const printButton = <button type="button" disabled={!canPrintBill || submitting} onClick={sendFirst ? onSendAndPrintBill : onPrintBill}
+            title={sendFirst ? 'Send the new items and print the bill' : onPrintBill ? 'Print bill for the customer' : 'Open a table or tab to print its bill'}
+            aria-label={sendFirst ? 'Send and print bill' : 'Print bill'} className={side}><Printer size={20}/></button>;
           const moreButton = <button type="button" onClick={() => { setMoreOpen(!moreOpen); setEditingNote(false); }} aria-label="More actions" aria-expanded={moreOpen} className={side}><MoreHorizontal size={22}/></button>;
           let actions: ReactNode;
           if (billingType === 'prepaid') {
