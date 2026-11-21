@@ -166,6 +166,11 @@ export default function TablePickerModal({
                     #{(table.current_order || table.activeOrder)?.order_number}
                   </p>
                 )}
+                {table.status === 'occupied' && Number((table.current_order || table.activeOrder)?.split_bills_total) > 0 && (
+                  <p className="mt-1 inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-bold text-orange-800 dark:bg-orange-900/50 dark:text-orange-200">
+                    {(table.current_order || table.activeOrder)?.split_bills_paid ?? 0} of {(table.current_order || table.activeOrder)?.split_bills_total} paid
+                  </p>
+                )}
                 {table.status === 'occupied' && table.seated_at && (
                   <div className="mt-1"><TableTurnoverBadge seatedAt={table.seated_at} /></div>
                 )}

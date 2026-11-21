@@ -348,7 +348,8 @@ Router: `main/routes/bills.ts`. Full path: `/api/bills`.
 | `GET` | `/:id` | `ROLE_ACCESS.ownerManagerCashier` | path: `id` | - |
 | `GET` | `/order/:orderId` | `ROLE_ACCESS.ownerManagerCashier` | path: `orderId` | - |
 | `POST` | `/generate` | `ROLE_ACCESS.ownerManagerCashier` | body: `order_id` | Creates or returns the bill for `order_id`. |
-| `POST` | `/:id/split-check` | `ROLE_ACCESS.ownerManagerCashier` | body: `checks` | Body `checks` must hold between 2 and 20 entries. `403` when `split_checks_enabled` is off. |
+| `POST` | `/:id/split-check` | `ROLE_ACCESS.ownerManagerCashier` | body: `checks` | Body `checks` must hold between 2 and 20 entries; each item entry is `{order_item_id, quantity}` or `{order_item_id, share: {of}}`, where a shared item must appear on exactly `of` checks and its price is divided evenly (leftover minor unit to the first check). `403` when `split_checks_enabled` is off. |
+| `POST` | `/:id/unsplit` | `ROLE_ACCESS.ownerManagerCashier` | none | Merges the split group back into the original bill and records `split_undone` in the order audit log. `409` when the bill is not split or any split bill has a payment. |
 | `POST` | `/:id/payment` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: payment line object, `customer_id`; header: `Idempotency-Key` | Body is a single payment line; `customer_id` is read off it. Honours `Idempotency-Key`; a key reused for a different request returns `409`. |
 | `POST` | `/:id/payments` | `ROLE_ACCESS.ownerManagerCashier` | path: `id`; body: `payments`, `customer_id`; header: `Idempotency-Key` | Body `payments` is an array applied in one transaction. Honours `Idempotency-Key`. |
 | `POST` | `/:id/applyDiscount` | `ROLE_ACCESS.ownerManager` | path: `id`; body: `type`, `value`, `reason`, `override_pin`, `manager_id`, `user_id` | - |

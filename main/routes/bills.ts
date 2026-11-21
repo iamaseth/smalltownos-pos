@@ -478,7 +478,13 @@ router.get('/:id', requirePermission('bills.read'), (req: Request, res: Response
     const order = getOrderWithItems(db, (bill as any).order_id, Number((bill as any).id));
     const customer = (bill as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id) : null;
 
-    res.json({ bill: { ...bill, order, customer } });
+    const splitGroupId = (bill as { split_group_id?: string | null }).split_group_id;
+    const splitIds = splitGroupId
+      ? (db.prepare('SELECT id FROM bills WHERE split_group_id = ? ORDER BY id').all(splitGroupId) as { id: number }[]).map((row) => Number(row.id))
+      : [];
+    const splitPosition = splitIds.length > 0 ? { split_index: splitIds.indexOf(Number(req.params.id)) + 1, split_count: splitIds.length } : {};
+
+    res.json({ bill: { ...bill, ...splitPosition, order, customer } });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

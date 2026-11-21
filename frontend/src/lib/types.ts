@@ -200,6 +200,8 @@ export interface Order {
   bill?: Bill;
   bills?: Bill[];
   whatsapp_receipt_status?: 'sent' | 'partial' | 'pending' | 'failed' | null;
+  split_bills_total?: number;
+  split_bills_paid?: number;
 }
 
 export interface OrderItem {
@@ -210,6 +212,8 @@ export interface OrderItem {
   product_sku: string | null;
   unit_price: number;
   quantity: number;
+  /** Set on a split bill when this item is shared by several guests. */
+  share_of?: number;
   subtotal: number;
   tax_amount: number;
   total: number;
@@ -245,6 +249,8 @@ export interface Bill {
   payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string; tendered_amount?: number; change_amount?: number }[] | null;
   split_group_id?: string | null;
   split_label?: string | null;
+  split_index?: number;
+  split_count?: number;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;
   order?: Order;

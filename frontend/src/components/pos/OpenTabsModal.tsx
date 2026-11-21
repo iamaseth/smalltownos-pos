@@ -92,6 +92,7 @@ export default function OpenTabsModal({ tabs, tables = [], onOpenTable, now, pay
                     <p className="flex items-center gap-2 truncate font-bold text-foreground">
                       {title}
                       <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">{kind === 'table' ? 'Table' : 'Tab'}</span>
+                      {Number(order.split_bills_total) > 0 && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-orange-800 dark:bg-orange-900/50 dark:text-orange-200">{order.split_bills_paid ?? 0} of {order.split_bills_total} paid</span>}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       #{order.order_number} · {openFor(order.created_at, now)}{order.customer?.name ? ` · ${order.customer.name}` : ''}{partial ? ' · part paid' : ''}

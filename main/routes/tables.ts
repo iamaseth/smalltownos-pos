@@ -17,6 +17,11 @@ function activeOrderForTable(db: ReturnType<typeof getDatabase>, tableId: string
     WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL}${whereOrder}
     ORDER BY created_at DESC LIMIT 1
   `).get(...params) as any);
+  if (order) {
+    const split = db.prepare(`SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END), 0) AS paid
+      FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL`).get(order.id) as { total: number; paid: number };
+    if (split.total > 0) Object.assign(order, { split_bills_total: split.total, split_bills_paid: split.paid });
+  }
   if (!order?.customer_id) return order;
 
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id);

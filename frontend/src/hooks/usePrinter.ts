@@ -72,6 +72,21 @@ function resolveCoreBillTemplate(value: unknown, source: 'core' | 'pack' | 'merc
   }
 }
 
+/** Split bills print the guest label, "Bill 1 of 3" and shared-item fractions on every print path. */
+function withSplitBillHeader(bill: Bill): Bill {
+  if (!bill.split_label || !bill.order) return bill;
+  const position = bill.split_index && bill.split_count ? ` · Bill ${bill.split_index} of ${bill.split_count}` : '';
+  const tableName = bill.order.table?.name ? `${bill.order.table.name} · ` : '';
+  return {
+    ...bill,
+    order: {
+      ...bill.order,
+      table: { ...(bill.order.table || {}), name: `${tableName}${bill.split_label}${position}` } as NonNullable<typeof bill.order.table>,
+      items: bill.order.items?.map((item) => (item.share_of ? { ...item, product_name: `${item.product_name} (shared 1/${item.share_of})` } : item)),
+    },
+  };
+}
+
 export type { PrintWarning } from '@/lib/printer/warnings';
 
 type PrintModeType = 'receipt' | 'tax' | 'kot';
@@ -205,7 +220,8 @@ export const usePrinterStore = create<PrinterState>()(
         }
       },
 
-      printBillDirect: async (bill, tenant, opts) => {
+      printBillDirect: async (sourceBill, tenant, opts) => {
+        const bill = withSplitBillHeader(sourceBill);
         set({ lastError: null });
         try {
           const {
