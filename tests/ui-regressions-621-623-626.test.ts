@@ -50,7 +50,7 @@ const payNowBody = posPage.slice(posPage.indexOf('const handlePayNow'), posPage.
 assert.match(payNowBody, /placeOrder\(true\)/, 'cart Pay sends the order and then opens the redesigned payment screen');
 assert.doesNotMatch(payNowBody, /setShowPrepaidCheckout/, 'postpaid cart Pay does not open the old prepaid checkout');
 assert.match(posPage, /thenPay && createdOrder[\s\S]*?\/bills\/generate[\s\S]*?setPaymentBill/, 'Pay generates the bill for the order it just created');
-assert.match(posPage, /if \(destinationMissing\(\)\) \{\s*promptForDestination\(\);/, 'Send and Pay without a destination open the destination chooser');
+assert.match(posPage, /if \((?:!forceToGo && )?destinationMissing\(\)\) \{\s*(?:setPayAfterDestination\(thenPay\);\s*)?promptForDestination\(\);/, 'Send and Pay without a destination open the destination chooser');
 assert.match(posPage, /data-testid="destination-choice"/, 'the Table / Tab / To Go chooser exists');
 assert.match(posPage, /Select a table, tab or To Go to continue\./, 'the chooser explains why it opened');
 
