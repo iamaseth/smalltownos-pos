@@ -143,6 +143,7 @@ export function useRegisterAccess(onRegister: boolean) {
       await useAuthStore.getState().refreshAuthContext();
       const freshTenant = useAuthStore.getState().currentTenant;
       if (!freshTenant?.permission_ids?.includes('pos.use')) {
+        await api.post('/register-access/lock').catch(() => {});
         await restoreAppUser();
         setError('This employee does not have permission to use the register');
         return false;
@@ -152,6 +153,9 @@ export function useRegisterAccess(onRegister: boolean) {
       setError('');
       return true;
     } catch {
+      // If the PIN endpoint succeeded but auth-context refresh failed, revoke
+      // the just-created token before restoring the original account.
+      await api.post('/register-access/lock').catch(() => {});
       await restoreAppUser();
       setError('PIN verification failed or employee session could not be started');
       return false;
