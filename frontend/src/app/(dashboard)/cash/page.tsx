@@ -640,8 +640,10 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
   const nonCashTotal = preview?.non_cash_payments.reduce((sum, p) => sum + p.total_cents, 0) ?? 0;
   const tickets = openTickets ?? [];
   const openOwed = tickets.reduce((sum, ticket) => sum + Number(ticket.balance || 0), 0);
-  const floatGap = combinedUsdCents(floatPayload.usd_cents, floatPayload.khr_riel, rate) - openingCombined;
+  const floatCountCombined = combinedUsdCents(floatPayload.usd_cents, floatPayload.khr_riel, rate);
+  const floatGap = floatCountCombined - openingCombined;
   const tolerance = preview?.tolerance_usd_cents ?? 0;
+  const needsExplanation = Math.abs(difference) > tolerance || Math.abs(floatGap) > tolerance;
 
   const closeShift = () => run(async () => {
     if (!preview) return;
@@ -649,8 +651,12 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
       toast.error('Transfer the unpaid tickets to the next cashier, or take payment first.');
       return;
     }
-    if (Math.abs(difference) > tolerance && !reason.trim()) {
-      toast.error('Please explain the cash difference before closing.');
+    if (openingCombined > 0 && floatCountCombined === 0) {
+      toast.error('Count the float that will remain in the drawer.');
+      return;
+    }
+    if (needsExplanation && !reason.trim()) {
+      toast.error('Please explain the cash or float difference before closing.');
       return;
     }
     try {
@@ -731,7 +737,7 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
             <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
               <Row label="Cash Sales (from POS)" value={formatUsdCents(cashSales)} />
               <Row label="Cash Payouts" value={'−' + formatUsdCents(payoutTotal)} />
-              <Row label="Float (keep in drawer)" value={formatUsdCents(openingCombined)} />
+              <Row label="Float (keep in drawer)" value={formatUsdCents(floatCountCombined)} />
               <div className="border-t pt-2">
                 <Row label="Expected cash" value={formatUsdCents(expected)} strong />
               </div>
@@ -799,14 +805,14 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
             {phonePending > 0 && <p className="mt-2 text-sm font-semibold text-orange-700">{phonePending} receipt photo(s) still need details.</p>}
           </section>
 
-          {Math.abs(difference) > tolerance && (
+          {needsExplanation && (
             <section className="rounded-xl border border-amber-300 bg-amber-50 p-3">
               <label className="block text-sm font-semibold text-amber-900" htmlFor="closing-explanation">Explain the difference</label>
               <textarea id="closing-explanation" value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500}
                 placeholder="Add a note for the manager…" className="mt-2 w-full rounded-lg border bg-white px-3 py-2 text-sm" />
             </section>
           )}
-          <button type="button" disabled={busy || loading || !preview || phonePending > 0 || (tickets.length > 0 && !passBills) || Math.abs(difference) > tolerance && !reason.trim()}
+          <button type="button" disabled={busy || loading || !preview || phonePending > 0 || (tickets.length > 0 && !passBills) || needsExplanation && !reason.trim() || (openingCombined > 0 && floatCountCombined === 0)}
             onClick={closeShift}
             className="w-full rounded-xl bg-emerald-700 px-5 py-4 text-lg font-bold text-white disabled:opacity-50">
             {busy ? 'Closing…' : 'Close shift & print report'}
