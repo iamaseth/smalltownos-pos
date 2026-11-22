@@ -245,7 +245,7 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
       if (!effectiveEmail || !isValidEmail(effectiveEmail)) {
         return res.status(400).json({ error: 'Owner and manager accounts require a valid email address' });
       }
-      if (!member.password && !password) {
+      if ((isOperationalRole(member.role) || !member.password) && !password) {
         return res.status(400).json({ error: 'Owner and manager accounts require a password' });
       }
     }
