@@ -47,8 +47,6 @@ export default function StaffPage() {
   const tSetup = useTranslations('setup');
   const { currentTenant } = useAuthStore();
   const canManagePermissions = tenantCan(currentTenant, 'authorization.manage');
-  const needsEmailPassword = !hasRole(form.role, OPERATIONAL_ROLES);
-  const requiresNewPassword = !editingStaff || hasRole(editingStaff.role, OPERATIONAL_ROLES);
   const canManageStaff = tenantCan(currentTenant, 'staff.operational.manage');
   const canManagePrivilegedStaff = tenantCan(currentTenant, 'staff.privileged.manage');
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -73,6 +71,8 @@ export default function StaffPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
+  const needsEmailPassword = !hasRole(form.role, OPERATIONAL_ROLES);
+  const requiresNewPassword = !editingStaff || hasRole(editingStaff.role, OPERATIONAL_ROLES);
 
   const fetchStaff = async () => {
     try {
