@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
 import { getJWTSecret } from '../security/jwt-secret';
 import { getDatabase, now } from '../db';
-import { resolveEffectivePermissions } from '../services/authorization';
+import { resolveEffectivePermissions, requirePermission } from '../services/authorization';
 import { createRegisterSession, revokeRegisterSession } from '../services/register-session';
 
 /**
@@ -68,6 +68,29 @@ router.get('/status', (_req: Request, res: Response) => {
   }
 });
 
+
+/** Recent register access history for managers and owners. */
+router.get('/events', requirePermission('staff.view'), (req: Request, res: Response) => {
+  try {
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(200, Math.max(1, Math.floor(requestedLimit)))
+      : 50;
+    const events = getDatabase().prepare(`
+      SELECT e.id, e.event_type, e.actor_user_id, actor.name AS actor_name,
+             e.operator_user_id, operator.name AS operator_name,
+             e.source_ip, e.created_at
+      FROM register_access_events e
+      LEFT JOIN users actor ON actor.id = e.actor_user_id
+      LEFT JOIN users operator ON operator.id = e.operator_user_id
+      ORDER BY e.id DESC
+      LIMIT ?
+    `).all(limit);
+    res.json({ events });
+  } catch {
+    res.status(500).json({ error: 'Register access history unavailable' });
+  }
+});
 
 /** Keep the server-side idle clock alive only while the signed-in operator is active. */
 router.post('/activity', (_req: Request, res: Response) => {
