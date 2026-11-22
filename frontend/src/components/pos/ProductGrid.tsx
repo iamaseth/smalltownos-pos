@@ -419,7 +419,7 @@ export default function ProductGrid({
                 {(editingFavorites || favorites.includes(String(product.id))) && (
                   <Star aria-hidden size={18} className={`pointer-events-none absolute bottom-2.5 end-2.5 z-[2] ${favorites.includes(String(product.id)) ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
                 )}
-                <div className="pointer-events-none relative z-[1] p-3 min-h-[104px] flex flex-col flex-1 justify-start"><div className="mb-1 flex items-start justify-between gap-1 pe-10 empty:hidden">
+                <div className={`pointer-events-none relative z-[1] ${catalogView === 'photo' ? 'p-2 min-h-0' : 'p-3 min-h-[104px]'} flex flex-col flex-1 justify-start`}><div className="mb-1 flex items-start justify-between gap-1 pe-10 empty:hidden">
                   <div>
                     {!!product.track_inventory && product.stock_quantity <= 0 ? (
                       <span className="rounded-full border border-rose-800 bg-slate-800 px-2 py-0.5 text-[9px] font-black uppercase text-rose-400">{t('outOfStock')}</span>
@@ -435,7 +435,7 @@ export default function ProductGrid({
                 </div>
 
                 {catalogView === 'photo' && (
-                  <div className="w-full aspect-[1.3] mb-1 relative overflow-hidden bg-slate-900">
+                  <div className="w-full aspect-square mb-1 relative overflow-hidden bg-slate-900">
                     {/* Always-visible background tile — no flash when image loads */}
                     <div
                       className="absolute inset-0 flex items-center justify-center"
@@ -467,7 +467,7 @@ export default function ProductGrid({
                   </div>
                 )}
 
-                <h3 className={`text-[18px] font-extrabold leading-[1.18] tracking-[-0.01em] text-slate-100 line-clamp-3 break-words ${inCartQty > 0 ? 'pe-9' : ''}`}>{product.name}</h3>
+                <h3 className={`${catalogView === 'photo' ? 'text-sm leading-[1.2] line-clamp-2' : 'text-[18px] leading-[1.18] line-clamp-3'} font-extrabold tracking-[-0.01em] text-slate-100 break-words ${inCartQty > 0 ? 'pe-9' : ''}`}>{product.name}</h3>
                 <p className="mt-auto pt-1 text-[18px] font-extrabold text-blue-400 tabular-nums">{fmt(Number(product.price))}</p>
                 </div>
               </div>
