@@ -292,7 +292,7 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
     const storedEmail = isOperationalRole(targetRole) ? null : (normalizedEmail ?? member.email);
 
     // Revoke outstanding sessions only when credentials actually change.
-    const credentialsChanged = passwordChanged || pinChanged;
+    const credentialsChanged = passwordChanged || pinChanged || storedEmail !== member.email || targetRole !== member.role;
     const tokensValidAfter = credentialsChanged ? now() : member.tokens_valid_after;
 
     const demotesActiveOwner = member.role === 'owner' && member.is_active === 1 && targetRole !== 'owner';
