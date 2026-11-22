@@ -112,7 +112,7 @@ async function main() {
   const managerCreated: Record<string, string> = {};
   for (const role of ['cashier', 'server', 'chef']) {
     result = await request(app).post('/api/staff').set(managerAuth).send({
-      name: `Managed ${role}`, pin: role === 'cashier' ? '2468' : role === 'server' ? '3579' : '4680', role,
+      name: `Managed ${role}`, pin: role === 'cashier' ? '8025' : role === 'server' ? '3579' : '4680', role,
     });
     assertEqual(result.status, 201, `manager can create ${role}`);
     managerCreated[role] = result.body.staff?.id;
@@ -176,7 +176,7 @@ async function main() {
 
   result = await request(app).put('/api/staff/manager-target-145').set(ownerAuth).send({ email: '   ' });
   assertEqual(result.status, 400, 'manager update rejects blank email');
-  assertEqual(result.body.error, 'email is required', 'blank manager email update returns a clear validation error');
+  assertEqual(result.body.error, 'Owner and manager accounts require a valid email address', 'blank manager email update returns a clear validation error');
 
   result = await request(app).get('/api/register-access/status').set(managerAuth);
   assertEqual(result.status, 200, 'register status is available to a logged-in register');
