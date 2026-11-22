@@ -53,6 +53,10 @@ async function run() {
     if (!eventTypes.includes('pin_failed') || !eventTypes.includes('unlock') || !eventTypes.includes('lock')) {
       throw new Error(`Register access audit events missing: ${eventTypes.join(', ')}`);
     }
+    const history = await request(app).get('/api/register-access/events').set(manager.authHeader);
+    if (history.status !== 200 || !Array.isArray(history.body.events) || history.body.events.length < 3) {
+      throw new Error('Manager should be able to read register access history');
+    }
 
     console.log('register-access: all checks passed');
   } finally {
