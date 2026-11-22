@@ -16,6 +16,7 @@ const {
   initTestDb, createApp, seedManagerUser, closeDatabase, now,
 } = require('./helpers/test-setup');
 const { registerAccessRoutes } = require('../main/routes/register-access');
+const { authRoutes } = require('../main/routes/auth');
 const { getJWTSecret } = require('../main/routes/auth');
 const { resetRegisterSessionsForTests, touchRegisterSession } = require('../main/services/register-session');
 
@@ -25,13 +26,16 @@ async function run() {
   const manager = seedManagerUser(db);
   db.prepare(`
     INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-    VALUES (?, ?, NULL, ?, 'cashier', ?, 1, ?, ?)
-  `).run('cashier-pin-1', 'Cashier One', bcrypt.hashSync('unused-random-password', 10), bcrypt.hashSync('4321', 10), now(), now());
+    VALUES (?, ?, ?, ?, 'cashier', ?, 1, ?, ?)
+  `).run('cashier-pin-1', 'Cashier One', 'cashier@test.local', bcrypt.hashSync('Cashier123!', 10), bcrypt.hashSync('4321', 10), now(), now());
 
-  const app = createApp({ '/api/register-access': registerAccessRoutes });
+  const app = createApp({ '/api/auth': authRoutes, '/api/register-access': registerAccessRoutes });
   try {
     const status = await request(app).get('/api/register-access/status').set(manager.authHeader);
     if (status.status !== 200 || status.body.pin_lock_enabled !== true) throw new Error('PIN lock status should be enabled');
+
+    const emailLogin = await request(app).post('/api/auth/login').send({ email: 'cashier@test.local', password: 'Cashier123!' });
+    if (emailLogin.status !== 401) throw new Error('Operational staff email/password login must be rejected');
 
     const bad = await request(app).post('/api/register-access/unlock').set(manager.authHeader).send({ pin: '9999' });
     if (bad.status !== 401) throw new Error('Incorrect staff PIN should be rejected');
