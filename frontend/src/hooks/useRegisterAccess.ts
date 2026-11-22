@@ -124,7 +124,7 @@ export function useRegisterAccess(onRegister: boolean) {
 
   useEffect(() => {
     if (!enabled) return;
-    const expired = () => { void restoreAppUser(); };
+    const expired = () => { if (!switching.current) void restoreAppUser(); };
     window.addEventListener('flo:register-session-expired', expired);
     return () => window.removeEventListener('flo:register-session-expired', expired);
   }, [enabled, restoreAppUser]);
