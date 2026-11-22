@@ -237,6 +237,18 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
     }
 
     const targetRole = role ?? member.role;
+    if (isOperationalRole(targetRole) && !member.pin_hash && !hasNonEmptyPin(pin)) {
+      return res.status(400).json({ error: 'A four-digit PIN is required for operational staff' });
+    }
+    if (!isOperationalRole(targetRole)) {
+      const effectiveEmail = normalizedEmail ?? member.email;
+      if (!effectiveEmail || !isValidEmail(effectiveEmail)) {
+        return res.status(400).json({ error: 'Owner and manager accounts require a valid email address' });
+      }
+      if (!member.password && !password) {
+        return res.status(400).json({ error: 'Owner and manager accounts require a password' });
+      }
+    }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
     }
