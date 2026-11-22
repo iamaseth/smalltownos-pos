@@ -13,6 +13,7 @@ import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '..
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
+import { OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
 import { effectivePermissionRevision, resolveEffectivePermissions } from '../services/authorization';
 
 const router = Router();
@@ -245,7 +246,7 @@ router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Re
     const db = getDatabase();
     const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
     let passwordMatches = false;
-    if (user) {
+    if (user && !hasRole(user.role, OPERATIONAL_ROLES)) {
       try {
         passwordMatches = await bcrypt.compare(password, user.password);
       } catch {
