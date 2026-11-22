@@ -1638,6 +1638,7 @@ export default function POSPage() {
           error={registerAccess.error}
           busy={registerAccess.checking}
           onUnlock={registerAccess.unlock}
+          onSignOut={() => useAuthStore.getState().logout()}
         />
       )}
       </>
