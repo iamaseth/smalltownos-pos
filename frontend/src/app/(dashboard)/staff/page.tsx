@@ -11,7 +11,7 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import { PermissionMatrix } from '@/components/settings/PermissionMatrix';
 import { PermissionAuditLog } from '@/components/settings/PermissionAuditLog';
-import { ROLE_ACCESS, ROLE_KEYS, hasRole } from '@shared/role-permissions';
+import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '@shared/role-permissions';
 import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
 import { tenantCan } from '@/lib/permissions';
 
@@ -47,6 +47,7 @@ export default function StaffPage() {
   const tSetup = useTranslations('setup');
   const { currentTenant } = useAuthStore();
   const canManagePermissions = tenantCan(currentTenant, 'authorization.manage');
+  const needsEmailPassword = !hasRole(form.role, OPERATIONAL_ROLES);
   const canManageStaff = tenantCan(currentTenant, 'staff.operational.manage');
   const canManagePrivilegedStaff = tenantCan(currentTenant, 'staff.privileged.manage');
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -123,25 +124,32 @@ export default function StaffPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (form.password && form.password !== form.confirmPassword) {
+    if (needsEmailPassword && form.password && form.password !== form.confirmPassword) {
       toast.error(tSetup('passwordsMismatch'));
+      return;
+    }
+    if (!needsEmailPassword && !form.pin && (!editingStaff || !editingStaff.has_pin)) {
+      toast.error('A four-digit PIN is required for operational staff.');
+      return;
+    }
+    if (needsEmailPassword && (!form.email.trim() || (!editingStaff && !form.password))) {
+      toast.error('Owner and manager accounts require an email address and password.');
       return;
     }
     try {
       if (editingStaff) {
         await api.put(`/staff/${editingStaff.id}`, {
           name: form.name,
-          email: form.email,
+          ...(needsEmailPassword ? { email: form.email } : {}),
           role: form.role,
-          ...(form.password ? { password: form.password } : {}),
+          ...(needsEmailPassword && form.password ? { password: form.password } : {}),
           ...(form.pin ? { pin: form.pin } : {}),
         });
         toast.success(t('updatedToast'));
       } else {
         await api.post('/staff', {
           name: form.name,
-          email: form.email,
-          password: form.password,
+          ...(needsEmailPassword ? { email: form.email, password: form.password } : {}),
           role: form.role,
           ...(form.pin ? { pin: form.pin } : {}),
           ...(form.role === 'chef' ? { station_ids: form.station_ids } : {}),
@@ -220,9 +228,9 @@ export default function StaffPage() {
               <Button variant="outline" size="sm" onClick={() => openEdit(s)}>
                 <Edit size={14} className="me-1" /> {tCommon('edit')}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => openResetPw(s)}>
+              {!hasRole(s.role, OPERATIONAL_ROLES) && <Button variant="outline" size="sm" onClick={() => openResetPw(s)}>
                 <RotateCcw size={14} className="me-1" /> {t('resetPwButton')}
-              </Button>
+              </Button>}
               <Button
                 variant="ghost"
                 size="sm"
@@ -254,33 +262,36 @@ export default function StaffPage() {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required
               />
-              <input
-                type="email" placeholder={tAuth('email')} value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                autoComplete="email"
-                dir="ltr"
-                required
-              />
-              <div className="relative">
+              {needsEmailPassword && <>
                 <input
-                  type={showPassword ? 'text' : 'password'} placeholder={editingStaff ? t('newPasswordPlaceholder') : t('passwordPlaceholder')}
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                  required={!editingStaff}
+                  type="email" placeholder={tAuth('email')} value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  autoComplete="email"
+                  dir="ltr"
+                  required
                 />
-                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-              <input
-                type={showPassword ? 'text' : 'password'} placeholder={tAuth('confirmPassword')}
-                value={form.confirmPassword}
-                onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                required={!editingStaff || Boolean(form.password)}
-              />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'} placeholder={editingStaff ? t('newPasswordPlaceholder') : t('passwordPlaceholder')}
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                    required={!editingStaff}
+                  />
+                  <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'} placeholder={tAuth('confirmPassword')}
+                  value={form.confirmPassword}
+                  onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  required={!editingStaff || Boolean(form.password)}
+                />
+  
+              </>}
               <select
                 value={form.role} onChange={(e) => {
                   const role = e.target.value;
@@ -333,6 +344,7 @@ export default function StaffPage() {
                       value={form.pin}
                       onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 4) })}
                       className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                      required={!needsEmailPassword && (!editingStaff || !editingStaff.has_pin)}
                       maxLength={4}
                       pattern="[0-9]*"
                       inputMode="numeric"
