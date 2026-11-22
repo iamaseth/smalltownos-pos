@@ -4,6 +4,7 @@ const {
   createRegisterSession,
   touchRegisterSession,
   revokeRegisterSession,
+  consumeExpiredRegisterSession,
   resetRegisterSessionsForTests,
 } = require('../main/services/register-session');
 
@@ -22,6 +23,8 @@ function run() {
 
     clock += REGISTER_SESSION_IDLE_TIMEOUT_MS;
     assert.equal(touchRegisterSession('session-a', 'staff-a'), false, 'idle session expires server-side');
+    assert.equal(consumeExpiredRegisterSession('session-a', 'staff-a'), true, 'idle expiry can be recorded once');
+    assert.equal(consumeExpiredRegisterSession('session-a', 'staff-a'), false, 'idle expiry audit is not duplicated');
 
     createRegisterSession('session-b', 'staff-b');
     revokeRegisterSession('session-b', 'staff-b');
