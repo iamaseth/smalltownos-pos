@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { getJWTSecret } from '../security/jwt-secret';
 import { getDatabase } from '../db';
 import { resolveEffectivePermissions } from '../services/authorization';
+import { createRegisterSession, revokeRegisterSession } from '../services/register-session';
 
 /**
  * Staff PIN verification for a register already authenticated to the POS.
@@ -38,6 +39,19 @@ router.get('/status', (_req: Request, res: Response) => {
   } catch {
     res.status(500).json({ error: 'Register status unavailable' });
   }
+});
+
+
+/** Keep the server-side idle clock alive only while the signed-in operator is active. */
+router.post('/activity', (_req: Request, res: Response) => {
+  res.json({ ok: true });
+});
+
+/** Explicit staff switch/logout revokes the current PIN session immediately. */
+router.post('/lock', (req: Request, res: Response) => {
+  const user = (req as any).user;
+  if (user?.registerSession === true) revokeRegisterSession(user.jti, user.userId);
+  res.json({ ok: true });
 });
 
 router.post('/unlock', pinLimiter, async (req: Request, res: Response) => {
@@ -75,8 +89,10 @@ router.post('/unlock', pinLimiter, async (req: Request, res: Response) => {
     // Mint a short-lived normal POS bearer token for the employee. All existing
     // API permission middleware now evaluates this employee, not the manager
     // who originally opened the register. The frontend keeps it in memory only.
+    const sessionId = randomUUID();
+    createRegisterSession(sessionId, matched.id);
     const accessToken = jwt.sign(
-      { userId: matched.id, email: null, role: matched.role, tenantId: 1, registerSession: true, jti: randomUUID() },
+      { userId: matched.id, email: null, role: matched.role, tenantId: 1, registerSession: true, jti: sessionId },
       getJWTSecret(),
       { expiresIn: '8h' },
     );
