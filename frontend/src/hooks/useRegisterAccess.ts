@@ -30,6 +30,20 @@ export function useRegisterAccess(onRegister: boolean) {
     }
   }, []);
 
+  const lock = useCallback(async () => {
+    if (switching.current) return;
+    switching.current = true;
+    try {
+      // This endpoint revokes the current server-side PIN session immediately.
+      await api.post('/register-access/lock');
+    } catch {
+      // The token may already have expired; restoring the owner session still locks this UI.
+    } finally {
+      await restoreAppUser();
+      switching.current = false;
+    }
+  }, [restoreAppUser]);
+
   useEffect(() => {
     const saved = readRegisterSession();
     if (!saved?.operator) return;
@@ -145,20 +159,6 @@ export function useRegisterAccess(onRegister: boolean) {
       switching.current = false;
     }
   }, [enabled, restoreAppUser]);
-
-  const lock = useCallback(async () => {
-    if (switching.current) return;
-    switching.current = true;
-    try {
-      // This endpoint revokes the current server-side PIN session immediately.
-      await api.post('/register-access/lock');
-    } catch {
-      // The token may already have expired; restoring the owner session still locks this UI.
-    } finally {
-      await restoreAppUser();
-      switching.current = false;
-    }
-  }, [restoreAppUser]);
 
   return {
     // Fail closed while the PIN policy is loading; the lock disappears only
