@@ -4,7 +4,7 @@
  * BackStreet Cash — open shift (count the float) and a four-step close:
  * float out, count, cash spent, result. Handover and review views stay for older shifts.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
@@ -14,6 +14,7 @@ import { ReportOutputButtons } from '@/components/reports/ReportOutputButtons';
 import { ShiftOrders } from '@/components/reports/OrderList';
 import { printReportReceipt } from '@/lib/printer/shift-report-print';
 import { PrintSkippedError } from '@/lib/printer/print-jobs';
+import type { ShiftReportData } from '@print/shift-report-text';
 
 interface Status {
   rate_khr_per_usd: number;
@@ -456,9 +457,6 @@ interface ClosePreview {
   untracked_cash_lines: number;
 }
 
-type CloseStep = 'bills' | 'float' | 'sales' | 'purchases' | 'result';
-const CLOSE_STEP_LABELS: Record<CloseStep, string> = { bills: 'Open bills', float: 'Float', sales: 'Cash sales', purchases: 'Purchases', result: 'Result' };
-
 function StepDots({ steps, current }: { steps: string[]; current: number }) {
   return (
     <div className="mb-4">
@@ -474,10 +472,10 @@ function StepDots({ steps, current }: { steps: string[]; current: number }) {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, strong, tone }: { label: string; value: string; strong?: boolean; tone?: 'minus' }) {
   return (
-    <div className="flex justify-between py-1 text-sm">
-      <span>{label}</span><span className="tabular-nums">{value}</span>
+    <div className={'flex justify-between gap-2 border-b py-1.5 text-sm last:border-0 ' + (strong ? 'font-bold' : '')}>
+      <span>{label}</span><span className={'tabular-nums ' + (tone === 'minus' ? 'text-red-600' : '')}>{value}</span>
     </div>
   );
 }
@@ -486,51 +484,182 @@ function signedUsd(cents: number): string {
   return cents > 0 ? `+${formatUsdCents(cents)}` : formatUsdCents(cents);
 }
 
-function ResultLine({ n, label, value, tone }: { n: number; label: string; value: string; tone?: 'minus' }) {
+function CloseLine({ n, label, hint, value, tone, children }: {
+  n: number; label: string; hint?: string; value: string; tone?: 'minus' | 'good' | 'bad'; children?: React.ReactNode;
+}) {
+  const color = tone === 'minus' || tone === 'bad' ? 'text-red-600' : tone === 'good' ? 'text-emerald-700' : '';
   return (
-    <div className="flex items-baseline justify-between gap-3 py-2 text-base">
-      <span><span className="me-2 text-muted-foreground">{n}.</span>{label}</span>
-      <span className={`tabular-nums font-semibold ${tone === 'minus' ? 'text-red-700' : ''}`}>{value}</span>
+    <div className="flex items-center gap-3 border-b px-4 py-3 last:border-0">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-800 text-sm font-bold text-white">{n}</span>
+      <span className="text-lg font-bold">{label}{hint && <span className="ms-2 text-sm font-normal text-muted-foreground">{hint}</span>}</span>
+      <span className={'ms-auto text-2xl font-extrabold tabular-nums ' + color}>{value}</span>
+      {children}
     </div>
   );
 }
 
-/** Camera (take a photo) and gallery (import) buttons for a receipt; uploads and returns the media id. */
-function ReceiptPhotoButtons({ sessionId, mediaId, onUploaded }: {
-  sessionId: number; mediaId: number | null; onUploaded: (mediaId: number) => void;
+type PhonePhoto = { id: number; created_at: string };
+
+/** Phone upload QR link and the phone photos still waiting for details. */
+function usePhoneReceipts(sessionId: number) {
+  const [qr, setQr] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<PhonePhoto[]>([]);
+  const [thumbs, setThumbs] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    let active = true;
+    const makeLink = () => api.post(`/cash-handover/sessions/${sessionId}/phone-upload-link`, { origin: window.location.origin })
+      .then(({ data }) => { if (active) setQr(data.qr); })
+      .catch(() => { if (active) setQr(null); });
+    void makeLink();
+    const renew = window.setInterval(makeLink, 25 * 60 * 1000);
+    return () => { active = false; window.clearInterval(renew); };
+  }, [sessionId]);
+
+  useEffect(() => {
+    let active = true;
+    const poll = () => api.get(`/cash-handover/sessions/${sessionId}/phone-receipts`)
+      .then(({ data }) => { if (active) setPhotos(data.photos || []); })
+      .catch(() => {});
+    void poll();
+    const timer = window.setInterval(poll, 4000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [sessionId]);
+
+  useEffect(() => {
+    for (const photo of photos) {
+      if (thumbs[photo.id]) continue;
+      api.get(`/cash-handover/media/${photo.id}`, { responseType: 'blob' })
+        .then(({ data }) => {
+          const reader = new FileReader();
+          reader.onload = () => setThumbs((t) => ({ ...t, [photo.id]: String(reader.result) }));
+          reader.readAsDataURL(data as Blob);
+        })
+        .catch(() => {});
+    }
+  }, [photos, thumbs]);
+
+  const used = (id: number) => setPhotos((p) => p.filter((x) => x.id !== id));
+  const dismiss = async (id: number) => {
+    try {
+      await api.post(`/cash-handover/sessions/${sessionId}/phone-receipts/${id}/dismiss`);
+      used(id);
+    } catch (error) { toast.error(errorText(error, 'Could not remove the photo')); }
+  };
+  return { qr, photos, thumbs, used, dismiss };
+}
+
+/** Add payout window: 1. receipt photo, 2. what for, 3. how much. */
+function AddPayoutModal({ sessionId, phone, onSaved, onClose }: {
+  sessionId: number;
+  phone: ReturnType<typeof usePhoneReceipts>;
+  onSaved: (item: SpentItem) => void;
+  onClose: () => void;
 }) {
-  const [state, setState] = useState<'idle' | 'uploading' | 'failed'>('idle');
-  const pick = async (file: File | undefined) => {
+  const [taken, setTaken] = useState<{ id: number; src: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [what, setWhat] = useState('');
+  const [amount, setAmount] = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [saving, setSaving] = useState(false);
+
+  const waiting = phone.photos[0];
+  const photo = taken ? { ...taken, fromPhone: false }
+    : waiting ? { id: waiting.id, src: phone.thumbs[waiting.id] ?? null, fromPhone: true } : null;
+
+  const takePhoto = async (file: File | undefined) => {
     if (!file) return;
-    setState('uploading');
+    setUploading(true);
     try {
       const data = await readFileAsDataUrl(file);
       const res = await api.post('/cash-handover/media', { kind: 'purchase_receipt', data, session_id: sessionId },
         { headers: { 'Idempotency-Key': newKey() } });
-      setState('idle');
-      onUploaded(res.data.media.id);
+      setTaken({ id: res.data.media.id, src: data });
     } catch (error) {
-      setState('failed');
       toast.error(errorText(error, 'Photo upload failed, try again'));
-    }
+    } finally { setUploading(false); }
   };
-  const iconClass = 'flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border text-lg hover:bg-muted';
-  if (mediaId) return <span className="flex size-10 shrink-0 items-center justify-center text-lg text-emerald-700" title="Receipt photo attached">✓</span>;
+
+  const removePhoto = async () => {
+    if (photo?.fromPhone) await phone.dismiss(photo.id);
+    else setTaken(null);
+  };
+
+  const value = Number.parseFloat(amount) || 0;
+  const save = async () => {
+    if (!what.trim() || value <= 0) { toast.error('Add what it was for and the amount'); return; }
+    setSaving(true);
+    try {
+      const res = await api.post('/cash-handover/sessions/' + sessionId + '/cash-spent', {
+        currency,
+        amount_minor: currency === 'USD' ? Math.round(value * 100) : Math.round(value),
+        what: what.trim().slice(0, 120),
+        media_id: photo?.id ?? null,
+      });
+      if (photo?.fromPhone) phone.used(photo.id);
+      onSaved(res.data.item);
+    } catch (error) {
+      toast.error(errorText(error, 'Could not add cash payout'));
+    } finally { setSaving(false); }
+  };
+
+  const bigChoice = 'flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 p-4 text-base font-bold hover:bg-muted';
   return (
-    <div className="flex shrink-0 gap-1">
-      <label className={iconClass} title="Take a photo of the receipt" aria-label="Take a photo of the receipt">
-        {state === 'uploading' ? '…' : '📷'}
-        <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} />
-      </label>
-      <label className={iconClass} title="Import a receipt photo" aria-label="Import a receipt photo">
-        🖼
-        <input type="file" accept="image/*" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} />
-      </label>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Add payout">
+      <div className="w-full max-w-md space-y-4 rounded-2xl bg-card p-5 shadow-xl">
+        <h2 className="text-2xl font-bold">Add payout</h2>
+        <div>
+          <p className="mb-1 text-sm font-semibold text-muted-foreground">1. Receipt photo</p>
+          {photo ? (
+            <div className="flex items-center gap-3 rounded-xl border-2 border-emerald-300 p-2">
+              {photo.src ? <img src={photo.src} alt="Receipt" className="size-16 rounded-lg object-cover" /> : <div className="size-16 rounded-lg bg-muted" />}
+              <span className="flex-1 font-semibold text-emerald-800">{photo.fromPhone ? 'Photo from phone' : 'Photo added'}</span>
+              <button type="button" onClick={removePhoto} aria-label="Remove photo" className="rounded-lg px-3 py-2 text-red-600 hover:bg-red-50">✕</button>
+            </div>
+          ) : showQr ? (
+            <div className="flex items-center gap-3 rounded-xl bg-muted p-3">
+              {phone.qr ? <img src={phone.qr} alt="QR code to send a receipt photo from a phone" className="size-28 shrink-0 rounded-lg bg-white p-1" /> : <div className="size-28 shrink-0 rounded-lg bg-background" />}
+              <div className="text-sm"><p className="text-base font-bold">Scan with your phone</p><p className="text-muted-foreground">Take the photo. It appears here.</p>
+                <button type="button" className="mt-2 underline" onClick={() => setShowQr(false)}>Back</button></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <label className={bigChoice}>
+                <span className="text-3xl" aria-hidden="true">📷</span>{uploading ? 'Uploading…' : 'Take photo'}
+                <input type="file" accept="image/*" capture="environment" className="sr-only" disabled={uploading} onChange={(e) => takePhoto(e.target.files?.[0])} />
+              </label>
+              <button type="button" className={bigChoice} onClick={() => setShowQr(true)}>
+                <span className="text-3xl" aria-hidden="true">📱</span>Use phone
+              </button>
+            </div>
+          )}
+        </div>
+        <label className="block">
+          <span className="mb-1 block text-sm font-semibold text-muted-foreground">2. What for?</span>
+          <input value={what} maxLength={120} onChange={(e) => setWhat(e.target.value)} placeholder="Ice, gas, vegetables…"
+            className="h-14 w-full rounded-xl border-2 px-3 text-lg" />
+        </label>
+        <div>
+          <span className="mb-1 block text-sm font-semibold text-muted-foreground">3. How much?</span>
+          <div className="flex gap-2">
+            <input value={amount} inputMode="decimal" aria-label="Amount" placeholder="0.00"
+              onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+              className="h-14 min-w-0 flex-1 rounded-xl border-2 px-3 text-lg tabular-nums" />
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)} aria-label="Currency" className="rounded-xl border-2 px-3 text-lg">
+              <option value="USD">$</option><option value="KHR">៛</option>
+            </select>
+          </div>
+        </div>
+        <button type="button" disabled={saving || uploading} onClick={save}
+          className="h-14 w-full rounded-xl bg-emerald-700 text-xl font-bold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+        <button type="button" onClick={onClose} className="w-full py-2 font-semibold text-muted-foreground">Cancel</button>
+      </div>
     </div>
   );
 }
 
-function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
+function SimpleClose({ header, sessionId, rate, onClosed }: {
   header: (t: string) => React.ReactNode;
   sessionId: number;
   rate: number;
@@ -540,19 +669,17 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
   const router = useRouter();
   const [openTickets, setOpenTickets] = useState<{ order_id: number; order_number: string; table_label: string | null; balance: number }[] | null>(null);
   const [passBills, setPassBills] = useState(false);
-  const [phonePending, setPhonePending] = useState(0);
   const [activeCounter, setActiveCounter] = useState<'cash' | 'float'>('cash');
   const [floatCount, setFloatCount] = useState<CashCountValue>(emptyCashCount());
   const [count, setCount] = useState<CashCountValue>(emptyCashCount());
   const [spent, setSpent] = useState<SpentItem[]>([]);
-  const [draft, setDraft] = useState({ paidTo: '', what: '', amount: '', currency: 'USD', mediaId: null as number | null });
   const [preview, setPreview] = useState<ClosePreview | null>(null);
+  const [report, setReport] = useState<ShiftReportData | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
-  const paidToRef = useRef<HTMLInputElement>(null);
-  const whatRef = useRef<HTMLInputElement>(null);
-  const amountRef = useRef<HTMLInputElement>(null);
+  const [addingPayout, setAddingPayout] = useState(false);
+  const phone = usePhoneReceipts(sessionId);
 
   const loadPreview = async () => {
     const res = await api.post('/cash-handover/sessions/' + sessionId + '/close-preview', {
@@ -564,6 +691,9 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
 
   useEffect(() => {
     let active = true;
+    api.get('/reports/shift-report', { params: { session_id: sessionId } })
+      .then(({ data }) => { if (active) setReport(data); })
+      .catch(() => {});
     Promise.all([
       api.get('/cash-handover/open-tickets'),
       api.get('/cash-handover/sessions/' + sessionId + '/cash-spent'),
@@ -589,38 +719,6 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
     try { await fn(); } finally { setBusy(false); }
   };
 
-  const draftValid = (Number.parseFloat(draft.amount) || 0) > 0 && draft.what.trim().length > 0;
-  const draftStarted = draft.paidTo.trim() !== '' || draft.what.trim() !== '' || draft.amount.trim() !== '' || draft.mediaId != null;
-
-  const saveDraft = async (): Promise<boolean> => {
-    const amount = Number.parseFloat(draft.amount) || 0;
-    const what = (draft.paidTo.trim() ? draft.paidTo.trim() + ': ' + draft.what.trim() : draft.what.trim()).slice(0, 120);
-    try {
-      const res = await api.post('/cash-handover/sessions/' + sessionId + '/cash-spent', {
-        currency: draft.currency,
-        amount_minor: draft.currency === 'USD' ? Math.round(amount * 100) : Math.round(amount),
-        what,
-        media_id: draft.mediaId,
-      });
-      setSpent((items) => [...items, res.data.item]);
-      setDraft({ paidTo: '', what: '', amount: '', currency: draft.currency, mediaId: null });
-      await loadPreview();
-      return true;
-    } catch (error) {
-      toast.error(errorText(error, 'Could not add cash payout'));
-      return false;
-    }
-  };
-
-  const onEnter = (e: React.KeyboardEvent<HTMLInputElement>, next: 'what' | 'amount' | 'save') => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    if (next === 'what') whatRef.current?.focus();
-    else if (next === 'amount') amountRef.current?.focus();
-    else if (draftValid) void run(async () => { if (await saveDraft()) paidToRef.current?.focus(); });
-    else toast.error('Add what it was for and the amount');
-  };
-
   const removeSpent = (id: number) => run(async () => {
     try {
       await api.delete('/cash-handover/sessions/' + sessionId + '/cash-spent/' + id);
@@ -637,16 +735,20 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
   const difference = countTotals.combined - expected;
   const payoutTotal = preview?.cash_spent_usd_cents ?? 0;
   const cashSales = preview?.cash_sales_usd_cents ?? 0;
-  const nonCashTotal = preview?.non_cash_payments.reduce((sum, p) => sum + p.total_cents, 0) ?? 0;
   const tickets = openTickets ?? [];
   const openOwed = tickets.reduce((sum, ticket) => sum + Number(ticket.balance || 0), 0);
   const floatCountCombined = combinedUsdCents(floatPayload.usd_cents, floatPayload.khr_riel, rate);
   const floatGap = floatCountCombined - openingCombined;
   const tolerance = preview?.tolerance_usd_cents ?? 0;
   const needsExplanation = Math.abs(difference) > tolerance || Math.abs(floatGap) > tolerance;
+  const phonePending = phone.photos.length;
 
   const closeShift = () => run(async () => {
     if (!preview) return;
+    if (phonePending > 0) {
+      toast.error('A phone receipt photo still needs details. Tap Add payout.');
+      return;
+    }
     if (tickets.length > 0 && !passBills) {
       toast.error('Transfer the unpaid tickets to the next cashier, or take payment first.');
       return;
@@ -680,6 +782,7 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
 
   const activeValue = activeCounter === 'cash' ? count : floatCount;
   const setActiveValue = activeCounter === 'cash' ? setCount : setFloatCount;
+  const sales = report?.sales;
 
   return (
     <div className="w-full space-y-3">
@@ -688,41 +791,35 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
       <div className="grid min-h-0 grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(220px,0.9fr)_minmax(390px,1.2fr)_minmax(360px,1fr)]">
         <aside className="space-y-3">
           <section className="rounded-xl border bg-card p-4">
-            <h2 className="mb-3 text-lg font-bold">Shift Summary</h2>
-            <Row label="Cash sales" value={formatUsdCents(cashSales)} />
-            <Row label="Cash payouts" value={'−' + formatUsdCents(payoutTotal)} />
-            <Row label="Net cash movement" value={formatUsdCents(cashSales - payoutTotal)} strong />
-          </section>
-          <section className="rounded-xl border bg-card p-4">
-            <h2 className="mb-3 text-lg font-bold">Payment Methods</h2>
-            <Row label="Cash" value={formatUsdCents(cashSales)} />
-            {(preview?.non_cash_payments || []).map((p) => (
-              <Row key={p.method} label={p.method} value={formatUsdCents(p.total_cents)} />
-            ))}
-            <Row label="Non-cash total" value={formatUsdCents(nonCashTotal)} strong />
-          </section>
-          <section className="rounded-xl border bg-card p-4">
-            <h2 className="mb-2 text-lg font-bold">Open Tickets</h2>
-            {openTickets === null ? <p className="text-sm text-muted-foreground">Checking tickets…</p> : tickets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No unpaid tickets.</p>
-            ) : (
+            <h2 className="mb-2 text-lg font-bold">Shift Summary</h2>
+            {sales ? (
               <>
-                <p className="mb-2 text-sm">{tickets.length} unpaid · {formatUsdCents(Math.round(openOwed * 100))}</p>
-                <ul className="mb-3 space-y-1 text-sm">
-                  {tickets.map((ticket) => (
-                    <li key={ticket.order_id} className="flex justify-between gap-2">
-                      <span className="truncate">{ticket.table_label || ticket.order_number}</span>
-                      <span className="shrink-0 tabular-nums">{formatUsdCents(Math.round(ticket.balance * 100))}</span>
-                    </li>
-                  ))}
-                </ul>
-                <label className="flex items-center gap-2 rounded-lg bg-orange-50 p-2 text-sm font-semibold text-orange-900">
-                  <input type="checkbox" className="size-5" checked={passBills} onChange={(e) => setPassBills(e.target.checked)} />
-                  Transfer tickets to next cashier
-                </label>
-                <button type="button" className="mt-2 text-sm underline" onClick={() => router.push('/orders')}>Take payment first</button>
+                <Row label="Total sales (gross)" value={formatUsdCents(sales.grossCents)} />
+                <Row label="Discounts" value={'−' + formatUsdCents(sales.discountCents)} tone="minus" />
+                <Row label="Refunds" value={'−' + formatUsdCents(sales.refundCents)} tone="minus" />
+                <Row label="Voids" value={'−' + formatUsdCents(sales.voidCents)} tone="minus" />
+                <div className="mt-2 flex justify-between rounded-lg bg-emerald-50 px-3 py-2 text-lg font-extrabold">
+                  <span>Net sales</span><span className="tabular-nums">{formatUsdCents(sales.netCents)}</span>
+                </div>
               </>
-            )}
+            ) : <p className="text-sm text-muted-foreground">Loading…</p>}
+          </section>
+          <section className="rounded-xl border bg-card p-4">
+            <h2 className="mb-2 text-lg font-bold">Payment Methods</h2>
+            {(report?.payments || []).map((p) => (
+              <Row key={p.label} label={p.label} value={p.khrRiel && !p.usdCents ? formatKhr(p.khrRiel) : formatUsdCents(p.usdCents)} />
+            ))}
+            {report && report.payments.length === 0 && <p className="text-sm text-muted-foreground">No payments yet.</p>}
+          </section>
+          <section className="rounded-xl border bg-card p-4">
+            <h2 className="mb-2 text-lg font-bold">Tables</h2>
+            {report ? (
+              <>
+                <Row label="Tables served" value={String(report.tables.served)} />
+                <Row label="Occupied (now)" value={String(report.tables.occupied)} />
+                <Row label="Waiting for payment" value={String(report.tables.awaiting.length)} />
+              </>
+            ) : <p className="text-sm text-muted-foreground">Loading…</p>}
           </section>
           {preview?.untracked_cash_lines ? (
             <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
@@ -732,90 +829,63 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
         </aside>
 
         <main className="space-y-3">
-          <section className="rounded-xl border bg-card p-4">
-            <h2 className="mb-3 text-lg font-bold">Close Shift</h2>
-            <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
-              <Row label="Cash Sales (from POS)" value={formatUsdCents(cashSales)} />
-              <Row label="Cash Payouts" value={'−' + formatUsdCents(payoutTotal)} />
-              <Row label="Float (keep in drawer)" value={formatUsdCents(floatCountCombined)} />
-              <div className="border-t pt-2">
-                <Row label="Expected cash" value={formatUsdCents(expected)} strong />
-              </div>
-              <Row label="Cash on hand (counted)" value={formatUsdCents(countTotals.combined)} strong />
-              <div className={'rounded-lg p-3 ' + (difference === 0 ? 'bg-emerald-50 text-emerald-800' : difference < 0 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800')}>
-                <div className="text-sm font-medium">Difference (over / short)</div>
-                <div className="text-2xl font-bold tabular-nums">{signedUsd(difference)}</div>
-              </div>
-              {floatGap !== 0 && (
-                <p className="text-xs text-amber-700">Float counted differs from the opening float by {signedUsd(floatGap)}. Add a note below.</p>
+          <section className="overflow-hidden rounded-xl border bg-card">
+            <h2 className="bg-emerald-50 px-4 py-3 text-lg font-bold">Close Day Shift</h2>
+            <CloseLine n={1} label="Cash sales" hint="(from POS)" value={formatUsdCents(cashSales)} />
+            <CloseLine n={2} label="Float" hint="(at start)" value={formatUsdCents(openingCombined)} />
+            <div className="border-b">
+              <CloseLine n={3} label="Cash payouts" value={'−' + formatUsdCents(payoutTotal)} tone="minus">
+                <button type="button" onClick={() => setAddingPayout(true)}
+                  className="ms-2 shrink-0 rounded-lg bg-emerald-700 px-3 py-2 text-sm font-bold text-white">
+                  + Add payout{phonePending > 0 ? ` (${phonePending} photo)` : ''}
+                </button>
+              </CloseLine>
+              {spent.length > 0 && (
+                <ul className="-mt-1 space-y-1 px-4 pb-3 ps-[3.75rem] text-sm">
+                  {spent.map((item) => (
+                    <li key={item.id} className="flex items-center gap-2">
+                      <span className="w-5 shrink-0" title={item.media_id ? 'Receipt photo' : 'No photo'}>{item.media_id ? '🧾' : ''}</span>
+                      <span className="min-w-0 flex-1 truncate">{item.reason}</span>
+                      <span className="tabular-nums">{item.amount_khr_riel ? formatKhr(item.amount_khr_riel) : formatUsdCents(item.amount_cents)}</span>
+                      <button type="button" disabled={busy} aria-label="Remove payout" className="rounded px-2 text-muted-foreground hover:bg-red-50 hover:text-red-600" onClick={() => removeSpent(item.id)}>✕</button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
+            <div className="bg-emerald-50">
+              <CloseLine n={4} label="Cash on hand" hint="(counted)" value={formatUsdCents(countTotals.combined)} />
+            </div>
+            <CloseLine n={5} label="Difference" value={signedUsd(difference)} tone={difference === 0 ? 'good' : 'bad'} />
+            {floatGap !== 0 && floatCountCombined > 0 && (
+              <p className="px-4 pb-3 text-xs text-amber-700">Float counted differs from the opening float by {signedUsd(floatGap)}. Add a note below.</p>
+            )}
           </section>
 
           <section className="rounded-xl border bg-card p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-lg font-bold">Cash Payouts</h2>
-              <span className="text-sm font-semibold tabular-nums">{formatUsdCents(payoutTotal)}</span>
-            </div>
-            <PhoneReceipts sessionId={sessionId}
-              onPendingChange={setPhonePending}
-              onAdded={(item) => { setSpent((items) => [...items, item]); void loadPreview(); }} />
-            <div className="mt-3 overflow-hidden rounded-xl border">
-              <div className="grid grid-cols-[1fr_1.4fr_7rem_4rem] gap-2 bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
-                <span>Paid to</span><span>What for</span><span>Amount</span><span>Receipt</span>
+            <h2 className="mb-2 text-lg font-bold">Handover</h2>
+            {openTickets === null ? <p className="text-sm text-muted-foreground">Checking tickets…</p> : tickets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No open tickets.</p>
+            ) : (
+              <div className="rounded-lg bg-orange-50 p-3">
+                <label className="flex items-center gap-2 text-base font-bold text-orange-900">
+                  <input type="checkbox" className="size-5" checked={passBills} onChange={(e) => setPassBills(e.target.checked)} />
+                  {tickets.length} open ticket{tickets.length > 1 ? 's' : ''} – {formatUsdCents(Math.round(openOwed * 100))} · pass to next cashier
+                </label>
+                <p className="mt-1 truncate text-xs text-orange-800">{tickets.map((t) => t.table_label || t.order_number).join(', ')}</p>
+                <button type="button" className="mt-1 text-sm underline" onClick={() => router.push('/orders')}>Take payment first</button>
               </div>
-              {spent.map((item) => {
-                const text = item.reason || '';
-                const cut = text.indexOf(': ');
-                const paidTo = cut > 0 ? text.slice(0, cut) : '';
-                const what = cut > 0 ? text.slice(cut + 2) : text;
-                return (
-                  <div key={item.id} className="grid grid-cols-[1fr_1.4fr_7rem_4rem] items-center gap-2 border-t px-3 py-2 text-sm">
-                    <span className="truncate">{paidTo || '·'}</span>
-                    <span className="truncate">{what}</span>
-                    <span className="tabular-nums font-semibold">{item.amount_khr_riel ? formatKhr(item.amount_khr_riel) : formatUsdCents(item.amount_cents)}</span>
-                    <span className="flex items-center justify-between gap-1">
-                      <span>{item.media_id ? '📷' : ''}</span>
-                      <button type="button" disabled={busy} aria-label="Remove payout line" className="rounded px-2 text-red-600 hover:bg-red-50" onClick={() => removeSpent(item.id)}>✕</button>
-                    </span>
-                  </div>
-                );
-              })}
-              <div className="grid grid-cols-[1fr_1.4fr_7rem_4rem] items-center gap-2 border-t px-3 py-2">
-                <input ref={paidToRef} placeholder="Shop / person" value={draft.paidTo} maxLength={40} aria-label="Paid to"
-                  onChange={(e) => setDraft({ ...draft, paidTo: e.target.value })} onKeyDown={(e) => onEnter(e, 'what')}
-                  className="min-w-0 rounded-md border px-2 py-2 text-sm" />
-                <input ref={whatRef} placeholder="Ice, gas, vegetables…" value={draft.what} maxLength={80} aria-label="What for"
-                  onChange={(e) => setDraft({ ...draft, what: e.target.value })} onKeyDown={(e) => onEnter(e, 'amount')}
-                  className="min-w-0 rounded-md border px-2 py-2 text-sm" />
-                <div className="flex min-w-0 gap-1">
-                  <input ref={amountRef} inputMode="decimal" placeholder="0" value={draft.amount} aria-label="Amount"
-                    onChange={(e) => setDraft({ ...draft, amount: e.target.value.replace(/[^\d.]/g, '') })} onKeyDown={(e) => onEnter(e, 'save')}
-                    className="min-w-0 flex-1 rounded-md border px-2 py-2 text-sm tabular-nums" />
-                  <select value={draft.currency} onChange={(e) => setDraft({ ...draft, currency: e.target.value })}
-                    aria-label="Currency" className="shrink-0 rounded-md border px-1 text-xs">
-                    <option value="USD">$</option><option value="KHR">៛</option>
-                  </select>
-                </div>
-                <ReceiptPhotoButtons sessionId={sessionId} mediaId={draft.mediaId} onUploaded={(mediaId) => setDraft((d) => ({ ...d, mediaId }))} />
-              </div>
-            </div>
-            <button type="button" disabled={busy || !draftValid} onClick={() => run(async () => { if (await saveDraft()) paidToRef.current?.focus(); })}
-              className="mt-2 text-sm font-semibold text-emerald-700 underline">+ Add another payout line</button>
-            {phonePending > 0 && <p className="mt-2 text-sm font-semibold text-orange-700">{phonePending} receipt photo(s) still need details.</p>}
+            )}
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} aria-label="Note"
+              placeholder={needsExplanation ? 'Explain the difference (required)' : 'Note (optional)…'}
+              className={'mt-3 w-full rounded-lg border px-3 py-2 text-sm ' + (needsExplanation && !reason.trim() ? 'border-amber-400 bg-amber-50' : '')} />
           </section>
 
-          {needsExplanation && (
-            <section className="rounded-xl border border-amber-300 bg-amber-50 p-3">
-              <label className="block text-sm font-semibold text-amber-900" htmlFor="closing-explanation">Explain the difference</label>
-              <textarea id="closing-explanation" value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500}
-                placeholder="Add a note for the manager…" className="mt-2 w-full rounded-lg border bg-white px-3 py-2 text-sm" />
-            </section>
-          )}
           <button type="button" disabled={busy || loading || !preview || phonePending > 0 || (tickets.length > 0 && !passBills) || needsExplanation && !reason.trim() || (openingCombined > 0 && floatCountCombined === 0)}
             onClick={closeShift}
-            className="w-full rounded-xl bg-emerald-700 px-5 py-4 text-lg font-bold text-white disabled:opacity-50">
-            {busy ? 'Closing…' : 'Close shift & print report'}
+            className="w-full rounded-xl bg-emerald-700 px-5 py-4 text-white disabled:opacity-50">
+            <span className="block text-xl font-bold">{busy ? 'Closing…' : 'Handover & close shift'}</span>
+            <span className="block text-sm">Print shift report</span>
           </button>
         </main>
 
@@ -836,125 +906,9 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
           </div>
         </aside>
       </div>
-    </div>
-  );
-}
-
-function PhoneReceipts({ sessionId, onAdded, onPendingChange }: {
-  sessionId: number;
-  onAdded: (item: SpentItem) => void;
-  onPendingChange: (count: number) => void;
-}) {
-  const [link, setLink] = useState<{ qr: string; expires_at: string } | null>(null);
-  const [photos, setPhotos] = useState<PhonePhoto[]>([]);
-  const [thumbs, setThumbs] = useState<Record<number, string>>({});
-  const [drafts, setDrafts] = useState<Record<number, { paidTo: string; what: string; amount: string; currency: string }>>({});
-  const [saving, setSaving] = useState<number | null>(null);
-  const [zoom, setZoom] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const makeLink = () => api.post(`/cash-handover/sessions/${sessionId}/phone-upload-link`, { origin: window.location.origin })
-      .then(({ data }) => { if (active) setLink({ qr: data.qr, expires_at: data.expires_at }); })
-      .catch(() => { if (active) setLink(null); });
-    void makeLink();
-    const renew = window.setInterval(makeLink, 25 * 60 * 1000);
-    return () => { active = false; window.clearInterval(renew); };
-  }, [sessionId]);
-
-  useEffect(() => {
-    let active = true;
-    const poll = () => api.get(`/cash-handover/sessions/${sessionId}/phone-receipts`)
-      .then(({ data }) => { if (active) setPhotos(data.photos || []); })
-      .catch(() => {});
-    void poll();
-    const timer = window.setInterval(poll, 4000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [sessionId]);
-
-  useEffect(() => { onPendingChange(photos.length); }, [photos.length, onPendingChange]);
-
-  useEffect(() => {
-    for (const photo of photos) {
-      if (thumbs[photo.id]) continue;
-      api.get(`/cash-handover/media/${photo.id}`, { responseType: 'blob' })
-        .then(({ data }) => {
-          const reader = new FileReader();
-          reader.onload = () => setThumbs((t) => ({ ...t, [photo.id]: String(reader.result) }));
-          reader.readAsDataURL(data as Blob);
-        })
-        .catch(() => {});
-    }
-  }, [photos, thumbs]);
-
-  const draftOf = (id: number) => drafts[id] ?? { paidTo: '', what: '', amount: '', currency: 'USD' };
-  const setDraft = (id: number, patch: Partial<{ paidTo: string; what: string; amount: string; currency: string }>) =>
-    setDrafts((d) => ({ ...d, [id]: { ...draftOf(id), ...patch } }));
-
-  const save = async (id: number) => {
-    const d = draftOf(id);
-    const amount = Number.parseFloat(d.amount) || 0;
-    if (!d.what.trim() || amount <= 0) { toast.error('Add what it was and the amount'); return; }
-    setSaving(id);
-    try {
-      const what = (d.paidTo.trim() ? `${d.paidTo.trim()}: ${d.what.trim()}` : d.what.trim()).slice(0, 120);
-      const res = await api.post(`/cash-handover/sessions/${sessionId}/cash-spent`, {
-        currency: d.currency, amount_minor: d.currency === 'USD' ? Math.round(amount * 100) : Math.round(amount), what, media_id: id,
-      });
-      onAdded(res.data.item);
-      setPhotos((p) => p.filter((x) => x.id !== id));
-    } catch (error) { toast.error(errorText(error, 'Could not save')); } finally { setSaving(null); }
-  };
-
-  const dismiss = async (id: number) => {
-    setSaving(id);
-    try {
-      await api.post(`/cash-handover/sessions/${sessionId}/phone-receipts/${id}/dismiss`);
-      setPhotos((p) => p.filter((x) => x.id !== id));
-    } catch (error) { toast.error(errorText(error, 'Could not remove the photo')); } finally { setSaving(null); }
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-4 rounded-xl bg-muted p-3">
-        {link
-          ? <img src={link.qr} alt="QR code to send receipt photos from a phone" className="size-28 shrink-0 rounded-lg bg-white p-1" />
-          : <div className="size-28 shrink-0 rounded-lg bg-background" />}
-        <div>
-          <p className="text-lg font-bold">Scan with your phone</p>
-          <p className="text-sm text-muted-foreground">Take photos of receipts. They appear here.</p>
-        </div>
-      </div>
-      {photos.map((photo) => {
-        const d = draftOf(photo.id);
-        return (
-          <div key={photo.id} className="flex flex-wrap items-center gap-2 rounded-xl border-2 border-orange-300 p-2">
-            {thumbs[photo.id]
-              ? <button type="button" onClick={() => setZoom(thumbs[photo.id])} aria-label="Show receipt photo larger"><img src={thumbs[photo.id]} alt="Receipt from phone" className="size-16 rounded-lg object-cover" /></button>
-              : <div className="size-16 rounded-lg bg-muted" />}
-            <input value={d.paidTo} onChange={(e) => setDraft(photo.id, { paidTo: e.target.value })} placeholder="Paid to" aria-label="Paid to" maxLength={40}
-              className="min-w-0 flex-1 rounded-md border px-2 py-3 text-base" />
-            <input value={d.what} onChange={(e) => setDraft(photo.id, { what: e.target.value })} placeholder="What" aria-label="What" maxLength={80}
-              className="min-w-0 flex-1 rounded-md border px-2 py-3 text-base" />
-            <div className="flex gap-1">
-              <input value={d.amount} inputMode="decimal" onChange={(e) => setDraft(photo.id, { amount: e.target.value.replace(/[^\d.]/g, '') })}
-                placeholder="0" aria-label="Amount" className="w-20 rounded-md border px-2 py-3 text-base tabular-nums" />
-              <select value={d.currency} onChange={(e) => setDraft(photo.id, { currency: e.target.value })} aria-label="Currency" className="rounded-md border px-1">
-                <option value="USD">$</option><option value="KHR">៛</option>
-              </select>
-            </div>
-            <button type="button" disabled={saving === photo.id} onClick={() => save(photo.id)}
-              className="h-12 rounded-lg bg-emerald-600 px-4 font-bold text-white disabled:opacity-40">Save</button>
-            <button type="button" disabled={saving === photo.id} onClick={() => dismiss(photo.id)} aria-label="Remove photo"
-              className="h-12 rounded-lg px-3 text-red-600 hover:bg-red-50">✕</button>
-          </div>
-        );
-      })}
-      {zoom && (
-        <button type="button" onClick={() => setZoom(null)} aria-label="Close photo"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <img src={zoom} alt="Receipt from phone" className="max-h-full max-w-full rounded-lg" />
-        </button>
+      {addingPayout && (
+        <AddPayoutModal sessionId={sessionId} phone={phone} onClose={() => setAddingPayout(false)}
+          onSaved={(item) => { setSpent((items) => [...items, item]); setAddingPayout(false); void loadPreview(); }} />
       )}
     </div>
   );
