@@ -269,6 +269,9 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
       }
     }
 
+    if (isOperationalRole(targetRole) && password !== undefined) {
+      return res.status(400).json({ error: 'Operational staff accounts use PIN login; passwords are not supported.' });
+    }
     if (password && !validatePassword(password)) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
