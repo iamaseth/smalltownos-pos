@@ -41,8 +41,18 @@ export function useRegisterAccess(onRegister: boolean) {
     let active = true;
     api.get('/register-access/status')
       .then(({ data }) => { if (active) setPinLockEnabled(Boolean(data?.pin_lock_enabled)); })
-      // Older server or no answer: keep the till usable rather than locking everyone out.
-      .catch(() => { if (active) setPinLockEnabled(false); });
+      .catch(async () => {
+        // A saved PIN token may have expired while this tab was closed. Restore
+        // the original login and retry status rather than treating 401 as "no PINs".
+        try {
+          await useAuthStore.getState().refreshAuthContext();
+          const { data } = await api.get('/register-access/status');
+          if (active) setPinLockEnabled(Boolean(data?.pin_lock_enabled));
+        } catch {
+          // Unknown policy is not permission to bypass the register lock.
+          if (active) setPinLockEnabled(true);
+        }
+      });
     return () => { active = false; };
   }, [onRegister]);
 
@@ -56,9 +66,14 @@ export function useRegisterAccess(onRegister: boolean) {
     };
     const check = () => {
       if (Date.now() - lastActivity >= REGISTER_IDLE_TIMEOUT_MS && !switching.current) {
-        void restoreAppUser();
+        void lock();
       }
     };
+    const heartbeat = window.setInterval(() => {
+      if (Date.now() - lastActivity < REGISTER_IDLE_TIMEOUT_MS) {
+        void api.post('/register-access/activity').catch(() => {});
+      }
+    }, 60_000);
     const events = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
     events.forEach(e => window.addEventListener(e, activity));
     window.addEventListener('focus', check);
@@ -69,14 +84,21 @@ export function useRegisterAccess(onRegister: boolean) {
       window.removeEventListener('focus', check);
       document.removeEventListener('visibilitychange', check);
       window.clearInterval(timer);
+      window.clearInterval(heartbeat);
     };
-  }, [enabled, locked, restoreAppUser]);
+  }, [enabled, locked, lock]);
 
   useEffect(() => () => {
-    // If the POS page is left while an employee is active, restore the
-    // original email/password identity before the rest of the app is used.
-    setRegisterSessionToken(null);
-    void useAuthStore.getState().refreshAuthContext().catch(() => {});
+    // Revoke the PIN token before leaving POS, then restore the original login.
+    if (readRegisterSession()?.token) {
+      void api.post('/register-access/lock').catch(() => {}).finally(() => {
+        setRegisterSessionToken(null);
+        void useAuthStore.getState().refreshAuthContext().catch(() => {});
+      });
+    } else {
+      setRegisterSessionToken(null);
+      void useAuthStore.getState().refreshAuthContext().catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -124,8 +146,18 @@ export function useRegisterAccess(onRegister: boolean) {
     }
   }, [enabled, restoreAppUser]);
 
-  const lock = useCallback(() => {
-    if (!switching.current) void restoreAppUser();
+  const lock = useCallback(async () => {
+    if (switching.current) return;
+    switching.current = true;
+    try {
+      // This endpoint revokes the current server-side PIN session immediately.
+      await api.post('/register-access/lock');
+    } catch {
+      // The token may already have expired; restoring the owner session still locks this UI.
+    } finally {
+      await restoreAppUser();
+      switching.current = false;
+    }
   }, [restoreAppUser]);
 
   return {
