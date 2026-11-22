@@ -25,9 +25,6 @@ import PaymentModal from '@/components/pos/PaymentModal';
 import OpenTabsModal from '@/components/pos/OpenTabsModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
-import RegisterLockScreen from '@/components/pos/RegisterLockScreen';
-import { useRegisterAccess } from '@/hooks/useRegisterAccess';
-import { RegisterOperatorProvider } from '@/hooks/register-operator-context';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
 import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
 import { useCashSession } from '@/hooks/useCashSession';
@@ -109,10 +106,6 @@ function newIdempotencyKey(): string {
 
 export default function POSPage() {
   const { currentTenant, user } = useAuthStore();
-  const registerAccess = useRegisterAccess(true);
-  const registerOperator = registerAccess.operator
-    ? { name: registerAccess.operator.name, switchStaff: registerAccess.lock }
-    : null;
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
@@ -1339,8 +1332,7 @@ export default function POSPage() {
   const itemCount = cart.itemCount();
 
   return (
-    <RegisterOperatorProvider value={registerOperator}>
-      <>
+    <>
       {supportError && (
         <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-card p-4 shadow-xl">
           {sentTicketId ? (
@@ -1633,15 +1625,6 @@ export default function POSPage() {
         />
       )}
 
-      {registerAccess.locked && (
-        <RegisterLockScreen
-          error={registerAccess.error}
-          busy={registerAccess.checking}
-          onUnlock={registerAccess.unlock}
-          onSignOut={() => useAuthStore.getState().logout()}
-        />
-      )}
-      </>
-    </RegisterOperatorProvider>
+    </>
   );
 }
