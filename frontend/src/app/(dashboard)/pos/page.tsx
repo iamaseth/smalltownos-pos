@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
@@ -25,8 +26,6 @@ import PaymentModal from '@/components/pos/PaymentModal';
 import OpenTabsModal from '@/components/pos/OpenTabsModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
-import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
-import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
 import { useCashSession } from '@/hooks/useCashSession';
 import { tenantCan } from '@/lib/permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
@@ -106,6 +105,7 @@ function newIdempotencyKey(): string {
 
 export default function POSPage() {
   const { currentTenant, user } = useAuthStore();
+  const router = useRouter();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
@@ -1427,7 +1427,7 @@ export default function POSPage() {
             toast.error(result.error || shift.shiftLoadFailedMessage);
             return;
           }
-          if (result.session) shift.setCloseModalOpen(true); else shift.setOpenModalOpen(true);
+          router.push(result.session ? '/cash?go=close' : '/cash?go=open');
         }}
         shiftHasOpenSession={!!shift.session}
         shiftLoading={shift.loading}
@@ -1486,8 +1486,6 @@ export default function POSPage() {
 
       {/* Modals */}
       <CashDrawerMovementModal model={cashDrawer} />
-      <ShiftOpenModal model={shift} />
-      <ShiftCloseModal model={shift} />
       {isRestaurant && showTabChoice && (
         <TabChoiceModal
           initialName={pendingOrder ? '' : cart.tabName}
