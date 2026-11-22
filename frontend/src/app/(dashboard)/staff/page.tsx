@@ -48,6 +48,7 @@ export default function StaffPage() {
   const { currentTenant } = useAuthStore();
   const canManagePermissions = tenantCan(currentTenant, 'authorization.manage');
   const needsEmailPassword = !hasRole(form.role, OPERATIONAL_ROLES);
+  const requiresNewPassword = !editingStaff || hasRole(editingStaff.role, OPERATIONAL_ROLES);
   const canManageStaff = tenantCan(currentTenant, 'staff.operational.manage');
   const canManagePrivilegedStaff = tenantCan(currentTenant, 'staff.privileged.manage');
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -132,7 +133,7 @@ export default function StaffPage() {
       toast.error('A four-digit PIN is required for operational staff.');
       return;
     }
-    if (needsEmailPassword && (!form.email.trim() || (!editingStaff && !form.password))) {
+    if (needsEmailPassword && (!form.email.trim() || (requiresNewPassword && !form.password))) {
       toast.error('Owner and manager accounts require an email address and password.');
       return;
     }
@@ -277,7 +278,7 @@ export default function StaffPage() {
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                    required={!editingStaff}
+                    required={requiresNewPassword}
                   />
                   <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -288,7 +289,7 @@ export default function StaffPage() {
                   value={form.confirmPassword}
                   onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                  required={!editingStaff || Boolean(form.password)}
+                  required={requiresNewPassword || Boolean(form.password)}
                 />
   
               </>}
