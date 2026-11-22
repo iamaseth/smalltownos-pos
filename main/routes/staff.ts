@@ -15,7 +15,7 @@ const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS ha
 
 function canModifyTargetStaff(requesterId: string, targetRole: string): boolean {
   if (hasRole(targetRole, ROLE_ACCESS.ownerManager)) {
-undefinedreturn hasPermission(requesterId, 'staff.privileged.manage');
+return hasPermission(requesterId, 'staff.privileged.manage');
   }
   return hasPermission(requesterId, 'staff.operational.manage');
 }
