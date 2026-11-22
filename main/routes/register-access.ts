@@ -22,7 +22,7 @@ function recordAccessEvent(
   sessionId: string | null,
 ): void {
   try {
-    const actorUserId = (req as any).user?.userId ?? null;
+    const actorUserId = (req as Request & { user?: { userId?: string } }).user?.userId ?? null;
     getDatabase().prepare(`
       INSERT INTO register_access_events
         (event_type, actor_user_id, operator_user_id, session_id, source_ip, created_at)
@@ -99,7 +99,7 @@ router.post('/activity', (_req: Request, res: Response) => {
 
 /** Explicit staff switch/logout revokes the current PIN session immediately. */
 router.post('/lock', (req: Request, res: Response) => {
-  const user = (req as any).user;
+  const user = (req as Request & { user?: { registerSession?: boolean; userId?: string; jti?: string } }).user;
   if (user?.registerSession === true) {
     recordAccessEvent(req, 'lock', user.userId, user.jti);
     revokeRegisterSession(user.jti, user.userId);
