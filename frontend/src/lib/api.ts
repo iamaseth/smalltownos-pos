@@ -53,6 +53,10 @@ const api = axios.create({
   },
 });
 
+// Requests sent with a staff PIN token. A 401 on one of these only ends the PIN
+// session, even if another request already cleared the token in the meantime.
+const sentWithRegisterSession = new WeakSet<object>();
+
 // Attach JWT token to every request
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
@@ -60,6 +64,7 @@ api.interceptors.request.use((config) => {
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    if (registerSessionToken) sentWithRegisterSession.add(config);
   }
   return config;
 });
@@ -69,9 +74,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
-      if (registerSessionToken) {
-        registerSessionToken = null;
-        window.dispatchEvent(new Event('flo:register-session-expired'));
+      if (registerSessionToken || (error.config && sentWithRegisterSession.has(error.config))) {
+        if (registerSessionToken) {
+          registerSessionToken = null;
+          window.dispatchEvent(new Event('flo:register-session-expired'));
+        }
         return Promise.reject(error);
       }
       // KDS routes render inline login; avoid redirecting away to /auth/login.

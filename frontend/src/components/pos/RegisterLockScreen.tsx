@@ -16,6 +16,7 @@ type Props = {
 export default function RegisterLockScreen({ error, busy = false, onUnlock, onSignOut }: Props) {
   const [pin, setPin] = useState('');
   const [pending, setPending] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const waiting = busy || pending;
   const submit = async () => {
     if (pin.length !== 4 || waiting) return;
@@ -55,10 +56,19 @@ export default function RegisterLockScreen({ error, busy = false, onUnlock, onSi
           <Button type="submit" className="w-full" disabled={waiting || pin.length !== 4}>
             {waiting ? 'Checking…' : 'Unlock register'}
           </Button>
-          {onSignOut && (
-            <Button type="button" variant="ghost" className="w-full" disabled={waiting} onClick={onSignOut}>
+          {onSignOut && !confirmSignOut && (
+            <Button type="button" variant="ghost" className="w-full" disabled={waiting} onClick={() => setConfirmSignOut(true)}>
               Sign out of this register
             </Button>
+          )}
+          {onSignOut && confirmSignOut && (
+            <div className="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <p>This signs out the manager. The till then needs the manager&apos;s email and password again. Staff only need their PIN.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button type="button" variant="outline" onClick={() => setConfirmSignOut(false)}>Cancel</Button>
+                <Button type="button" variant="destructive" onClick={onSignOut}>Sign out manager</Button>
+              </div>
+            </div>
           )}
         </form>
       </div>
