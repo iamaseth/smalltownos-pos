@@ -17,6 +17,7 @@ const {
 } = require('./helpers/test-setup');
 const { registerAccessRoutes } = require('../main/routes/register-access');
 const { authRoutes } = require('../main/routes/auth');
+const { staffRoutes } = require('../main/routes/staff');
 const { getJWTSecret } = require('../main/routes/auth');
 const { resetRegisterSessionsForTests, touchRegisterSession } = require('../main/services/register-session');
 
@@ -29,13 +30,22 @@ async function run() {
     VALUES (?, ?, ?, ?, 'cashier', ?, 1, ?, ?)
   `).run('cashier-pin-1', 'Cashier One', 'cashier@test.local', bcrypt.hashSync('Cashier123!', 10), bcrypt.hashSync('4321', 10), now(), now());
 
-  const app = createApp({ '/api/auth': authRoutes, '/api/register-access': registerAccessRoutes });
+  const app = createApp({ '/api/auth': authRoutes, '/api/register-access': registerAccessRoutes, '/api/staff': staffRoutes });
   try {
     const status = await request(app).get('/api/register-access/status').set(manager.authHeader);
     if (status.status !== 200 || status.body.pin_lock_enabled !== true) throw new Error('PIN lock status should be enabled');
 
     const emailLogin = await request(app).post('/api/auth/login').send({ email: 'cashier@test.local', password: 'Cashier123!' });
     if (emailLogin.status !== 401) throw new Error('Operational staff email/password login must be rejected');
+
+    const created = await request(app).post('/api/staff').set(manager.authHeader)
+      .send({ name: 'Cashier Two', role: 'cashier', pin: '2468' });
+    if (created.status !== 201 || created.body.staff?.email !== null || !created.body.staff?.has_pin) {
+      throw new Error('Operational staff should be creatable with PIN only and no email');
+    }
+    const duplicatePin = await request(app).post('/api/staff').set(manager.authHeader)
+      .send({ name: 'Cashier Three', role: 'cashier', pin: '2468' });
+    if (duplicatePin.status !== 409) throw new Error('Duplicate active staff PIN should be rejected');
 
     const bad = await request(app).post('/api/register-access/unlock').set(manager.authHeader).send({ pin: '9999' });
     if (bad.status !== 401) throw new Error('Incorrect staff PIN should be rejected');
