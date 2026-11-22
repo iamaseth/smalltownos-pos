@@ -128,5 +128,11 @@ export function useRegisterAccess(onRegister: boolean) {
     if (!switching.current) void restoreAppUser();
   }, [restoreAppUser]);
 
-  return { locked: enabled && locked, operator, error, unlock, lock };
+  return {
+    // Fail closed while the PIN policy is loading; the lock disappears only
+    // when the server explicitly reports that no staff PINs are configured.
+    locked: onRegister && pinLockEnabled !== false && locked,
+    checking: onRegister && pinLockEnabled === null,
+    operator, error, unlock, lock,
+  };
 }
