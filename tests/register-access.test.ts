@@ -48,6 +48,12 @@ async function run() {
     if (locked.status !== 200) throw new Error('Staff lock should succeed');
     if (touchRegisterSession(payload.jti, 'cashier-pin-1')) throw new Error('Explicit lock should revoke server-side session');
 
+    const events = db.prepare('SELECT event_type FROM register_access_events ORDER BY id').all() as { event_type: string }[];
+    const eventTypes = events.map((event) => event.event_type);
+    if (!eventTypes.includes('pin_failed') || !eventTypes.includes('unlock') || !eventTypes.includes('lock')) {
+      throw new Error(`Register access audit events missing: ${eventTypes.join(', ')}`);
+    }
+
     console.log('register-access: all checks passed');
   } finally {
     resetRegisterSessionsForTests();
