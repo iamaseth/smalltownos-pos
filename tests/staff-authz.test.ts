@@ -112,7 +112,7 @@ async function main() {
   const managerCreated: Record<string, string> = {};
   for (const role of ['cashier', 'server', 'chef']) {
     result = await request(app).post('/api/staff').set(managerAuth).send({
-      name: `Managed ${role}`, email: `managed-${role}@test.local`, password: 'StrongPass1', role,
+      name: `Managed ${role}`, pin: role === 'cashier' ? '2468' : role === 'server' ? '3579' : '4680', role,
     });
     assertEqual(result.status, 201, `manager can create ${role}`);
     managerCreated[role] = result.body.staff?.id;
@@ -123,7 +123,7 @@ async function main() {
   }
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Station Chef', email: 'station-chef@test.local', password: 'StrongPass1', role: 'chef', station_ids: ['station-145'],
+    name: 'Station Chef', pin: '5791', role: 'chef', station_ids: ['station-145'],
   });
   assertEqual(result.status, 201, 'chef can be optionally assigned to a station during creation');
   assertEqual(result.body.staff.station_ids[0], 'station-145', 'created chef response includes the station assignment');
@@ -133,14 +133,14 @@ async function main() {
   assertEqual(stationLink.station_id, 'station-145', 'chef station assignment is persisted');
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Unassigned Chef', email: 'unassigned-chef@test.local', password: 'StrongPass1', role: 'chef', station_ids: [],
+    name: 'Unassigned Chef', pin: '6802', role: 'chef', station_ids: [],
   });
   assertEqual(result.status, 201, 'chef creation does not require a station');
   const unassignedChef = db.prepare('SELECT station_assignments_configured FROM users WHERE id = ?').get(result.body.staff.id) as any;
   assertEqual(unassignedChef.station_assignments_configured, 0, 'unassigned chef remains unrestricted by station configuration');
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Invalid Station Cashier', email: 'station-cashier@test.local', password: 'StrongPass1', role: 'cashier', station_ids: ['station-145'],
+    name: 'Invalid Station Cashier', pin: '7913', role: 'cashier', station_ids: ['station-145'],
   });
   assertEqual(result.status, 400, 'non-chef accounts cannot receive kitchen station assignments');
 
@@ -152,26 +152,31 @@ async function main() {
   }
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Missing email server', password: 'StrongPass1', role: 'server',
+    name: 'PIN-only server', pin: '8024', role: 'server',
   });
-  assertEqual(result.status, 400, 'staff creation requires email');
-  assertEqual(result.body.error, 'name, email, password, and role are required', 'missing email returns a clear validation error');
+  assertEqual(result.status, 201, 'server creation does not require an email');
 
-  result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Invalid email server', email: 'not-an-email', password: 'StrongPass1', role: 'server',
+  result = await request(app).post('/api/staff').set(ownerAuth).send({
+    name: 'Missing email manager', password: 'StrongPass1', role: 'manager',
   });
-  assertEqual(result.status, 400, 'staff creation rejects invalid email');
-  assertEqual(result.body.error, 'Enter a valid email address', 'invalid email returns a clear validation error');
+  assertEqual(result.status, 400, 'manager creation requires email and password');
+  assertEqual(result.body.error, 'Owner and manager accounts require email and password', 'missing manager email returns a clear validation error');
 
-  result = await request(app).post('/api/staff').set(managerAuth).send({
-    name: 'Normalized email server', email: '  Mixed.Server@Test.Local  ', password: 'StrongPass1', role: 'server',
+  result = await request(app).post('/api/staff').set(ownerAuth).send({
+    name: 'Invalid email manager', email: 'not-an-email', password: 'StrongPass1', role: 'manager',
   });
-  assertEqual(result.status, 201, 'staff creation trims and normalizes required email');
-  assertEqual(result.body.staff.email, 'mixed.server@test.local', 'created staff email is stored normalized');
+  assertEqual(result.status, 400, 'manager creation rejects invalid email');
+  assertEqual(result.body.error, 'Enter a valid email address', 'invalid manager email returns a clear validation error');
 
-  result = await request(app).put(`/api/staff/${managerCreated.server}`).set(managerAuth).send({ email: '   ' });
-  assertEqual(result.status, 400, 'staff update rejects blank email');
-  assertEqual(result.body.error, 'email is required', 'blank email update returns a clear validation error');
+  result = await request(app).post('/api/staff').set(ownerAuth).send({
+    name: 'Normalized email manager', email: '  Mixed.Manager@Test.Local  ', password: 'StrongPass1', role: 'manager',
+  });
+  assertEqual(result.status, 201, 'manager creation trims and normalizes required email');
+  assertEqual(result.body.staff.email, 'mixed.manager@test.local', 'manager email is stored normalized');
+
+  result = await request(app).put('/api/staff/manager-target-145').set(ownerAuth).send({ email: '   ' });
+  assertEqual(result.status, 400, 'manager update rejects blank email');
+  assertEqual(result.body.error, 'email is required', 'blank manager email update returns a clear validation error');
 
   result = await request(app).get('/api/register-access/status').set(managerAuth);
   assertEqual(result.status, 200, 'register status is available to a logged-in register');
