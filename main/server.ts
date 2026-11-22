@@ -20,6 +20,7 @@ import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
 import { setServerPort } from './server-state';
+import { touchRegisterSession } from './services/register-session';
 export { getServerPort, getLocalIP, getAllLocalIPs } from './server-state';
 
 let server: http.Server | null = null;
@@ -62,6 +63,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
       return;
     }
     const decoded = jwt.verify(token, getJWTSecret()) as any;
+
+    // PIN register tokens must be known to this server and active within the
+    // five-minute idle window. A client-side timer alone is not an auth control.
+    if (decoded.registerSession === true && !touchRegisterSession(decoded.jti, decoded.userId)) {
+      res.status(401).json({ error: 'Register session expired. Enter your staff PIN again.' });
+      return;
+    }
 
     // Reject tokens for users deactivated (or deleted) since token was issued.
     const freshKdsAuth = req.path.startsWith('/api/kds')
