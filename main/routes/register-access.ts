@@ -102,7 +102,7 @@ router.post('/lock', (req: Request, res: Response) => {
   const user = (req as Request & { user?: { registerSession?: boolean; userId?: string; jti?: string } }).user;
   if (user?.registerSession === true) {
     recordAccessEvent(req, 'lock', user.userId, user.jti);
-    revokeRegisterSession(user.jti, user.userId);
+    revokeRegisterSession(user.jti ?? null, user.userId ?? null);
   }
   res.json({ ok: true });
 });
