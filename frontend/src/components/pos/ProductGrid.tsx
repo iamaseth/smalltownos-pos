@@ -3,7 +3,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
-import { Search, Keyboard, Star, Zap, LayoutGrid } from 'lucide-react';
+import { Search, Keyboard, Star, Zap, LayoutGrid, ChevronLeft, ChevronRight, Croissant, Salad, Sandwich, Pizza, Soup, CupSoda, CakeSlice, Beef, Fish, Wine, Martini, Beer, Utensils } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -95,6 +95,17 @@ interface Props {
 
 const LONG_PRESS_MS = 500;
 
+const CATEGORY_ICON_NAMES: Record<string, typeof Croissant> = {
+  breakfast: Croissant, salads: Salad, salad: Salad, burgers: Sandwich, burger: Sandwich,
+  pizza: Pizza, pasta: Utensils, khmer: Soup, drinks: CupSoda, drink: CupSoda,
+  dessert: CakeSlice, meat: Beef, seafood: Fish, wine: Wine, spirits: Wine,
+  cocktails: Martini, beer: Beer, food: Utensils, western: Utensils, asian: Soup,
+};
+function CategoryIcon({ name }: { name: string }) {
+  const Icon = CATEGORY_ICON_NAMES[name.toLowerCase()] || Utensils;
+  return <Icon aria-hidden="true" size={30} strokeWidth={1.9} />;
+}
+
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
   search, setSearch, onProductClick, onQuickAdd, canArrange = false, onOrderSaved, searchSlot = null,
@@ -143,6 +154,7 @@ export default function ProductGrid({
   });
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+  const [subcategoryOpen, setSubcategoryOpen] = useState(true);
   const visibleCategories = useMemo(
     () => categories.filter(cat => cat.is_active !== false && !cat.parent_id).sort((a, b) =>
       (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name)),
@@ -309,7 +321,7 @@ export default function ProductGrid({
 
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-      <div className="shrink-0 mb-2 px-3 pt-2">
+      <div className="shrink-0 px-3 pt-2">
         {!searchSlot && <div className="mb-2">{searchBlock}</div>}
         <div className="hidden">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menu</span>
@@ -318,11 +330,11 @@ export default function ProductGrid({
             {showMenuPhotos ? 'Compact cards' : 'Show photos'}
           </button>}
         </div>
-        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto py-1 mb-1">
+        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto py-1">
           <button type="button" aria-pressed={favoritesOnly}
             onClick={() => { setFavoritesOnly(!favoritesOnly); setSelectedCategory(null); setSelectedSubcategory(null); setSearch(''); setArranging(false); }}
-            className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white ${favoritesOnly ? 'ring-2 ring-white' : ''}`}
-            style={{ backgroundColor: '#CA8A04' }}><Star size={16} className="inline me-1" />FAV</button>
+            className={`flex h-[88px] w-[92px] shrink-0 flex-col items-center justify-center gap-2 rounded-[16px] border border-white/15 text-[13px] font-extrabold text-white shadow-sm transition-transform active:scale-95 ${favoritesOnly ? 'ring-2 ring-white ring-offset-2 ring-offset-[#0b0f17]' : ''}`}
+            style={{ backgroundColor: '#D99A00' }}><Star size={29} strokeWidth={1.9}/><span>FAV</span></button>
           {visibleCategories.map(cat => {
             const selected = !favoritesOnly && selectedCategory === cat.id;
             return <button key={cat.id} type="button" aria-pressed={selected}
@@ -330,25 +342,14 @@ export default function ProductGrid({
                 setFavoritesOnly(false);
                 setSelectedCategory(selected ? null : cat.id);
                 setSelectedSubcategory(null);
+                setSubcategoryOpen(true);
                 setSearch('');
                 setArranging(false);
               }}
-              className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white transition-[filter,transform] active:scale-95 ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17]' : 'hover:brightness-110'}`}
-              style={{ backgroundColor: categoryColor(cat.color) }}><span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="text-base leading-none">{cat.icon || '▦'}</span>{cat.name}</span></button>;
+              className={`flex h-[88px] w-[92px] shrink-0 flex-col items-center justify-center gap-2 rounded-[16px] border border-white/15 text-[13px] font-extrabold text-white shadow-sm transition-[filter,transform] active:scale-95 ${selected ? 'ring-2 ring-white ring-offset-2 ring-offset-[#0b0f17]' : 'hover:brightness-110'}`}
+              style={{ backgroundColor: categoryColor(cat.color) }}><CategoryIcon name={cat.name}/><span className="max-w-full truncate px-1">{cat.name}</span></button>;
           })}
         </nav>
-        {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && (
-          <nav aria-label="Menu subcategories" className="flex gap-2 overflow-x-auto py-1">
-            {['All', ...subcategoryNames].map(name => {
-              const active = name === 'All' ? !selectedSubcategory : selectedSubcategory === name;
-              return <button key={name} type="button" aria-pressed={active}
-                onClick={() => { setSelectedSubcategory(name === 'All' ? null : name); setArranging(false); }}
-                className={`h-9 shrink-0 rounded-lg border px-3 text-xs font-semibold ${active ? 'border-blue-500 bg-blue-600 text-white' : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'}`}>
-                {name}
-              </button>;
-            })}
-          </nav>
-        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -435,7 +436,7 @@ export default function ProductGrid({
                 </div>
 
                 {catalogView === 'photo' && (
-                  <div className="w-full aspect-square mb-1 relative overflow-hidden bg-slate-900">
+                  <div className="w-full aspect-square mb-1 relative overflow-hidden rounded-xl bg-slate-900">
                     {/* Always-visible background tile — no flash when image loads */}
                     <div
                       className="absolute inset-0 flex items-center justify-center"
@@ -459,6 +460,7 @@ export default function ProductGrid({
                       />
                     )}
 
+                    <span className="absolute right-2 top-2 z-10 rounded-lg bg-black/85 px-2 py-1 text-sm font-extrabold text-white shadow">{fmt(Number(product.price))}</span>
                     {product.tags && product.tags.length > 0 && (
                       <span className="absolute bottom-1.5 end-1.5 z-10">
                         <TagBadge tag={product.tags[0]} />
@@ -468,13 +470,33 @@ export default function ProductGrid({
                 )}
 
                 <h3 className={`${catalogView === 'photo' ? 'text-sm leading-[1.2] line-clamp-2' : 'text-[18px] leading-[1.18] line-clamp-3'} font-extrabold tracking-[-0.01em] text-slate-100 break-words ${inCartQty > 0 ? 'pe-9' : ''}`}>{product.name}</h3>
-                <p className="mt-auto pt-1 text-[18px] font-extrabold text-blue-400 tabular-nums">{fmt(Number(product.price))}</p>
+                <div className="mt-auto pt-1" />
                 </div>
               </div>
             );
           })}
           </div></>}
       </div>
+      {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && (
+        <aside className={`relative flex shrink-0 flex-col border-l border-slate-200/10 bg-white/[0.035] transition-[width] duration-200 ${subcategoryOpen ? 'w-[132px]' : 'w-8'}`} aria-label="Menu subcategories">
+          <button type="button" aria-expanded={subcategoryOpen} aria-label={subcategoryOpen ? 'Collapse subcategories' : 'Expand subcategories'}
+            onClick={() => setSubcategoryOpen(open => !open)}
+            className="absolute -left-3 top-3 z-10 flex h-9 w-7 items-center justify-center rounded-lg bg-sky-500 text-white shadow">
+            {subcategoryOpen ? <ChevronRight size={18}/> : <ChevronLeft size={18}/>}
+          </button>
+          {subcategoryOpen && <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+            <div className="mb-2 px-2 text-center text-sm font-bold text-slate-200">{categories.find(c => c.id === selectedCategory)?.name}</div>
+            {['All', ...subcategoryNames].map(name => {
+              const active = name === 'All' ? !selectedSubcategory : selectedSubcategory === name;
+              return <button key={name} type="button" aria-pressed={active}
+                onClick={() => setSelectedSubcategory(name === 'All' ? null : name)}
+                className={`mb-1.5 min-h-10 w-full rounded-lg px-2 py-2 text-left text-[13px] font-semibold ${active ? 'bg-sky-100 text-slate-900' : 'text-slate-300 hover:bg-white/10'}`}>
+                {name}
+              </button>;
+            })}
+          </div>}
+        </aside>
+      )}
       {!arranging && !search.trim() && displayed.length > 24 && (
         <div aria-label="Jump to letter" className="flex w-9 shrink-0 flex-col justify-between py-1">
           {Array.from(new Set(displayed.map(p => p.name.trim().charAt(0).toUpperCase()))).map(letter => (
