@@ -15,7 +15,7 @@ const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS ha
 
 function canModifyTargetStaff(requesterId: string, targetRole: string): boolean {
   if (hasRole(targetRole, ROLE_ACCESS.ownerManager)) {
-    return hasPermission(requesterId, 'staff.privileged.manage');
+return hasPermission(requesterId, 'staff.privileged.manage');
   }
   return hasPermission(requesterId, 'staff.operational.manage');
 }
@@ -117,14 +117,8 @@ router.post('/', requirePermission('staff.operational.manage'), authRateLimit(),
     const normalizedEmail = normalizeStaffEmail(email);
     const normalizedStationIds = normalizeStationIds(station_ids);
 
-    if (!name || !normalizedEmail || !password || !role) {
-      return res.status(400).json({ error: 'name, email, password, and role are required' });
-    }
-    if (!isValidEmail(normalizedEmail)) {
-      return res.status(400).json({ error: 'Enter a valid email address' });
-    }
-    if (!validatePassword(password)) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
+    if (!name || !role) {
+      return res.status(400).json({ error: 'name and role are required' });
     }
 
     if (!VALID_ROLES.includes(role)) {
@@ -142,8 +136,16 @@ router.post('/', requirePermission('staff.operational.manage'), authRateLimit(),
       return res.status(403).json({ error: `This account can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})` });
     }
 
+    if (isOperationalRole(role) && !hasNonEmptyPin(pin)) {
+      return res.status(400).json({ error: 'A four-digit PIN is required for operational staff' });
+    }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
+    }
+    if (!isOperationalRole(role)) {
+      if (!normalizedEmail || !password) return res.status(400).json({ error: 'Owner and manager accounts require email and password' });
+      if (!isValidEmail(normalizedEmail)) return res.status(400).json({ error: 'Enter a valid email address' });
+      if (!validatePassword(password)) return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
 
     const db = getDatabase();
@@ -152,9 +154,9 @@ router.post('/', requirePermission('staff.operational.manage'), authRateLimit(),
       return res.status(409).json({ error: 'This PIN is already assigned to another active employee' });
     }
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
-    if (existing) {
-      return res.status(400).json({ error: 'Email already in use' });
+    if (normalizedEmail) {
+      const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+      if (existing) return res.status(400).json({ error: 'Email already in use' });
     }
 
     if (normalizedStationIds.length > 0) {
@@ -166,7 +168,10 @@ router.post('/', requirePermission('staff.operational.manage'), authRateLimit(),
     }
 
     const id = randomUUID();
-    const hashedPassword = bcrypt.hashSync(password, 10);
+    const storedEmail = isOperationalRole(role) ? null : normalizedEmail;
+    // Operational accounts cannot use email/password login. Store an unshared random
+    // credential hash to satisfy the legacy NOT NULL column without creating a usable password.
+    const hashedPassword = bcrypt.hashSync(isOperationalRole(role) ? randomUUID() : password, 10);
 
     const hashedPin = hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null;
 
@@ -174,7 +179,7 @@ router.post('/', requirePermission('staff.operational.manage'), authRateLimit(),
       db.prepare(`
         INSERT INTO users (id, name, email, password, role, pin_hash, station_assignments_configured, is_active, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-      `).run(id, name, normalizedEmail, hashedPassword, role, hashedPin, normalizedStationIds.length > 0 ? 1 : 0, now(), now());
+      `).run(id, name, storedEmail, hashedPassword, role, hashedPin, normalizedStationIds.length > 0 ? 1 : 0, now(), now());
 
       if (normalizedStationIds.length > 0) {
         const insertAssignment = db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)');
@@ -232,6 +237,18 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
     }
 
     const targetRole = role ?? member.role;
+    if (isOperationalRole(targetRole) && !member.pin_hash && !hasNonEmptyPin(pin)) {
+      return res.status(400).json({ error: 'A four-digit PIN is required for operational staff' });
+    }
+    if (!isOperationalRole(targetRole)) {
+      const effectiveEmail = normalizedEmail ?? member.email;
+      if (!effectiveEmail || !isValidEmail(effectiveEmail)) {
+        return res.status(400).json({ error: 'Owner and manager accounts require a valid email address' });
+      }
+      if ((isOperationalRole(member.role) || !member.password) && !password) {
+        return res.status(400).json({ error: 'Owner and manager accounts require a password' });
+      }
+    }
     if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
       return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
     }
@@ -252,6 +269,9 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
       }
     }
 
+    if (isOperationalRole(targetRole) && password !== undefined) {
+      return res.status(400).json({ error: 'Operational staff accounts use PIN login; passwords are not supported.' });
+    }
     if (password && !validatePassword(password)) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
@@ -270,16 +290,19 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
     const hashedPin = pin !== undefined
       ? (hasNonEmptyPin(pin) ? (pinChanged ? bcrypt.hashSync(String(pin), 10) : member.pin_hash) : null)
       : member.pin_hash;
+    // Operational accounts are PIN-only; do not leave an email login behind
+    // when an owner changes an existing account's role.
+    const storedEmail = isOperationalRole(targetRole) ? null : (normalizedEmail ?? member.email);
 
     // Revoke outstanding sessions only when credentials actually change.
-    const credentialsChanged = passwordChanged || pinChanged;
+    const credentialsChanged = passwordChanged || pinChanged || storedEmail !== member.email || targetRole !== member.role;
     const tokensValidAfter = credentialsChanged ? now() : member.tokens_valid_after;
 
     const demotesActiveOwner = member.role === 'owner' && member.is_active === 1 && targetRole !== 'owner';
     const result = db.prepare(`
       UPDATE users SET
         name       = COALESCE(?, name),
-        email      = COALESCE(?, email),
+        email      = ?,
         password   = ?,
         role       = COALESCE(?, role),
         pin_hash   = ?,
@@ -291,7 +314,7 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
           OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1
         )
     `).run(
-      name || null, normalizedEmail || null, hashedPassword,
+      name || null, storedEmail, hashedPassword,
       role || null, hashedPin, tokensValidAfter,
       now(), req.params.id, demotesActiveOwner ? 1 : 0,
     );

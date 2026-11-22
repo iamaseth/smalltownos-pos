@@ -45,7 +45,7 @@
     "test:script-coverage": "node scripts/ci/validate-test-script-coverage.cjs && node tests/test-script-coverage.test.cjs && ts-node --transpile-only -P tests/tsconfig.json tests/test-harness-assertions.test.ts",
     "test:shutdown-lifecycle": "npm run build && node tests/run-electron-node-test.cjs tests/shutdown-lifecycle.test.ts",
     "test:redos-hardening": "node tests/run-electron-node-test.cjs tests/redos-hardening.test.ts",
-    "test:phase2": "ts-node --transpile-only -P tests/tsconfig.json tests/auth-state-recovery.test.ts && node tests/run-electron-node-test.cjs tests/login-email-normalization.test.ts && node tests/run-electron-node-test.cjs tests/master-pin.test.ts && node tests/run-electron-node-test.cjs tests/manager-pin-verification.test.ts && node tests/run-electron-node-test.cjs tests/jwt-logout-lifecycle.test.ts && node tests/run-electron-node-test.cjs tests/kds-websocket-revalidation.test.ts && node tests/run-electron-node-test.cjs tests/token-revocation-fail-closed.test.ts",
+    "test:phase2": "ts-node --transpile-only -P tests/tsconfig.json tests/auth-state-recovery.test.ts && node tests/run-electron-node-test.cjs tests/login-email-normalization.test.ts && node tests/run-electron-node-test.cjs tests/master-pin.test.ts && node tests/run-electron-node-test.cjs tests/manager-pin-verification.test.ts && node tests/run-electron-node-test.cjs tests/jwt-logout-lifecycle.test.ts && node tests/run-electron-node-test.cjs tests/kds-websocket-revalidation.test.ts && node tests/run-electron-node-test.cjs tests/token-revocation-fail-closed.test.ts && npm run test:register-access",
     "test:url-allowlist": "ts-node --transpile-only -P tests/tsconfig.json tests/url-allowlist.test.ts",
     "test:startup-cache": "ts-node --transpile-only -P tests/tsconfig.json tests/startup-cache.test.ts",
     "test:service-worker": "node tests/service-worker.test.cjs",
@@ -263,7 +263,8 @@
     "test:jwt-secret-cache-identity": "node tests/run-electron-node-test.cjs tests/jwt-secret-cache-identity.test.ts",
     "test:migration-v101-category-hierarchy": "node tests/run-electron-node-test.cjs tests/migration-v101-category-hierarchy.test.ts",
     "test:migration-v102-category-taxonomy": "node tests/run-electron-node-test.cjs tests/migration-v102-category-taxonomy.test.ts",
-    "test:migration-registry": "node tests/run-electron-node-test.cjs tests/migration-registry.test.ts"
+    "test:migration-registry": "node tests/run-electron-node-test.cjs tests/migration-registry.test.ts",
+    "test:register-access": "node tests/run-electron-node-test.cjs tests/register-access.test.ts && node tests/run-electron-node-test.cjs tests/register-session.test.ts"
   },
   "author": {
     "name": "Flo",

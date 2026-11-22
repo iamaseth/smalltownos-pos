@@ -6069,6 +6069,27 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 110,
+    name: 'register_access_audit_events',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS register_access_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_type TEXT NOT NULL CHECK (event_type IN ('unlock', 'lock', 'pin_failed', 'idle_expired')),
+          actor_user_id TEXT,
+          operator_user_id TEXT,
+          session_id TEXT,
+          source_ip TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_register_access_events_created_at
+          ON register_access_events(created_at);
+        CREATE INDEX IF NOT EXISTS idx_register_access_events_operator
+          ON register_access_events(operator_user_id, created_at);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

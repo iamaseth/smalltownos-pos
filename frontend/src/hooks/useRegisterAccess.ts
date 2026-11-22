@@ -30,6 +30,20 @@ export function useRegisterAccess(onRegister: boolean) {
     }
   }, []);
 
+  const lock = useCallback(async () => {
+    if (switching.current) return;
+    switching.current = true;
+    try {
+      // This endpoint revokes the current server-side PIN session immediately.
+      await api.post('/register-access/lock');
+    } catch {
+      // The token may already have expired; restoring the owner session still locks this UI.
+    } finally {
+      await restoreAppUser();
+      switching.current = false;
+    }
+  }, [restoreAppUser]);
+
   useEffect(() => {
     const saved = readRegisterSession();
     if (!saved?.operator) return;
@@ -41,10 +55,20 @@ export function useRegisterAccess(onRegister: boolean) {
     let active = true;
     api.get('/register-access/status')
       .then(({ data }) => { if (active) setPinLockEnabled(Boolean(data?.pin_lock_enabled)); })
-      // Older server or no answer: keep the till usable rather than locking everyone out.
-      .catch(() => { if (active) setPinLockEnabled(false); });
+      .catch(async () => {
+        // A saved PIN token may have expired while this tab was closed. Restore
+        // the original login and retry status rather than treating 401 as "no PINs".
+        try {
+          await restoreAppUser();
+          const { data } = await api.get('/register-access/status');
+          if (active) setPinLockEnabled(Boolean(data?.pin_lock_enabled));
+        } catch {
+          // Unknown policy is not permission to bypass the register lock.
+          if (active) setPinLockEnabled(true);
+        }
+      });
     return () => { active = false; };
-  }, [onRegister]);
+  }, [onRegister, restoreAppUser]);
 
   useEffect(() => {
     if (!enabled || locked) return;
@@ -56,9 +80,14 @@ export function useRegisterAccess(onRegister: boolean) {
     };
     const check = () => {
       if (Date.now() - lastActivity >= REGISTER_IDLE_TIMEOUT_MS && !switching.current) {
-        void restoreAppUser();
+        void lock();
       }
     };
+    const heartbeat = window.setInterval(() => {
+      if (Date.now() - lastActivity < REGISTER_IDLE_TIMEOUT_MS) {
+        void api.post('/register-access/activity').catch(() => {});
+      }
+    }, 60_000);
     const events = ['pointerdown', 'keydown', 'touchstart', 'wheel'];
     events.forEach(e => window.addEventListener(e, activity));
     window.addEventListener('focus', check);
@@ -69,14 +98,21 @@ export function useRegisterAccess(onRegister: boolean) {
       window.removeEventListener('focus', check);
       document.removeEventListener('visibilitychange', check);
       window.clearInterval(timer);
+      window.clearInterval(heartbeat);
     };
-  }, [enabled, locked, restoreAppUser]);
+  }, [enabled, locked, lock]);
 
   useEffect(() => () => {
-    // If the POS page is left while an employee is active, restore the
-    // original email/password identity before the rest of the app is used.
-    setRegisterSessionToken(null);
-    void useAuthStore.getState().refreshAuthContext().catch(() => {});
+    // Revoke the PIN token before leaving POS, then restore the original login.
+    if (readRegisterSession()?.token) {
+      void api.post('/register-access/lock').catch(() => {}).finally(() => {
+        setRegisterSessionToken(null);
+        void useAuthStore.getState().refreshAuthContext().catch(() => {});
+      });
+    } else {
+      setRegisterSessionToken(null);
+      void useAuthStore.getState().refreshAuthContext().catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -88,7 +124,7 @@ export function useRegisterAccess(onRegister: boolean) {
 
   useEffect(() => {
     if (!enabled) return;
-    const expired = () => { void restoreAppUser(); };
+    const expired = () => { if (!switching.current) void restoreAppUser(); };
     window.addEventListener('flo:register-session-expired', expired);
     return () => window.removeEventListener('flo:register-session-expired', expired);
   }, [enabled, restoreAppUser]);
@@ -107,6 +143,7 @@ export function useRegisterAccess(onRegister: boolean) {
       await useAuthStore.getState().refreshAuthContext();
       const freshTenant = useAuthStore.getState().currentTenant;
       if (!freshTenant?.permission_ids?.includes('pos.use')) {
+        await api.post('/register-access/lock').catch(() => {});
         await restoreAppUser();
         setError('This employee does not have permission to use the register');
         return false;
@@ -116,6 +153,9 @@ export function useRegisterAccess(onRegister: boolean) {
       setError('');
       return true;
     } catch {
+      // If the PIN endpoint succeeded but auth-context refresh failed, revoke
+      // the just-created token before restoring the original account.
+      await api.post('/register-access/lock').catch(() => {});
       await restoreAppUser();
       setError('PIN verification failed or employee session could not be started');
       return false;
@@ -124,9 +164,11 @@ export function useRegisterAccess(onRegister: boolean) {
     }
   }, [enabled, restoreAppUser]);
 
-  const lock = useCallback(() => {
-    if (!switching.current) void restoreAppUser();
-  }, [restoreAppUser]);
-
-  return { locked: enabled && locked, operator, error, unlock, lock };
+  return {
+    // Fail closed while the PIN policy is loading; the lock disappears only
+    // when the server explicitly reports that no staff PINs are configured.
+    locked: onRegister && pinLockEnabled !== false && locked,
+    checking: onRegister && pinLockEnabled === null,
+    operator, error, unlock, lock,
+  };
 }

@@ -189,30 +189,29 @@ async function main() {
   // cloud_sync_outbox table must be excluded entirely
   assert(!('cloud_sync_outbox' in exportBody.data), 'cloud_sync_outbox excluded from export (vuln-0005)');
 
-  // ── vuln-0006: Password Policy Enforcement ────────────────────────────────
-  // Test staff creation
-  const weakCreateRes = await request(app).post('/api/staff').set(ownerAuth).send({
-    name: 'test', email: 'weak-password@test.local', password: '1', role: 'cashier'
+  // ── PIN-only operational staff account policy ────────────────────────────
+  const missingPinCreateRes = await request(app).post('/api/staff').set(ownerAuth).send({
+    name: 'test', role: 'cashier'
   });
-  assertEqual(weakCreateRes.status, 400, 'owner cannot create staff with weak password (vuln-0006)');
-  assert(weakCreateRes.body.error.includes('at least 8 characters'), 'create staff returns policy error');
+  assertEqual(missingPinCreateRes.status, 400, 'owner cannot create operational staff without a PIN');
+  assert(missingPinCreateRes.body.error.includes('PIN'), 'missing PIN returns a clear policy error');
 
-  const strongCreateRes = await request(app).post('/api/staff').set(ownerAuth).send({
-    name: 'test', password: 'StrongPass1', role: 'cashier', email: 'test1@test.local'
+  const malformedPinCreateRes = await request(app).post('/api/staff').set(ownerAuth).send({
+    name: 'test', role: 'cashier', pin: '12'
   });
-  assertEqual(strongCreateRes.status, 201, 'owner can create staff with strong password (vuln-0006)');
-  const newStaffId = strongCreateRes.body.staff.id;
+  assertEqual(malformedPinCreateRes.status, 400, 'owner cannot create operational staff with a short PIN');
 
-  // Test staff update
-  const weakUpdateRes = await request(app).put(`/api/staff/${newStaffId}`).set(ownerAuth).send({
-    password: 'a'
+  const pinOnlyCreateRes = await request(app).post('/api/staff').set(ownerAuth).send({
+    name: 'test', role: 'cashier', pin: '2468'
   });
-  assertEqual(weakUpdateRes.status, 400, 'owner cannot update staff with weak password (vuln-0006)');
+  assertEqual(pinOnlyCreateRes.status, 201, 'owner can create operational staff with PIN only');
+  assertEqual(pinOnlyCreateRes.body.staff.email, null, 'PIN-only operational account has no email login');
+  const newStaffId = pinOnlyCreateRes.body.staff.id;
 
-  const strongUpdateRes = await request(app).put(`/api/staff/${newStaffId}`).set(ownerAuth).send({
+  const passwordUpdateRes = await request(app).put(`/api/staff/${newStaffId}`).set(ownerAuth).send({
     password: 'StrongPass2'
   });
-  assertEqual(strongUpdateRes.status, 200, 'owner can update staff with strong password');
+  assertEqual(passwordUpdateRes.status, 400, 'operational staff cannot be given an email/password login');
 
   // Test password change
   const weakChangeRes = await request(app).post('/api/auth/password/change').set(ownerAuth).send({

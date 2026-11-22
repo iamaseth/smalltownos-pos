@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
 import { getJWTSecret } from './security/jwt-secret';
-import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive, isKdsEnabled } from './db';
+import { databaseMaintenanceMiddleware, getDbHealth, getDatabase, isDatabaseMaintenanceActive, isKdsEnabled, now } from './db';
 import { setupKdsWebSocket } from './services/kds';
 import expressRateLimit from 'express-rate-limit';
 import { staticRouteRateLimit, corsOptions, getUserAuthStatus, isAllowedPrivateIp, isTokenRevoked, isTokenStale } from './middleware/security';
@@ -20,6 +20,7 @@ import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
 import { setServerPort } from './server-state';
+import { consumeExpiredRegisterSession, touchRegisterSession } from './services/register-session';
 export { getServerPort, getLocalIP, getAllLocalIPs } from './server-state';
 
 let server: http.Server | null = null;
@@ -62,6 +63,24 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
       return;
     }
     const decoded = jwt.verify(token, getJWTSecret()) as any;
+
+    // PIN register tokens must be known to this server and active within the
+    // five-minute idle window. A client-side timer alone is not an auth control.
+    if (decoded.registerSession === true && !touchRegisterSession(decoded.jti, decoded.userId)) {
+      if (consumeExpiredRegisterSession(decoded.jti, decoded.userId)) {
+        try {
+          getDatabase().prepare(`
+            INSERT INTO register_access_events
+              (event_type, actor_user_id, operator_user_id, session_id, source_ip, created_at)
+            VALUES ('idle_expired', ?, ?, ?, ?, ?)
+          `).run(decoded.userId, decoded.userId, decoded.jti, req.ip || req.socket.remoteAddress || null, now());
+        } catch (error) {
+          console.error('[RegisterAccess] Failed to record idle expiry', error);
+        }
+      }
+      res.status(401).json({ error: 'Register session expired. Enter your staff PIN again.' });
+      return;
+    }
 
     // Reject tokens for users deactivated (or deleted) since token was issued.
     const freshKdsAuth = req.path.startsWith('/api/kds')

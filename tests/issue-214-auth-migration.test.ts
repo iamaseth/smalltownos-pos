@@ -37,7 +37,8 @@ async function main() {
     const changedPassword = bcrypt.hashSync('ChangedPass123!', 10);
     db.prepare('UPDATE users SET password = ?, is_active = 1, tokens_valid_after = NULL WHERE id = ?')
       .run(managerPassword, 'user-demo-manager');
-    db.prepare('UPDATE users SET password = ?, is_active = 1, tokens_valid_after = NULL WHERE id = ?')
+    // Email/password login is for owner and manager roles only, so the changed-password account is a manager.
+    db.prepare("UPDATE users SET password = ?, role = 'manager', is_active = 1, tokens_valid_after = NULL WHERE id = ?")
       .run(changedPassword, 'user-demo-cashier');
     db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)

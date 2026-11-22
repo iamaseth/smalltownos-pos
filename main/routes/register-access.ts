@@ -4,8 +4,9 @@ import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
 import { getJWTSecret } from '../security/jwt-secret';
-import { getDatabase } from '../db';
-import { resolveEffectivePermissions } from '../services/authorization';
+import { getDatabase, now } from '../db';
+import { resolveEffectivePermissions, requirePermission } from '../services/authorization';
+import { createRegisterSession, revokeRegisterSession } from '../services/register-session';
 
 /**
  * Staff PIN verification for a register already authenticated to the POS.
@@ -13,6 +14,33 @@ import { resolveEffectivePermissions } from '../services/authorization';
  * Existing API permission middleware then enforces the employee's own access.
  */
 const router = Router();
+
+function recordAccessEvent(
+  req: Request,
+  eventType: 'unlock' | 'lock' | 'pin_failed' | 'idle_expired',
+  operatorUserId: string | null,
+  sessionId: string | null,
+): void {
+  try {
+    const actorUserId = (req as Request & { user?: { userId?: string } }).user?.userId ?? null;
+    getDatabase().prepare(`
+      INSERT INTO register_access_events
+        (event_type, actor_user_id, operator_user_id, session_id, source_ip, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      eventType,
+      actorUserId,
+      operatorUserId,
+      sessionId,
+      req.ip || req.socket.remoteAddress || null,
+      now(),
+    );
+  } catch (error) {
+    // Auditing must never expose PINs or block the till; retain a server-side diagnostic.
+    console.error('[RegisterAccess] Failed to record access event', error);
+  }
+}
+
 const pinLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 8,
@@ -40,6 +68,45 @@ router.get('/status', (_req: Request, res: Response) => {
   }
 });
 
+
+/** Recent register access history for managers and owners. */
+router.get('/events', requirePermission('staff.view'), (req: Request, res: Response) => {
+  try {
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(200, Math.max(1, Math.floor(requestedLimit)))
+      : 50;
+    const events = getDatabase().prepare(`
+      SELECT e.id, e.event_type, e.actor_user_id, actor.name AS actor_name,
+             e.operator_user_id, operator.name AS operator_name,
+             e.source_ip, e.created_at
+      FROM register_access_events e
+      LEFT JOIN users actor ON actor.id = e.actor_user_id
+      LEFT JOIN users operator ON operator.id = e.operator_user_id
+      ORDER BY e.id DESC
+      LIMIT ?
+    `).all(limit);
+    res.json({ events });
+  } catch {
+    res.status(500).json({ error: 'Register access history unavailable' });
+  }
+});
+
+/** Keep the server-side idle clock alive only while the signed-in operator is active. */
+router.post('/activity', (_req: Request, res: Response) => {
+  res.json({ ok: true });
+});
+
+/** Explicit staff switch/logout revokes the current PIN session immediately. */
+router.post('/lock', (req: Request, res: Response) => {
+  const user = (req as Request & { user?: { registerSession?: boolean; userId?: string; jti?: string } }).user;
+  if (user?.registerSession === true) {
+    recordAccessEvent(req, 'lock', user.userId ?? null, user.jti ?? null);
+    revokeRegisterSession(user.jti ?? null, user.userId ?? null);
+  }
+  res.json({ ok: true });
+});
+
 router.post('/unlock', pinLimiter, async (req: Request, res: Response) => {
   const pin = req.body?.pin;
   if (typeof pin !== 'string' || !/^\d{4}$/.test(pin)) {
@@ -64,6 +131,7 @@ router.post('/unlock', pinLimiter, async (req: Request, res: Response) => {
       }
     }
     if (!matched) {
+      recordAccessEvent(req, 'pin_failed', null, null);
       res.status(401).json({ error: 'Invalid PIN' });
       return;
     }
@@ -75,8 +143,11 @@ router.post('/unlock', pinLimiter, async (req: Request, res: Response) => {
     // Mint a short-lived normal POS bearer token for the employee. All existing
     // API permission middleware now evaluates this employee, not the manager
     // who originally opened the register. The frontend keeps it in memory only.
+    const sessionId = randomUUID();
+    createRegisterSession(sessionId, matched.id);
+    recordAccessEvent(req, 'unlock', matched.id, sessionId);
     const accessToken = jwt.sign(
-      { userId: matched.id, email: null, role: matched.role, tenantId: 1, registerSession: true, jti: randomUUID() },
+      { userId: matched.id, email: null, role: matched.role, tenantId: 1, registerSession: true, jti: sessionId },
       getJWTSecret(),
       { expiresIn: '8h' },
     );
