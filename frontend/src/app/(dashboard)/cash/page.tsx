@@ -421,7 +421,7 @@ export default function CashPage() {
   if (view.name === 'receipt') body = <ReceiptView header={header} onDone={() => go({ name: 'home' })} />;
   if (view.name === 'review') body = <ReviewView header={header} />;
 
-  return <div className="mx-auto w-full max-w-xl p-4 pb-24">{body}</div>;
+  return <div className="mx-auto w-full max-w-none p-3 pb-24">{body}</div>;
 }
 
 interface SpentItem { id: number; reason: string | null; amount_cents: number; amount_khr_riel: number; media_id: number | null }
@@ -473,29 +473,39 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
   openingFloat: { usd_cents: number; khr_riel: number };
   onClosed: () => void;
 }) {
-  const [step, setStep] = useState(0);
-  const [floatOut, setFloatOut] = useState({ usd: (openingFloat.usd_cents / 100).toString(), khr: openingFloat.khr_riel.toString() });
   const [count, setCount] = useState<CashCountValue>(emptyCashCount());
   const [spent, setSpent] = useState<SpentItem[]>([]);
-  const [noneSpent, setNoneSpent] = useState(false);
   const [draft, setDraft] = useState({ amount: '', currency: 'USD', what: '', mediaId: null as number | null, photoKey: 0 });
   const [preview, setPreview] = useState<ClosePreview | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [closed, setClosed] = useState<{ id: number; variance: number } | null>(null);
+
+  const loadPreview = async () => {
+    const res = await api.post('/cash-handover/sessions/' + sessionId + '/close-preview', {
+      count: cashCountPayload(emptyCashCount()),
+      float_out: { usd_cents: 0, khr_riel: 0 },
+    });
+    setPreview(res.data);
+  };
 
   useEffect(() => {
     let active = true;
-    api.get(`/cash-handover/sessions/${sessionId}/cash-spent`)
-      .then((res) => { if (active) setSpent(res.data.items); })
-      .catch((error) => toast.error(errorText(error, 'Could not load cash spent')));
+    Promise.all([
+      api.get('/cash-handover/sessions/' + sessionId + '/cash-spent'),
+      api.post('/cash-handover/sessions/' + sessionId + '/close-preview', {
+        count: cashCountPayload(emptyCashCount()),
+        float_out: { usd_cents: 0, khr_riel: 0 },
+      }),
+    ]).then(([spentRes, previewRes]) => {
+      if (!active) return;
+      setSpent(spentRes.data.items || []);
+      setPreview(previewRes.data);
+    }).catch((error) => toast.error(errorText(error, 'Could not load closing figures')))
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [sessionId]);
-
-  const floatPayload = {
-    usd_cents: Math.round((Number.parseFloat(floatOut.usd) || 0) * 100),
-    khr_riel: Number.parseInt(floatOut.khr || '0', 10) || 0,
-  };
-  const countIsEmpty = cashCountTotals(count, rate).combined === 0;
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -505,172 +515,190 @@ function SimpleClose({ header, sessionId, rate, openingFloat, onClosed }: {
   const saveDraft = async (): Promise<boolean> => {
     const amount = Number.parseFloat(draft.amount) || 0;
     try {
-      const res = await api.post(`/cash-handover/sessions/${sessionId}/cash-spent`, {
+      const res = await api.post('/cash-handover/sessions/' + sessionId + '/cash-spent', {
         currency: draft.currency,
         amount_minor: draft.currency === 'USD' ? Math.round(amount * 100) : Math.round(amount),
         what: draft.what,
         media_id: draft.mediaId,
       });
       setSpent((items) => [...items, res.data.item]);
-      setNoneSpent(false);
       setDraft({ amount: '', currency: draft.currency, what: '', mediaId: null, photoKey: draft.photoKey + 1 });
+      await loadPreview();
       return true;
     } catch (error) {
-      toast.error(errorText(error, 'Could not add cash spent'));
+      toast.error(errorText(error, 'Could not add cash payout'));
       return false;
     }
   };
 
-  const addSpent = () => run(async () => { await saveDraft(); });
-
   const removeSpent = (id: number) => run(async () => {
     try {
-      await api.delete(`/cash-handover/sessions/${sessionId}/cash-spent/${id}`);
+      await api.delete('/cash-handover/sessions/' + sessionId + '/cash-spent/' + id);
       setSpent((items) => items.filter((item) => item.id !== id));
-    } catch (error) { toast.error(errorText(error, 'Could not remove item')); }
+      await loadPreview();
+    } catch (error) { toast.error(errorText(error, 'Could not remove payout')); }
   });
 
   const draftValid = (Number.parseFloat(draft.amount) || 0) > 0 && draft.what.trim().length > 0;
-  const draftStarted = draft.amount.trim() !== '' || draft.what.trim() !== '' || draft.mediaId != null;
-
-  const checkResult = () => run(async () => {
-    if (draftStarted) {
-      if (!draftValid) {
-        toast.error('Finish the cash spent entry (amount and what it was for), or clear it');
-        return;
-      }
-      if (!(await saveDraft())) return;
-    }
-    try {
-      const res = await api.post(`/cash-handover/sessions/${sessionId}/close-preview`, { count: cashCountPayload(count), float_out: floatPayload });
-      setPreview(res.data);
-      setStep(3);
-    } catch (error) { toast.error(errorText(error, 'Could not check the count')); }
-  });
+  const totals = cashCountTotals(count, rate);
+  const countedCombined = totals.combined;
+  const expected = preview?.should_have_usd_cents ?? 0;
+  const difference = countedCombined - expected;
+  const openingCombined = preview?.opening_float_usd_cents ?? 0;
+  const payoutTotal = preview?.cash_spent_usd_cents ?? 0;
+  const cashSales = preview?.cash_sales_usd_cents ?? 0;
+  const nonCashTotal = preview?.non_cash_payments.reduce((sum, p) => sum + p.total_cents, 0) ?? 0;
+  const floatRetained = { usd_cents: openingFloat.usd_cents, khr_riel: openingFloat.khr_riel };
 
   const closeRegister = () => run(async () => {
+    if (!preview) return;
+    if (Math.abs(difference) > preview.tolerance_usd_cents && !reason.trim()) {
+      toast.error('Please explain the cash difference before closing.');
+      return;
+    }
     try {
-      await api.post(`/cash-handover/sessions/${sessionId}/closing-count`, {
-        count: cashCountPayload(count), float_out: floatPayload, explanation: reason.trim() || undefined, device: 'pos',
+      const res = await api.post('/cash-handover/sessions/' + sessionId + '/closing-count', {
+        count: cashCountPayload(count),
+        float_retained: floatRetained,
+        explanation: reason.trim() || undefined,
+        device: 'pos',
       });
-      toast.success('Register closed');
-      onClosed();
+      setClosed({ id: res.data.reconciliation.id, variance: res.data.reconciliation.variance?.combined_usd_cents ?? difference });
+      toast.success('Shift closed. Closing notification sent.');
     } catch (error) { toast.error(errorText(error, 'Could not close the register')); }
   });
 
-  return (
-    <div className="space-y-4">
-      {header('Close shift')}
-      <StepDots step={step} />
-
-      {step === 0 && (
-        <>
-          <p className="text-sm text-muted-foreground">Take the float out of the drawer and put it aside for tomorrow.</p>
-          <div className="grid grid-cols-2 gap-3 rounded-xl border p-4">
-            <label className="text-sm">USD
-              <input inputMode="decimal" value={floatOut.usd} onChange={(e) => setFloatOut({ ...floatOut, usd: e.target.value.replace(/[^\d.]/g, '') })}
-                className="mt-1 w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-lg" aria-label="Float out USD" />
-            </label>
-            <label className="text-sm">KHR
-              <input inputMode="numeric" value={floatOut.khr} onChange={(e) => setFloatOut({ ...floatOut, khr: e.target.value.replace(/\D/g, '') })}
-                className="mt-1 w-full rounded-lg border border-orange-200 bg-orange-50 px-3 py-3 text-lg" aria-label="Float out KHR" />
-            </label>
+  if (closed) {
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-4 p-4">
+        <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-6 text-center">
+          <div className="text-2xl font-bold text-emerald-800">Shift closed</div>
+          <p className="mt-1 text-sm text-emerald-700">The closing notification has been sent.</p>
+          <div className="mt-4 text-lg font-semibold text-slate-900">Difference: {signedUsd(closed.variance)}</div>
+        </section>
+        <section className="rounded-xl border bg-white p-5 text-slate-900">
+          <h2 className="text-center text-lg font-bold">BackStreet Riverside — Shift Closing Report</h2>
+          <p className="text-center text-xs text-slate-500">Reconciliation #{closed.id}</p>
+          <div className="mt-4 space-y-1 text-sm">
+            <Row label="Cash sales" value={formatUsdCents(cashSales)} />
+            <Row label="Cash payouts" value={formatUsdCents(payoutTotal)} />
+            {spent.map((item) => <Row key={item.id} label={item.reason || 'Cash payout'} value={item.amount_khr_riel ? formatKhr(item.amount_khr_riel) : formatUsdCents(item.amount_cents)} />)}
+            <Row label="Non-cash payments" value={formatUsdCents(nonCashTotal)} />
+            <Row label="Float retained in drawer" value={formatUsdCents(openingCombined)} />
+            <Row label="Cash on hand (counted)" value={formatUsdCents(countedCombined)} strong />
+            <Row label="Difference (over / short)" value={signedUsd(closed.variance)} strong />
           </div>
-          <BigButton tone="primary" onClick={() => setStep(1)}>Float is out — next</BigButton>
-        </>
-      )}
+          {reason && <p className="mt-3 border-t pt-2 text-sm">Note: {reason}</p>}
+        </section>
+        <div className="flex gap-3 print:hidden">
+          <BigButton tone="primary" onClick={() => window.print()}>Print closing report</BigButton>
+          <BigButton onClick={onClosed}>Return to POS</BigButton>
+        </div>
+      </div>
+    );
+  }
 
-      {step === 1 && (
-        <>
-          <p className="text-sm text-muted-foreground">Count all the money left in the drawer (without the float).</p>
-          <CashCounter value={count} onChange={setCount} rate={rate} title="Money left in the drawer" />
-          <BigButton tone="primary" disabled={countIsEmpty} onClick={() => setStep(2)}>Next — cash spent</BigButton>
-          <button type="button" className="text-sm underline" onClick={() => setStep(0)}>Back</button>
-        </>
-      )}
+  return (
+    <div className="w-full space-y-3">
+      {header('Close shift')}
+      {loading && <p className="text-sm text-muted-foreground">Loading shift figures…</p>}
+      <div className="grid min-h-0 grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(220px,0.9fr)_minmax(340px,1.2fr)_minmax(340px,1fr)]">
+        <aside className="space-y-3">
+          <section className="rounded-xl border bg-card p-4">
+            <h2 className="mb-3 text-lg font-bold">Shift Summary</h2>
+            <Row label="Cash sales" value={formatUsdCents(cashSales)} />
+            <Row label="Cash payouts" value={'−' + formatUsdCents(payoutTotal)} />
+            <Row label="Net cash movement" value={formatUsdCents(cashSales - payoutTotal)} strong />
+          </section>
+          <section className="rounded-xl border bg-card p-4">
+            <h2 className="mb-3 text-lg font-bold">Payment Methods</h2>
+            <Row label="Cash" value={formatUsdCents(cashSales)} />
+            {(preview?.non_cash_payments || []).map((p) => (
+              <Row key={p.method} label={p.method} value={formatUsdCents(p.total_cents)} />
+            ))}
+            <Row label="Non-cash total" value={formatUsdCents(nonCashTotal)} strong />
+          </section>
+          {preview?.untracked_cash_lines ? (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
+              {preview.untracked_cash_lines} older cash payment(s) had no USD/KHR split and were counted as USD.
+            </p>
+          ) : null}
+        </aside>
 
-      {step === 2 && (
-        <>
-          <p className="text-sm text-muted-foreground">Did anyone pay for something with money from the drawer today?</p>
-          {spent.length > 0 && (
-            <ul className="divide-y rounded-xl border">
-              {spent.map((item) => (
-                <li key={item.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm">
-                  <span>
-                    <b className="tabular-nums">{item.amount_khr_riel ? formatKhr(item.amount_khr_riel) : formatUsdCents(item.amount_cents)}</b>
-                    {' · '}{item.reason}{item.media_id ? ' · 📷' : ''}
-                  </span>
-                  <button type="button" disabled={busy} className="text-red-600 underline" onClick={() => removeSpent(item.id)}>Remove</button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="space-y-3 rounded-xl border p-4">
-            <div className="text-sm font-semibold">Add cash spent</div>
-            <div className="flex gap-2">
+        <main className="space-y-3">
+          <section className="rounded-xl border bg-card p-4">
+            <h2 className="mb-3 text-lg font-bold">Close Shift</h2>
+            <div className="space-y-2 rounded-xl border bg-muted/30 p-3">
+              <Row label="Cash Sales (from POS)" value={formatUsdCents(cashSales)} />
+              <Row label="Cash Payouts" value={'−' + formatUsdCents(payoutTotal)} />
+              <Row label="Float (keep in drawer)" value={formatUsdCents(openingCombined)} />
+              <div className="border-t pt-2">
+                <Row label="Expected cash" value={formatUsdCents(expected)} strong />
+              </div>
+              <Row label="Cash on hand (counted)" value={formatUsdCents(countedCombined)} strong />
+              <div className={'rounded-lg p-3 ' + (difference === 0 ? 'bg-emerald-50 text-emerald-800' : difference < 0 ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800')}>
+                <div className="text-sm font-medium">Difference (over / short)</div>
+                <div className="text-2xl font-bold tabular-nums">{signedUsd(difference)}</div>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-xl border bg-card p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Cash Payouts</h2>
+              <span className="text-sm font-semibold tabular-nums">{formatUsdCents(payoutTotal)}</span>
+            </div>
+            {spent.length > 0 ? (
+              <ul className="mb-3 divide-y rounded-lg border">
+                {spent.map((item) => (
+                  <li key={item.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                    <span className="min-w-0 flex-1 truncate">{item.reason || 'Cash payout'}</span>
+                    <span className="shrink-0 font-semibold tabular-nums">{item.amount_khr_riel ? formatKhr(item.amount_khr_riel) : formatUsdCents(item.amount_cents)}</span>
+                    <button type="button" disabled={busy} className="shrink-0 text-xs text-red-600 underline" onClick={() => removeSpent(item.id)}>Remove</button>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mb-3 text-sm text-muted-foreground">No cash payouts recorded.</p>}
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
               <input inputMode="decimal" placeholder="Amount" value={draft.amount}
                 onChange={(e) => setDraft({ ...draft, amount: e.target.value.replace(/[^\d.]/g, '') })}
-                className="min-w-0 flex-1 rounded-lg border px-3 py-3 text-lg" aria-label="Amount spent" />
-              <select value={draft.currency} onChange={(e) => setDraft({ ...draft, currency: e.target.value })} className="shrink-0 rounded-lg border px-3 text-lg" aria-label="Currency">
+                className="min-w-0 rounded-lg border bg-background px-3 py-2 text-base" aria-label="Payout amount" />
+              <select value={draft.currency} onChange={(e) => setDraft({ ...draft, currency: e.target.value })}
+                className="rounded-lg border bg-background px-3 text-sm" aria-label="Payout currency">
                 <option value="USD">USD</option><option value="KHR">KHR</option>
               </select>
+              <input placeholder="What was it for? (ice, gas, vegetables…)" value={draft.what} maxLength={120}
+                onChange={(e) => setDraft({ ...draft, what: e.target.value })}
+                className="col-span-2 w-full rounded-lg border bg-background px-3 py-2 text-sm" aria-label="Payout reason" />
+              <div className="col-span-2">
+                <PhotoCapture key={draft.photoKey} kind="purchase_receipt" sessionId={sessionId} label="Receipt photo (optional)"
+                  onUploaded={(mediaId) => setDraft((d) => ({ ...d, mediaId }))} />
+              </div>
+              <button type="button" disabled={busy || !draftValid} onClick={() => run(async () => { await saveDraft(); })}
+                className="col-span-2 rounded-lg border-2 border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700 disabled:opacity-50">
+                + Add payout line
+              </button>
             </div>
-            <input placeholder="What was it for? (ice, gas, vegetables…)" value={draft.what} maxLength={120}
-              onChange={(e) => setDraft({ ...draft, what: e.target.value })} className="w-full rounded-lg border px-3 py-3" aria-label="What for" />
-            <PhotoCapture key={draft.photoKey} kind="purchase_receipt" sessionId={sessionId} label="Receipt photo (optional)"
-              onUploaded={(mediaId) => setDraft((d) => ({ ...d, mediaId }))} />
-            <button type="button" disabled={busy || !draftValid} onClick={addSpent}
-              className="w-full rounded-xl border-2 border-emerald-600 px-5 py-3 text-base font-semibold text-emerald-700 disabled:border-muted disabled:text-muted-foreground">
-              + Add this item
-            </button>
-          </div>
-          {spent.length === 0 && (
-            <label className="flex items-center gap-3 rounded-xl border p-4 text-base">
-              <input type="checkbox" className="size-6" checked={noneSpent} onChange={(e) => setNoneSpent(e.target.checked)} />
-              No cash spent today
-            </label>
-          )}
-          <BigButton tone="primary" disabled={busy || (spent.length === 0 && !noneSpent && !draftValid)} onClick={checkResult}>See result</BigButton>
-          <button type="button" className="text-sm underline" onClick={() => setStep(1)}>Back</button>
-        </>
-      )}
+          </section>
 
-      {step === 3 && preview && (
-        <>
-          <div className={`rounded-xl border p-4 ${preview.matches ? 'border-emerald-300 bg-emerald-50' : 'border-red-300 bg-red-50'}`}>
-            <div className="mb-2 text-xl font-bold">
-              {preview.matches ? 'Matches ✓' : preview.difference_usd_cents < 0 ? `Short ${formatUsdCents(-preview.difference_usd_cents)}` : `Over ${formatUsdCents(preview.difference_usd_cents)}`}
-            </div>
-            <Row label="Cash sales" value={formatUsdCents(preview.cash_sales_usd_cents)} />
-            <Row label="− Cash spent" value={formatUsdCents(preview.cash_spent_usd_cents)} />
-            <Row label="+ Float" value={formatUsdCents(preview.opening_float_usd_cents)} />
-            <Row label="Should have" value={formatUsdCents(preview.should_have_usd_cents)} strong />
-            <Row label="Counted (incl. float)" value={formatUsdCents(preview.counted_usd_cents)} strong />
-            <Row label="Difference" value={signedUsd(preview.difference_usd_cents)} strong />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Riel converted at {preview.rate_khr_per_usd.toLocaleString()}៛ = $1. Within ±{formatUsdCents(preview.tolerance_usd_cents)} counts as a match.
-            </p>
-            {preview.untracked_cash_lines > 0 && (
-              <p className="mt-1 text-xs text-muted-foreground">{preview.untracked_cash_lines} older cash payment(s) had no USD/KHR split and were counted as USD.</p>
-            )}
-          </div>
-          {preview.non_cash_payments.length > 0 && (
-            <div className="rounded-xl border p-4">
-              <div className="mb-1 text-sm font-semibold">Check these against the bank app / card machine</div>
-              {preview.non_cash_payments.map((p) => <Row key={p.method} label={p.method} value={formatUsdCents(p.total_cents)} />)}
-            </div>
+          {Math.abs(difference) > (preview?.tolerance_usd_cents ?? 0) && (
+            <section className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+              <label className="block text-sm font-semibold text-amber-900" htmlFor="closing-explanation">Explain the difference</label>
+              <textarea id="closing-explanation" value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500}
+                placeholder="Add a note for the manager…" className="mt-2 w-full rounded-lg border bg-white px-3 py-2 text-sm" />
+            </section>
           )}
-          {!preview.matches && (
-            <>
-              <BigButton tone="warning" onClick={() => { setStep(1); setPreview(null); }}>Recount</BigButton>
-              <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500}
-                placeholder="Reason for the difference (optional)" className="w-full rounded-xl border px-4 py-3 text-sm" />
-            </>
-          )}
-          <BigButton tone="primary" disabled={busy} onClick={closeRegister}>Close register</BigButton>
-          <button type="button" className="text-sm underline" onClick={() => setStep(2)}>Back to cash spent</button>
-        </>
-      )}
+          <button type="button" disabled={busy || loading || !preview || (Math.abs(difference) > (preview?.tolerance_usd_cents ?? 0) && !reason.trim())}
+            onClick={closeRegister}
+            className="w-full rounded-xl bg-emerald-700 px-5 py-4 text-lg font-bold text-white disabled:opacity-50">
+            {busy ? 'Closing…' : 'Close shift'}
+          </button>
+        </main>
+
+        <aside className="rounded-xl border border-emerald-300 bg-card p-3">
+          <CashCounter value={count} onChange={setCount} rate={rate} title="Cash Counter" />
+        </aside>
+      </div>
     </div>
   );
 }
