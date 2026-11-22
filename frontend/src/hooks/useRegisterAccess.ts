@@ -59,7 +59,7 @@ export function useRegisterAccess(onRegister: boolean) {
         // A saved PIN token may have expired while this tab was closed. Restore
         // the original login and retry status rather than treating 401 as "no PINs".
         try {
-          await useAuthStore.getState().refreshAuthContext();
+          await restoreAppUser();
           const { data } = await api.get('/register-access/status');
           if (active) setPinLockEnabled(Boolean(data?.pin_lock_enabled));
         } catch {
@@ -68,7 +68,7 @@ export function useRegisterAccess(onRegister: boolean) {
         }
       });
     return () => { active = false; };
-  }, [onRegister]);
+  }, [onRegister, restoreAppUser]);
 
   useEffect(() => {
     if (!enabled || locked) return;
