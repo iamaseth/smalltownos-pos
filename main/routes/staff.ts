@@ -287,6 +287,9 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
     const hashedPin = pin !== undefined
       ? (hasNonEmptyPin(pin) ? (pinChanged ? bcrypt.hashSync(String(pin), 10) : member.pin_hash) : null)
       : member.pin_hash;
+    // Operational accounts are PIN-only; do not leave an email login behind
+    // when an owner changes an existing account's role.
+    const storedEmail = isOperationalRole(targetRole) ? null : (normalizedEmail ?? member.email);
 
     // Revoke outstanding sessions only when credentials actually change.
     const credentialsChanged = passwordChanged || pinChanged;
@@ -296,7 +299,7 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
     const result = db.prepare(`
       UPDATE users SET
         name       = COALESCE(?, name),
-        email      = COALESCE(?, email),
+        email      = ?,
         password   = ?,
         role       = COALESCE(?, role),
         pin_hash   = ?,
@@ -308,7 +311,7 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
           OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1
         )
     `).run(
-      name || null, normalizedEmail || null, hashedPassword,
+      name || null, storedEmail, hashedPassword,
       role || null, hashedPin, tokensValidAfter,
       now(), req.params.id, demotesActiveOwner ? 1 : 0,
     );
