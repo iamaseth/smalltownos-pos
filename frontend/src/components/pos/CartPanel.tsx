@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import {
-  Plus, Minus, Trash2, Pause, X, StickyNote,
+  Plus, Minus, Trash2, Pause, X, StickyNote, SquarePen,
   Users, MoreHorizontal, Printer, GitMerge, ArrowLeftRight, BadgePercent, CreditCard,
 } from 'lucide-react';
 import { cartLineTotal, useCartStore } from '@/store/cart';
@@ -84,15 +84,15 @@ function ItemQuantityControl({
       <>
         <button
           onClick={() => stepBy(-1)}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
           aria-label={t('remove')}
         >
           <Minus size={16} />
         </button>
-        <span className="min-w-[26px] text-center text-[20px] font-black tabular-nums">{item.quantity}</span>
+        <span className="min-w-[26px] text-center text-[15px] font-bold tabular-nums">{item.quantity}</span>
         <button
           onClick={() => stepBy(1)}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
           aria-label={t('addItems')}
         >
           <Plus size={16} />
@@ -105,7 +105,7 @@ function ItemQuantityControl({
     <>
       <button
         onClick={() => stepBy(-1)}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
         aria-label={t('remove')}
       >
         <Minus size={16} />
@@ -122,11 +122,11 @@ function ItemQuantityControl({
           if (e.key === 'Enter') commitDraft();
         }}
         aria-label={t('quantity')}
-        className="h-10 w-14 rounded-lg border-2 border-[#4a5f92] bg-[#141f38] text-center text-[18px] font-bold tabular-nums"
+        className="h-7 w-9 rounded-lg border-2 border-[#4a5f92] bg-[#141f38] text-center text-[14px] font-bold tabular-nums"
       />
       <button
         onClick={() => stepBy(1)}
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 border-[#4a5f92] bg-[#2b3d68] text-[#e5e9f2] active:scale-95"
         aria-label={t('addItems')}
       >
         <Plus size={16} />
@@ -174,7 +174,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
   const savedSubtotal = savedItems.reduce((sum: number, item: OrderItem) => sum + (Number(item.total) || 0), 0);
   const combinedSubtotal = savedSubtotal + total; // Informational only; tax and payments are calculated at checkout.
   const menuItem = 'flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 text-start text-[15px] font-semibold hover:bg-[#243049] disabled:opacity-40';
-  const iconButton = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 active:scale-95';
+  const iconButton = 'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border-2 active:scale-95';
   const destinationPrompt = 'flex h-11 w-full items-center justify-center rounded-xl border-2 border-dashed border-[#f5b942] text-[16px] font-bold text-[#f5b942]';
   return (
     <div className={isDrawer ? 'relative flex w-full flex-col bg-[#0f1729] text-[#e5e9f2]' : 'relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#0f1729] text-[#e5e9f2]'}>
@@ -249,25 +249,20 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
         {existingOrder && <div className="mt-3 border-t border-[#243049] pt-2 text-xs font-semibold uppercase tracking-wide text-[#a9b9dd]">New items to add</div>}
         {cart.items.length === 0 && <div className="py-5 text-center text-[13px] text-[#6b7694]">{existingOrder ? 'No new items selected. Saved tab items are above.' : 'Cart is empty'}</div>}
         {cart.items.map(item => (
-          <div key={item.id} className="mb-1.5 flex items-stretch overflow-hidden rounded-xl border-2 border-[#3d4f7c] bg-[#141f38]">
-            {(() => {
-              const line = (
-                <>
-                  <div className="flex items-baseline gap-2 leading-tight">
-                    <span className="shrink-0 text-[18px] font-black tabular-nums">{item.quantity}×</span>
-                    <span className="min-w-0 flex-1 break-words text-[17px] font-extrabold" title={item.product.name}>{item.product.name}</span>
-                    <span className="shrink-0 text-[17px] font-extrabold tabular-nums">{fmt(cartLineTotal(item))}</span>
-                  </div>
-                  {item.addons.map(a => <div key={a.id} className="mt-0.5 ps-7 text-[14px] leading-[1.3] text-[#8f9bb8]">+ {a.name}{(a.quantity || 1)>1 ? ' ×'+a.quantity : ''}{Number(a.price)>0 ? ' ('+fmt(Number(a.price)*(a.quantity||1))+')' : ''}</div>)}
-                  {item.special_instructions && <div className="mt-0.5 ps-7 text-[14px] font-semibold leading-[1.3] text-[#8f9bb8]">{item.special_instructions}</div>}
-                </>
-              );
-              return onEditItem
-                ? <button type="button" onClick={() => onEditItem(item)} aria-label={`Edit ${item.product.name}`} className="min-w-0 flex-1 px-2.5 py-2 text-start active:bg-[#1a2540]">{line}</button>
-                : <div className="min-w-0 flex-1 px-2.5 py-2">{line}<div className="mt-1.5 flex items-center gap-1"><ItemQuantityControl item={item} updateQuantity={cart.updateQuantity}/></div></div>;
-            })()}
-            <button type="button" onClick={() => cart.removeItem(item.id)} aria-label={`Remove ${item.product.name}`}
-              className="flex w-11 shrink-0 items-center justify-center border-s-2 border-[#3d4f7c] text-[#f08a8a] active:bg-[#3a1d24]"><X size={20}/></button>
+          <div key={item.id} className="border-b border-[#334155]/60 py-1.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[14px] font-bold leading-tight text-white" title={item.product.name}>{item.product.name}</div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1 rounded-lg bg-[#e8f3ff] px-1 py-0.5 text-[#0878d1]">
+                <ItemQuantityControl item={item} updateQuantity={cart.updateQuantity}/>
+              </div>
+              <span className="w-[62px] shrink-0 text-right text-[14px] font-extrabold tabular-nums text-white">{fmt(cartLineTotal(item))}</span>
+              {onEditItem && <button type="button" onClick={() => onEditItem(item)} aria-label={`Edit ${item.product.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center text-white"><SquarePen size={17}/></button>}
+              <button type="button" onClick={() => cart.removeItem(item.id)} aria-label={`Remove ${item.product.name}`} className="flex h-7 w-7 shrink-0 items-center justify-center text-red-500"><Trash2 size={18}/></button>
+            </div>
+            {item.special_instructions && <div className="mt-0.5 truncate text-[12px] leading-tight text-slate-400">{item.special_instructions}</div>}
+            {item.addons.length > 0 && <div className="mt-0.5 truncate text-[11px] leading-tight text-slate-400">{item.addons.map(a => `+ ${a.name}${(a.quantity || 1)>1 ? ' ×'+a.quantity : ''}`).join(', ')}</div>}
           </div>
         ))}
       </div>
