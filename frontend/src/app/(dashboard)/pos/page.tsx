@@ -1460,7 +1460,7 @@ export default function POSPage() {
         </div>
 
         {/* Desktop Cart — always open, hidden on mobile */}
-        <div className="hidden md:flex md:w-[25%] md:min-w-[220px] md:max-w-[320px] md:shrink-0 h-full min-h-0 overflow-hidden border-l border-[#1e293b] bg-[#131d31]">
+        <div className="hidden md:flex md:w-[34%] md:min-w-[330px] md:max-w-[440px] md:shrink-0 h-full min-h-0 overflow-hidden border-l border-[#1e293b] bg-[#131d31]">
           <CartPanel {...cartPanelProps} />
         </div>
       </div>
