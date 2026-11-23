@@ -8,7 +8,7 @@ import type {
 type Db = ReturnType<typeof getDatabase>;
 
 interface SessionRow {
-  id: number; opened_by: string; opened_by_name: string; opened_at: string; status: string; closed_at: string | null;
+  id: number; opened_by: string; opened_by_name: string; opened_at: string; status: string; closed_at: string | null; closed_by: string | null;
   opening_float_cents: number; opening_khr_riel: number; opening_count_id: number | null;
 }
 interface Window { start: string; end: string; sessionId: number | null }
@@ -364,6 +364,7 @@ export function buildShiftReport(sessionId: number): ShiftReportData {
     kind: closing ? 'Z' : 'X',
     businessName: businessName(db), register: registerName(), shiftNumber: session.id, timezone: tenantTimezone(),
     cashier: session.opened_by_name || '—', openedAt: session.opened_at, closedAt: closing ? session.closed_at : null, printedAt: now(),
+    closedBy: closing && session.closed_by ? ((db.prepare('SELECT name FROM users WHERE id = ?').get(session.closed_by) as { name?: string } | undefined)?.name ?? null) : null,
     sales: salesFor(db, w, billIds),
     payments: paymentsFor(db, w),
     unpaid: unpaidSummary(orders),

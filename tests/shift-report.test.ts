@@ -164,6 +164,8 @@ async function main() {
   const zLines = text.renderShiftReport(z, 42, 'Asia/Phnom_Penh');
   assertOrThrow(Math.max(...zLines.map((l: string) => displayCellWidth(l))) <= 42, 'Z-report fits 42 columns');
   assertIncludesOrThrow(zLines.join('\n'), 'Z-REPORT', 'Z title printed');
+  assertEqualOrThrow(z.closedBy, 'Thida', 'Z-report records who closed the shift');
+  assertOrThrow(zLines.some((l: string) => l.startsWith('Closed by') && l.includes('Thida')), 'Closed by line printed');
   if (process.env.SHIFT_REPORT_PRINT) console.log(`${zLines.join('\n')}\n`);
 
   console.log('Section 4: daily sales report');

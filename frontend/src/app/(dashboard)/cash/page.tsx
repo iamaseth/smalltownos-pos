@@ -21,6 +21,8 @@ interface Status {
   standard_float: { usd_cents: number; khr_riel: number };
   pending_count_alert_hours: number;
   can_resolve: boolean;
+  can_close?: boolean;
+  my_name?: string;
   open_session: {
     id: number; opened_by_name: string; opened_at: string; is_mine: boolean;
     opening_float: { usd_cents: number; khr_riel: number };
@@ -175,7 +177,7 @@ export default function CashPage() {
           setFromPos(true);
           setOpenStep(h.tickets.length > 0 ? 'bills' : 'float');
           setView({ name: 'receive', handoverId: h.id, fromCashier: h.from_cashier });
-        } else if (entry === 'close' && s && (s.is_mine || st.can_resolve)) {
+        } else if (entry === 'close' && s && (s.is_mine || st.can_resolve || st.can_close)) {
           setFromPos(true);
           setView({ name: 'close', sessionId: s.id });
         }
@@ -246,7 +248,7 @@ export default function CashPage() {
             <div className="mt-3"><ShiftOrders sessionId={s.id} /></div>
           </details>
         )}
-        {s && (s.is_mine || status.can_resolve) && (
+        {s && (s.is_mine || status.can_resolve || status.can_close) && (
           <BigButton onClick={() => go({ name: 'close', sessionId: s.id })}>Close shift</BigButton>
         )}
         {myPending.length > 0 && (
@@ -368,6 +370,7 @@ export default function CashPage() {
   if (view.name === 'close' && status.open_session) {
     body = (
       <SimpleClose header={header} sessionId={view.sessionId} rate={rate} openingFloat={status.open_session.opening_float}
+        openedBy={status.open_session.opened_by_name} openedAt={status.open_session.opened_at} closingAs={status.my_name || ''}
         onClosed={() => { if (fromPos) { router.push('/pos'); return; } go({ name: 'home' }); void load(); }} />
     );
   }
@@ -674,11 +677,14 @@ function drawerCountPayload(cash: CashCountValue, float: CashCountValue) {
   return { method: 'manual' as const, usd_cents: a.usd + b.usd, khr_riel: a.khr + b.khr };
 }
 
-function SimpleClose({ header, sessionId, rate, onClosed }: {
+function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, onClosed }: {
   header: (t: string) => React.ReactNode;
   sessionId: number;
   rate: number;
   openingFloat: { usd_cents: number; khr_riel: number };
+  openedBy: string;
+  openedAt: string;
+  closingAs: string;
   onClosed: () => void;
 }) {
   const router = useRouter();
@@ -802,6 +808,10 @@ function SimpleClose({ header, sessionId, rate, onClosed }: {
   return (
     <div className="w-full space-y-3">
       {header('Close shift')}
+      <p className="text-base">
+        Opened by <b>{openedBy}</b> <span className="text-muted-foreground">· {new Date(openedAt.replace(' ', 'T') + 'Z').toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+        {closingAs && <> — Closing: <b>{closingAs}</b></>}
+      </p>
       {loading && <p className="text-sm text-muted-foreground">Loading shift figures…</p>}
       <div className="grid min-h-0 grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(220px,0.9fr)_minmax(390px,1.2fr)_minmax(360px,1fr)]">
         <aside className="space-y-3">

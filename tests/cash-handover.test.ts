@@ -141,10 +141,6 @@ async function main() {
     .send({ count: { method: 'manual', usd_cents: 1000, khr_riel: 0 } });
   assert(quietClose.status === 409 && /unpaid bill/.test(quietClose.body.error), 'normal close blocked by unpaid ticket');
 
-  const otherCashier = await request(app).post(`/api/cash-handover/sessions/${sessionId}/handover-now`).set('Authorization', B)
-    .send({ float_left: { method: 'manual', usd_cents: 10000, khr_riel: 400000 } });
-  assert(otherCashier.status === 403, 'another cashier cannot hand over A\'s shift');
-
   const hand = await request(app).post(`/api/cash-handover/sessions/${sessionId}/handover-now`).set('Authorization', A)
     .send({ float_left: { method: 'manual', usd_cents: 10000, khr_riel: 400000 }, device: 'pos' });
   assert(hand.status === 200 && typeof hand.body.handover_id === 'number', 'busy handover-now succeeds');
@@ -251,8 +247,8 @@ async function main() {
   assert(veg.status === 201 && veg.body.item.amount_khr_riel === 8200 && veg.body.item.media_id === receiptMedia.body.media?.id, 'cash spent in KHR recorded with receipt photo');
   const noWhat = await request(app).post(spentUrl).set('Authorization', A).send({ currency: 'USD', amount_minor: 100, what: ' ' });
   assert(noWhat.status === 400, 'cash spent needs "what for"');
-  const notMine = await request(app).post(spentUrl).set('Authorization', B).send({ currency: 'USD', amount_minor: 100, what: 'Gas' });
-  assert(notMine.status === 403, 'another cashier cannot add cash spent to A\'s shift');
+  const otherOnRegister = await request(app).get(spentUrl).set('Authorization', B);
+  assert(otherOnRegister.status === 200, 'another cashier on the register can see the open shift\'s cash spent');
   const junk = await request(app).post(spentUrl).set('Authorization', A).send({ currency: 'USD', amount_minor: 999, what: 'Typo' });
   const removed = await request(app).delete(`${spentUrl}/${junk.body.item.id}`).set('Authorization', A);
   const listed = await request(app).get(spentUrl).set('Authorization', A);
@@ -276,13 +272,14 @@ async function main() {
   const stillOpen = db.prepare(`SELECT status FROM cash_sessions WHERE id = ?`).get(s7.id) as { status: string };
   assert(stillOpen.status === 'open', 'preview saves nothing, so the cashier can recount');
 
-  const simpleClose = await request(app).post(`/api/cash-handover/sessions/${s7.id}/closing-count`).set('Authorization', A)
+  const simpleClose = await request(app).post(`/api/cash-handover/sessions/${s7.id}/closing-count`).set('Authorization', B)
     .send({ count: { method: 'manual', usd_cents: 1650, khr_riel: 32800 }, float_out: floatOut, device: 'pos' });
   assert(simpleClose.status === 200 && simpleClose.body.reconciliation.status === 'balanced', 'close within ±$1 is recorded as matching');
   assert(simpleClose.body.reconciliation.actual.usd_cents === 6650 && simpleClose.body.reconciliation.float_retained.usd_cents === 5000,
     'closing count = takings + float out; float out is kept as the float');
-  const closedS7 = db.prepare(`SELECT status FROM cash_sessions WHERE id = ?`).get(s7.id) as { status: string };
+  const closedS7 = db.prepare(`SELECT status, opened_by, closed_by FROM cash_sessions WHERE id = ?`).get(s7.id) as { status: string; opened_by: string; closed_by: string };
   assert(closedS7.status === 'closed', 'Close register closes the shift');
+  assert(closedS7.opened_by === 'cashier-a' && closedS7.closed_by === 'cashier-b', 'another cashier can close the shift; opener kept, closer recorded');
   const simpleReport = buildShiftReport(db, s7.id, 'close');
   assert(simpleReport.html.includes('Vegetables') && simpleReport.html.includes('Cash matches') && !simpleReport.html.includes('Envelope photo missing'),
     'Telegram close report lists cash spent and does not demand an envelope photo');
@@ -334,7 +331,7 @@ async function main() {
   const noOrigin = await request(app).post(`/api/cash-handover/sessions/${s9}/phone-upload-link`).set('Authorization', B).send({});
   assert(noOrigin.status === 400, 'a link needs the POS address');
   const otherLink = await request(app).post(`/api/cash-handover/sessions/${s9}/phone-upload-link`).set('Authorization', A).send({ origin: 'https://pos.example' });
-  assert(otherLink.status === 403, 'another cashier cannot make a link for this shift');
+  assert(otherLink.status === 200, 'another cashier on the register can make a phone link for the open shift');
   const link = await request(app).post(`/api/cash-handover/sessions/${s9}/phone-upload-link`).set('Authorization', B).send({ origin: 'https://pos.example/cash?x=1' });
   assert(link.status === 200 && link.body.url.startsWith('https://pos.example/receipt-upload/?t=') && link.body.qr.startsWith('data:image/png'), 'link and QR image created for the till');
   const token = link.body.token;

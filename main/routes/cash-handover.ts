@@ -428,6 +428,8 @@ router.get('/status', requirePermission('cash.shifts.view'), (req: AuthedRequest
       standard_float: standardFloat(),
       pending_count_alert_hours: intSetting('cash_pending_count_alert_hours', 4),
       can_resolve: canResolve(me.id),
+      can_close: hasPermission(me.id, 'cash.shifts.close'),
+      my_name: (db.prepare('SELECT name FROM users WHERE id = ?').get(me.id) as { name?: string } | undefined)?.name ?? '',
       open_session: open ? {
         id: open.id, opened_by: open.opened_by, opened_by_name: open.opened_by_name, opened_at: open.opened_at,
         is_mine: open.opened_by === me.id,
@@ -484,7 +486,6 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
     const result = withTxn(() => {
       const session = loadSession(db, sessionId);
       if (session.status !== 'open') throw httpError('Shift is already closed', 409);
-      if (me.role === 'cashier' && session.opened_by !== me.id) throw httpError('Cashiers can only close their own shift', 403);
       if (floatRetained.usd_cents > totals.usd_cents || floatRetained.khr_riel > totals.khr_riel) {
         throw httpError('Float retained cannot be more than the cash counted', 400);
       }
@@ -546,7 +547,6 @@ router.post('/sessions/:id/handover-now', requirePermission('cash.shifts.close')
     const result = withTxn(() => {
       const session = loadSession(db, sessionId);
       if (session.status !== 'open') throw httpError('Shift is already closed', 409);
-      if (me.role === 'cashier' && session.opened_by !== me.id) throw httpError('Cashiers can only hand over their own shift', 403);
       const cutoff = now();
       const declaredId = insertCount(db, session.id, 'handover_float_declared', declared, me.id, deviceOf(req));
       createReconciliation(db, session, cutoff);
@@ -857,7 +857,7 @@ router.post('/sessions/:id/phone-upload-link', requirePermission('cash.shifts.cl
   try {
     const db = getDatabase();
     const me = actor(req);
-    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), me);
+    const session = openShift(db, parseId(req.params.id, 'session id'));
     let origin: string;
     try {
       const parsed = new URL(String((req.body || {}).origin || ''));
@@ -874,7 +874,7 @@ router.post('/sessions/:id/phone-upload-link', requirePermission('cash.shifts.cl
 router.get('/sessions/:id/phone-receipts', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
   try {
     const db = getDatabase();
-    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), actor(req));
+    const session = openShift(db, parseId(req.params.id, 'session id'));
     res.json({ photos: pendingPhoneReceipts(db, session.id), max_photos: PHONE_UPLOAD_MAX_PHOTOS });
   } catch (error) { sendError(res, error, 'Failed to load phone photos'); }
 });
@@ -883,7 +883,7 @@ router.get('/sessions/:id/phone-receipts', requirePermission('cash.shifts.close'
 router.post('/sessions/:id/phone-receipts/:mediaId/dismiss', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
   try {
     const db = getDatabase();
-    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), actor(req));
+    const session = openShift(db, parseId(req.params.id, 'session id'));
     const result = db.prepare(`
       UPDATE media_uploads SET idempotency_key = '${PHONE_DISMISSED_PREFIX}' || substr(idempotency_key, ${PHONE_KEY_PREFIX.length + 1})
       WHERE id = ? AND session_id = ? AND idempotency_key LIKE '${PHONE_KEY_PREFIX}%'
@@ -1023,17 +1023,17 @@ function nonCashPaymentsFor(db: Db, session: SessionRow, end: string): { method:
   return rows.map((r) => ({ method: r.method, total_cents: Math.round(Number(r.total || 0) * 100) }));
 }
 
-function ownOpenSession(db: Db, sessionId: number, me: { id: string; role: string }): SessionRow {
+/** Any user with the route's close permission may work on the open shift; the opener is kept as recorded. */
+function openShift(db: Db, sessionId: number): SessionRow {
   const session = loadSession(db, sessionId);
   if (session.status !== 'open') throw httpError('Shift is already closed', 409);
-  if (me.role === 'cashier' && session.opened_by !== me.id) throw httpError('Cashiers can only close their own shift', 403);
   return session;
 }
 
 router.get('/sessions/:id/cash-spent', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
   try {
     const db = getDatabase();
-    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), actor(req));
+    const session = openShift(db, parseId(req.params.id, 'session id'));
     res.json({ items: cashSpentFor(db, session, now()) });
   } catch (error) { sendError(res, error, 'Failed to load cash spent'); }
 });
@@ -1051,7 +1051,7 @@ router.post('/sessions/:id/cash-spent', requirePermission('cash.shifts.close'), 
     if (!what) throw httpError('Say what the money was spent on', 400);
     const mediaId = body.media_id == null ? null : parseId(body.media_id, 'media id');
     const item = withTxn(() => {
-      const session = ownOpenSession(db, parseId(req.params.id, 'session id'), me);
+      const session = openShift(db, parseId(req.params.id, 'session id'));
       if (mediaId != null) {
         const media = db.prepare(`SELECT kind FROM media_uploads WHERE id = ?`).get(mediaId) as { kind: string } | undefined;
         if (!media || media.kind !== 'purchase_receipt') throw httpError('Receipt photo not found', 400);
@@ -1081,7 +1081,7 @@ router.delete('/sessions/:id/cash-spent/:movementId', requirePermission('cash.sh
     const me = actor(req);
     const movementId = parseId(req.params.movementId, 'movement id');
     withTxn(() => {
-      const session = ownOpenSession(db, parseId(req.params.id, 'session id'), me);
+      const session = openShift(db, parseId(req.params.id, 'session id'));
       const result = db.prepare(`
         UPDATE cash_drawer_movements SET voided_at = ?, voided_by = ?, void_reason = 'Removed before closing'
         WHERE id = ? AND cash_session_id = ? AND movement_type = 'pay_out' AND voided_at IS NULL
@@ -1100,8 +1100,7 @@ router.delete('/sessions/:id/cash-spent/:movementId', requirePermission('cash.sh
 router.post('/sessions/:id/close-preview', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
   try {
     const db = getDatabase();
-    const me = actor(req);
-    const session = ownOpenSession(db, parseId(req.params.id, 'session id'), me);
+    const session = openShift(db, parseId(req.params.id, 'session id'));
     const rate = exchangeRate();
     const takings = normalizeCashCount((req.body || {}).count, rate);
     const floatOut = parseAmountPair((req.body || {}).float_out, 'float_out');
