@@ -269,12 +269,14 @@ export default function CashPage() {
     const openTotals = cashCountTotals(count, rate);
     const floatText = `${formatUsdCents(openTotals.usd)} + ${formatKhr(openTotals.khr)}`;
     body = (
-      <div className="space-y-4">
+      <div className="mx-auto w-full max-w-xl space-y-4">
         {header('Open shift')}
         <StepDots steps={['Float', 'POS']} current={0} />
         <h2 className="text-2xl font-bold">Count the float</h2>
         <p className="text-base text-muted-foreground">Count the money in the drawer. Use − if you tap too many.</p>
-        <CashCounter value={count} onChange={setCount} rate={rate} />
+        <div className="rounded-xl border border-emerald-300 bg-card p-3">
+          <CashCounter value={count} onChange={setCount} rate={rate} />
+        </div>
         <BigButton tone="primary" disabled={busy || countIsEmpty} onClick={() => submit(async () => {
           try {
             await api.post('/cash-handover/open', { count: cashCountPayload(count), device: 'pos' });
@@ -294,7 +296,7 @@ export default function CashPage() {
     const owed = tickets.reduce((sum, t) => sum + Number(t.balance || 0), 0);
     const openTotals = cashCountTotals(count, rate);
     body = (
-      <div className="space-y-4">
+      <div className="mx-auto w-full max-w-xl space-y-4">
         {header('Open shift')}
         <StepDots steps={steps} current={step === 'bills' ? 0 : steps.length - 2} />
         {step === 'bills' && (
@@ -322,7 +324,9 @@ export default function CashPage() {
             <h2 className="text-2xl font-bold">Count the float</h2>
             <p className="text-base text-muted-foreground">Count the money {view.fromCashier} left in the drawer.</p>
             {disputedOrders.length > 0 && <p className="rounded-lg bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-800">The manager will check the open bills.</p>}
-            <CashCounter value={count} onChange={setCount} rate={rate} title="Float" />
+            <div className="rounded-xl border border-emerald-300 bg-card p-3">
+              <CashCounter value={count} onChange={setCount} rate={rate} title="Float" />
+            </div>
             <BigButton tone="primary" disabled={busy || countIsEmpty} onClick={() => submit(async () => {
               try {
                 const res = await api.post(`/cash-handover/handovers/${view.handoverId}/receive`, {
@@ -347,14 +351,16 @@ export default function CashPage() {
   if (view.name === 'handover') {
     const sf = status.standard_float;
     body = (
-      <div className="space-y-4">
+      <div className="mx-auto w-full max-w-xl space-y-4">
         {header('Hand over now')}
         <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-800">
           1. Count out the float and leave it in the drawer: <b><Money usd={sf.usd_cents} khr={sf.khr_riel} /></b><br />
           2. Take all the rest in a bag — you will count it on your phone later.<br />
           3. Open tickets pass to the next cashier.
         </div>
-        <CashCounter value={count} onChange={setCount} rate={rate} title="Float you are leaving" />
+        <div className="rounded-xl border border-emerald-300 bg-card p-3">
+          <CashCounter value={count} onChange={setCount} rate={rate} title="Float you are leaving" />
+        </div>
         <BigButton tone="warning" disabled={busy || countIsEmpty} onClick={() => submit(async () => {
           try {
             await api.post(`/cash-handover/sessions/${view.sessionId}/handover-now`, { float_left: cashCountPayload(count), device: 'pos' });
@@ -377,12 +383,14 @@ export default function CashPage() {
 
   if (view.name === 'takings') {
     body = (
-      <div className="space-y-4">
+      <div className="mx-auto w-full max-w-xl space-y-4">
         {header(`Count takings — ${view.cashier}`)}
         <p className="text-sm text-muted-foreground">
           Count first. The expected amount is shown after you submit.
         </p>
-        <CashCounter value={count} onChange={setCount} rate={rate} title="Takings in the bag" />
+        <div className="rounded-xl border border-emerald-300 bg-card p-3">
+          <CashCounter value={count} onChange={setCount} rate={rate} title="Takings in the bag" />
+        </div>
         <textarea value={explanation} onChange={(e) => setExplanation(e.target.value)} rows={2} placeholder="Explanation (if the cash is short or over)"
           className="w-full rounded-xl border px-4 py-3 text-sm" />
         <BigButton tone="primary" disabled={busy || countIsEmpty} onClick={() => submit(async () => {
