@@ -882,6 +882,9 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
               <CloseLine n={4} label="Cash on hand" hint="(without float)" value={formatUsdCents(countTotals.combined)} />
             </div>
             <CloseLine n={5} label="Difference" value={signedUsd(difference)} tone={difference === 0 ? 'good' : 'bad'} />
+            <p className="-mt-2 px-4 pb-3 ps-[3.75rem] text-sm text-muted-foreground">
+              Should be {formatUsdCents(expected - floatCountCombined)} · counted {formatUsdCents(countTotals.combined)}
+            </p>
             {floatGap !== 0 && floatCountCombined > 0 && (
               <p className="px-4 pb-3 text-xs text-amber-700">Float counted differs from the opening float by {signedUsd(floatGap)}. Add a note below.</p>
             )}
