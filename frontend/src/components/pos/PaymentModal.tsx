@@ -620,13 +620,17 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                       <label className={`block min-w-0 rounded-xl border-2 bg-black px-3.5 py-2 ${selected ? 'border-yellow-400 ring-2 ring-inset ring-yellow-400' : 'border-neutral-600'}`}>
                         <span className={`text-sm font-bold ${selected ? 'text-yellow-400' : 'text-neutral-400'}`}>{unit === 'USD' ? 'USD $' : 'KHR ៛'}</span>
                         <input
-                          type="number"
+                          type="text"
                           value={unit === 'USD' ? payments[cashIndex].amount : khrTendered}
-                          min="0"
-                          step={unit === 'USD' ? '0.01' : '1'}
                           inputMode={unit === 'USD' ? 'decimal' : 'numeric'}
                           onFocus={() => { setTenderIndex(null); setKeypadCurrency(unit); setAmountTarget(unit === 'USD' ? { kind: 'payment', index: cashIndex } : null); }}
-                          onChange={(e) => unit === 'USD' ? updatePaymentAmount(cashIndex, e.target.value) : (setKhrTendered(e.target.value), setPaymentsTouched(true))}
+                          onChange={(e) => {
+                            const clean = unit === 'USD'
+                              ? (e.target.value.replace(/[^\d.]/g, '').match(/^\d*(\.\d{0,2})?/)?.[0] ?? '')
+                              : e.target.value.replace(/\D/g, '');
+                            if (unit === 'USD') updatePaymentAmount(cashIndex, clean);
+                            else { setKhrTendered(clean); setPaymentsTouched(true); }
+                          }}
                           placeholder={unit === 'USD' ? '0.00' : '0'}
                           className="block w-full min-w-0 bg-transparent text-3xl font-extrabold text-white tabular-nums outline-none placeholder:text-neutral-600"
                         />
