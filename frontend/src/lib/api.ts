@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 let authRedirectInProgress = false;
-export const REGISTER_IDLE_TIMEOUT_MS = 300000;
+export const REGISTER_IDLE_TIMEOUT_MS = 20 * 60 * 1000;
 const REGISTER_SESSION_KEY = 'flo.registerSession';
 
 export type RegisterOperator = { id: string; name: string; role: string; permissions: string[] };

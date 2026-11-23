@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import { LockKeyhole } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -18,15 +18,20 @@ export default function RegisterLockScreen({ error, busy = false, onUnlock, onSi
   const [pending, setPending] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const waiting = busy || pending;
-  const submit = async () => {
-    if (pin.length !== 4 || waiting) return;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const submit = async (value = pin) => {
+    if (value.length !== 4 || waiting) return;
     setPending(true);
-    try { await onUnlock(pin); }
-    finally { setPin(''); setPending(false); }
+    try { await onUnlock(value); }
+    finally { setPin(''); setPending(false); requestAnimationFrame(() => inputRef.current?.focus()); }
   };
-  const addDigit = (digit: string) => {
-    if (!waiting) setPin(current => (current + digit).slice(0, 4));
+  const changePin = (next: string) => {
+    if (waiting) return;
+    const value = next.replace(/\D/g, '').slice(0, 4);
+    setPin(value);
+    if (value.length === 4) void submit(value);
   };
+  const addDigit = (digit: string) => changePin(pin + digit);
   return (
     <div role="dialog" aria-modal="true" aria-label="Register locked"
       className="fixed inset-0 z-[200] flex items-center justify-center bg-background p-4">
@@ -37,9 +42,11 @@ export default function RegisterLockScreen({ error, busy = false, onUnlock, onSi
           <p className="text-sm text-muted-foreground">Register locked. Enter your four-digit staff PIN.</p>
         </div>
         <form onSubmit={e => { e.preventDefault(); void submit(); }} className="space-y-4">
-          <input type="password" inputMode="numeric" pattern="[0-9]{4}" maxLength={4}
-            autoComplete="off" aria-label="Four-digit staff PIN" value={pin}
-            onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          <input ref={inputRef} type="text" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} autoFocus
+            autoComplete="off" name="register-pin" data-1p-ignore data-lpignore="true"
+            aria-label="Four-digit staff PIN" value={pin}
+            onChange={e => changePin(e.target.value)}
+            style={{ WebkitTextSecurity: 'disc' } as CSSProperties}
             className="w-full rounded-lg border bg-background p-3 text-center text-2xl tracking-[0.5em]"
             disabled={waiting} />
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

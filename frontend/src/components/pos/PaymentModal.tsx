@@ -338,11 +338,18 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     }
   };
 
-  const handlePay = async (partial = false) => {
+  const handlePay = async (partial = false, exactCash = false) => {
+    const exactAmount = exactCash && cashIndex >= 0
+      ? toDisplayUnit(remainingMinor / minorFactor).toFixed(Math.round(Math.log10(minorFactor)))
+      : null;
+    const payLines = exactAmount !== null
+      ? payments.map((p, i) => (i === cashIndex ? { ...p, amount: exactAmount } : p))
+      : payments;
+    const paidMinor = exactAmount !== null ? remainingMinor : totalPaymentMinor;
     const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
     const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
     const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
-    if (payments.some((p) => (
+    if (payLines.some((p) => (
       !PAYMENT_METHODS.some((allowed) => allowed.key === p.method)
       && !customMethods.some((method) => method.id === p.payment_method_id)
     ) || !amountIsValid(p.amount))) {
@@ -364,7 +371,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       toast.error(t('paymentAboveBalance'));
       return;
     }
-    if (partial ? totalPaymentMinor <= 0 : totalPaymentMinor < remainingMinor) {
+    if (partial ? paidMinor <= 0 : paidMinor < remainingMinor) {
       toast.error(t('paymentBelowBalance'));
       return;
     }
@@ -380,7 +387,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     }
     setProcessing(true);
     try {
-      const splitLines = payments
+      const splitLines = payLines
         .map((p) => ({
           method: p.payment_method_id === undefined ? p.method : 'custom',
           ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
@@ -398,8 +405,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       // the cents remainder in riel (rounded to 100៛). The backend re-validates.
       const cashLine = splitLines.find((line) => line.method === 'cash') as (typeof splitLines[number] & Record<string, number>) | undefined;
       if (cashLine) {
-        const usdIn = cashIndex >= 0 ? toStoredUnit(parseFloat(payments[cashIndex].amount) || 0) : 0;
-        const changeMinor = Math.max(0, totalPaymentMinor - remainingMinor);
+        const usdIn = cashIndex >= 0 ? toStoredUnit(parseFloat(payLines[cashIndex].amount) || 0) : 0;
+        const changeMinor = Math.max(0, paidMinor - remainingMinor);
         const changeUsd = changeMinor / minorFactor;
         const changeUsdWhole = Math.floor(changeUsd + 1e-9);
         cashLine.cash_usd_in = usdIn;
@@ -445,7 +452,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       } else {
         toast.success(t('paymentRecorded'));
       }
-      setJustPaid(true);
+      if (exactAmount === null && change > 0) setJustPaid(true);
+      else onPaid();
     } catch {
       toast.error(t('paymentFailed'));
     } finally {
@@ -534,6 +542,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     ? 'border-white bg-white text-black'
     : 'border-neutral-600 bg-neutral-900 text-white hover:border-neutral-400'}`;
 
+  const canPayExactCash = tenderIndex === null && cashIndex >= 0 && totalPaymentMinor === 0 && khrAmount === 0 && walletAmt === 0;
   const keypadTargetLabel = tenderIndex !== null && tenderIndex !== ABA_SETUP_TENDER
     ? `${tenderLabel(tenderIndex)} ${inputCurrencyLabel}`
     : keypadCurrency === 'KHR' ? 'KHR ៛' : 'USD $';
@@ -922,6 +931,11 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         <div className="px-5 pb-4 border-t-2 border-neutral-800 bg-black pt-3 space-y-2">
           {justPaid ? (
             <>
+              {change > 0 && (
+                <p className="rounded-2xl bg-yellow-400 py-3 text-center text-3xl font-black text-black" role="status">
+                  Give change {currencyFmt(change)}
+                </p>
+              )}
               {cartCustomer?.phone && (
                 isWhatsAppReady ? (
                   <Button
@@ -953,14 +967,18 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             <>
               <button
                 type="button"
-                onClick={() => handlePay(false)}
-                disabled={processing || totalPaymentMinor < remainingMinor}
+                onClick={() => {
+                  void handlePay(false, canPayExactCash);
+                }}
+                disabled={processing || (!canPayExactCash && totalPaymentMinor < remainingMinor)}
                 className="flex min-h-16 w-full items-center justify-center gap-2 rounded-2xl bg-green-500 text-2xl font-black text-black hover:bg-green-400 disabled:bg-neutral-800 disabled:text-neutral-400"
               >
                 {processing
                   ? t('processingPayment')
-                  : totalPaymentMinor < remainingMinor
-                    ? `Still to pay ${currencyFmt(stillToPay)}`
+                  : canPayExactCash
+                    ? <>{t('pay')} {currencyFmt(remaining)} <span className="text-lg font-bold">· exact cash</span></>
+                    : totalPaymentMinor < remainingMinor
+                      ? `Still to pay ${currencyFmt(stillToPay)}`
                     : <>{t('pay')} {currencyFmt(remaining)} {paySubLabel && <span className="text-lg font-bold">{paySubLabel}</span>}</>}
               </button>
               {totalPaymentMinor > 0 && totalPaymentMinor < remainingMinor && (
