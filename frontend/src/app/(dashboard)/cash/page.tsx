@@ -659,6 +659,21 @@ function AddPayoutModal({ sessionId, phone, onSaved, onClose }: {
   );
 }
 
+/** Whole drawer (cash to hand over + float left) as one count, as the server expects. */
+function drawerCountPayload(cash: CashCountValue, float: CashCountValue) {
+  if (cash.method === 'denominations' && float.method === 'denominations') {
+    const sum = (a: Record<string, number>, b: Record<string, number>) =>
+      Object.fromEntries(Object.keys(a).map((note) => [note, (a[note] || 0) + (b[note] || 0)]));
+    return {
+      method: 'denominations' as const,
+      denominations: { USD: sum(cash.denominations.USD, float.denominations.USD), KHR: sum(cash.denominations.KHR, float.denominations.KHR) },
+    };
+  }
+  const a = cashCountTotals(cash, 4100);
+  const b = cashCountTotals(float, 4100);
+  return { method: 'manual' as const, usd_cents: a.usd + b.usd, khr_riel: a.khr + b.khr };
+}
+
 function SimpleClose({ header, sessionId, rate, onClosed }: {
   header: (t: string) => React.ReactNode;
   sessionId: number;
@@ -732,13 +747,13 @@ function SimpleClose({ header, sessionId, rate, onClosed }: {
   const countTotals = cashCountTotals(count, rate);
   const openingCombined = preview?.opening_float_usd_cents ?? 0;
   const expected = preview?.should_have_usd_cents ?? 0;
-  const difference = countTotals.combined - expected;
   const payoutTotal = preview?.cash_spent_usd_cents ?? 0;
   const cashSales = preview?.cash_sales_usd_cents ?? 0;
   const tickets = openTickets ?? [];
   const openOwed = tickets.reduce((sum, ticket) => sum + Number(ticket.balance || 0), 0);
   const floatCountCombined = combinedUsdCents(floatPayload.usd_cents, floatPayload.khr_riel, rate);
   const floatGap = floatCountCombined - openingCombined;
+  const difference = countTotals.combined + floatCountCombined - expected;
   const tolerance = preview?.tolerance_usd_cents ?? 0;
   const needsExplanation = Math.abs(difference) > tolerance || Math.abs(floatGap) > tolerance;
   const phonePending = phone.photos.length;
@@ -763,7 +778,7 @@ function SimpleClose({ header, sessionId, rate, onClosed }: {
     }
     try {
       const res = await api.post('/cash-handover/sessions/' + sessionId + '/closing-count', {
-        count: cashCountPayload(count),
+        count: drawerCountPayload(count, floatCount),
         float_retained: floatPayload,
         explanation: reason.trim() || undefined,
         device: 'pos',
@@ -832,7 +847,7 @@ function SimpleClose({ header, sessionId, rate, onClosed }: {
           <section className="overflow-hidden rounded-xl border bg-card">
             <h2 className="bg-emerald-50 px-4 py-3 text-lg font-bold">Close Day Shift</h2>
             <CloseLine n={1} label="Cash sales" hint="(from POS)" value={formatUsdCents(cashSales)} />
-            <CloseLine n={2} label="Float" hint="(at start)" value={formatUsdCents(openingCombined)} />
+            <CloseLine n={2} label="Float" hint={`(counted · start ${formatUsdCents(openingCombined)})`} value={formatUsdCents(floatCountCombined)} />
             <div className="border-b">
               <CloseLine n={3} label="Cash payouts" value={'−' + formatUsdCents(payoutTotal)} tone="minus">
                 <button type="button" onClick={() => setAddingPayout(true)}
@@ -854,7 +869,7 @@ function SimpleClose({ header, sessionId, rate, onClosed }: {
               )}
             </div>
             <div className="bg-emerald-50">
-              <CloseLine n={4} label="Cash on hand" hint="(counted)" value={formatUsdCents(countTotals.combined)} />
+              <CloseLine n={4} label="Cash on hand" hint="(without float)" value={formatUsdCents(countTotals.combined)} />
             </div>
             <CloseLine n={5} label="Difference" value={signedUsd(difference)} tone={difference === 0 ? 'good' : 'bad'} />
             {floatGap !== 0 && floatCountCombined > 0 && (
@@ -900,9 +915,9 @@ function SimpleClose({ header, sessionId, rate, onClosed }: {
               Float
             </button>
           </div>
-          <CashCounter value={activeValue} onChange={setActiveValue} rate={rate} title={activeCounter === 'cash' ? 'Cash on hand (including float)' : 'Float to remain in drawer'} />
+          <CashCounter value={activeValue} onChange={setActiveValue} rate={rate} title={activeCounter === 'cash' ? 'Cash on hand (without float)' : 'Float (stays in drawer)'} />
           <div className="mt-2 rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground">
-            Cash on hand and float counts are saved separately as you switch tabs.
+            Count the cash you take out here. Count the float that stays in the drawer on the Float tab.
           </div>
         </aside>
       </div>
