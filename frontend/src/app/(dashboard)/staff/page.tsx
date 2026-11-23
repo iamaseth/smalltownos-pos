@@ -5,7 +5,8 @@ import axios from 'axios';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Edit, RotateCcw, Eye, EyeOff } from 'lucide-react';
+import { Plus, X, Edit, RotateCcw, Eye, EyeOff, MoreHorizontal } from 'lucide-react';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import type { Staff } from '@/lib/types';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
@@ -57,6 +58,7 @@ export default function StaffPage() {
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [showResetPw, setShowResetPw] = useState(false);
   const [resetPwStaff, setResetPwStaff] = useState<Staff | null>(null);
+  const [search, setSearch] = useState('');
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -210,39 +212,58 @@ export default function StaffPage() {
         {canManageStaff && <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('addButton')}</Button>}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {staff.map((s) => (
-          <div key={s.id} className={`bg-card rounded-xl p-5 border ${s.is_active ? 'border-border' : 'border-border opacity-60'}`}>
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <p className="font-bold text-foreground">{s.name}</p>
-                <p className="text-xs text-muted-foreground">{s.email || '—'}</p>
-                {Boolean(s.has_pin) && (
-                  <p className="text-xs text-green-600 mt-1">{t('pinSet')}</p>
-                )}
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder={tCommon('search')}
+        aria-label={tCommon('search')}
+        className="mb-4 h-9 w-full max-w-xs rounded-lg border border-border bg-background px-3 text-sm"
+      />
+
+      <div className="space-y-5">
+        {VALID_ROLES.map((role) => {
+          const people = staff.filter((s) => s.role === role && s.name.toLowerCase().includes(search.trim().toLowerCase()));
+          if (people.length === 0) return null;
+          return (
+            <section key={role}>
+              <h2 className="mb-1.5 text-sm font-semibold text-muted-foreground"><span className={`me-2 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${roleColors[role] || 'bg-muted text-foreground'}`}>{roleLabel(role, t)}</span>{people.length}</h2>
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                {people.map((s) => {
+                  const canManageThis = canManageStaff && (canManagePrivilegedStaff || !hasRole(s.role, ROLE_ACCESS.ownerManager));
+                  return (
+                    <div key={s.id} className={`flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-0 ${s.is_active ? '' : 'opacity-60'}`}>
+                      <span className="min-w-0 flex-1 truncate font-semibold text-foreground">{s.name}</span>
+                      <span className="hidden min-w-0 flex-1 truncate text-xs text-muted-foreground sm:block">{s.email || ''}</span>
+                      <span className={`w-24 shrink-0 text-xs ${s.has_pin ? 'text-green-600' : 'text-amber-600'}`}>{s.has_pin ? t('pinSet') : t('noPin')}</span>
+                      {canManageThis ? (
+                        <div className="flex shrink-0 items-center gap-1">
+                          <Button variant="outline" size="sm" onClick={() => openEdit(s)}>
+                            <Edit size={14} className="me-1" /> {tCommon('edit')}
+                          </Button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" aria-label={s.name}><MoreHorizontal size={16} /></Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {!hasRole(s.role, OPERATIONAL_ROLES) && (
+                                <DropdownMenuItem onClick={() => openResetPw(s)}>
+                                  <RotateCcw size={14} className="me-2" /> {t('resetPwButton')}
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={() => toggleActive(s)} className={s.is_active ? 'text-red-600' : 'text-green-600'}>
+                                {s.is_active ? t('deactivate') : t('reactivate')}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      ) : <span className="w-[7.5rem] shrink-0" />}
+                    </div>
+                  );
+                })}
               </div>
-              <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${roleColors[s.role] || 'bg-muted text-foreground'}`}>
-                {roleLabel(s.role, t)}
-              </span>
-            </div>
-            {canManageStaff && (canManagePrivilegedStaff || !hasRole(s.role, ROLE_ACCESS.ownerManager)) && <div className="flex flex-wrap gap-2 mt-3">
-              <Button variant="outline" size="sm" onClick={() => openEdit(s)}>
-                <Edit size={14} className="me-1" /> {tCommon('edit')}
-              </Button>
-              {!hasRole(s.role, OPERATIONAL_ROLES) && <Button variant="outline" size="sm" onClick={() => openResetPw(s)}>
-                <RotateCcw size={14} className="me-1" /> {t('resetPwButton')}
-              </Button>}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => toggleActive(s)}
-                className={s.is_active ? 'text-red-500 hover:text-red-700 hover:bg-red-50' : 'text-green-500 hover:text-green-700 hover:bg-green-50'}
-              >
-                {s.is_active ? t('deactivate') : t('reactivate')}
-              </Button>
-            </div>}
-          </div>
-        ))}
+            </section>
+          );
+        })}
       </div>
 
       {staff.length === 0 && <p className="text-center text-muted-foreground py-12">{t('empty')}</p>}

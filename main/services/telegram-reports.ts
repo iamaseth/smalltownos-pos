@@ -42,8 +42,8 @@ function moneyFormatter(db: Db) {
 const percent = (value: number | null | undefined) => (value === null || value === undefined ? '-' : `${Math.round(value)}%`);
 const prettyDate = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
-export function currentBusinessDate(db: Db = getDatabase()): string {
-  return localDateInTimezone(new Date(), tenantTimezone(), tenantBusinessDayStartTime(db));
+export function currentBusinessDate(db: Db = getDatabase(), now: Date = new Date()): string {
+  return localDateInTimezone(now, tenantTimezone(), tenantBusinessDayStartTime(db));
 }
 
 function pre(rows: string[]): string {

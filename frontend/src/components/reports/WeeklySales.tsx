@@ -97,6 +97,8 @@ export default function WeeklySales() {
             className="flex size-10 items-center justify-center rounded-xl border-2 border-border bg-card text-foreground hover:bg-muted"><ChevronLeft size={18} className="rtl:rotate-180" /></button>
           <button type="button" onClick={() => setWeekOf(isoDate(new Date()))}
             className="h-10 rounded-xl border-2 border-border bg-card px-3 text-sm font-semibold text-foreground hover:bg-muted">{t('thisWeek')}</button>
+          <button type="button" onClick={() => setWeekOf(shiftWeek(isoDate(new Date()), -1))}
+            className="h-10 rounded-xl border-2 border-border bg-card px-3 text-sm font-semibold text-foreground hover:bg-muted">{t('lastWeek')}</button>
           <button type="button" onClick={() => setWeekOf(shiftWeek(weekOf, 1))} aria-label={t('nextWeek')}
             className="flex size-10 items-center justify-center rounded-xl border-2 border-border bg-card text-foreground hover:bg-muted"><ChevronRight size={18} className="rtl:rotate-180" /></button>
         </div>

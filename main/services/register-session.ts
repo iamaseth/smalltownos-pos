@@ -3,7 +3,7 @@
  * Sessions intentionally live only in memory: a server restart invalidates
  * every register PIN session, while the normal owner/manager login remains.
  */
-export const REGISTER_SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+export const REGISTER_SESSION_IDLE_TIMEOUT_MS = 20 * 60 * 1000;
 
 type RegisterSession = { userId: string; lastActivity: number };
 const sessions = new Map<string, RegisterSession>();
