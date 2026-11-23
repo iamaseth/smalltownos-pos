@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (४ अंक)",
     "pinPlaceholderEdit": "नयाँ पिन (राख्न खाली छोड्नुहोस्)",
     "pinSet": "✓ PIN सेट",
+    "noPin": "PIN छैन",
     "reactivate": "पुनः सक्रिय गर्नुहोस्",
     "resetPasswordBody": "को लागि पासवर्ड रिसेट गर्नुहोस् {name}",
     "resetPasswordTitle": "पासवर्ड रिसेट गर्नुहोस्",

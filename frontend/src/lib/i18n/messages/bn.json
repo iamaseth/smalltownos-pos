@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "পিন (৪ সংখ্যা)",
     "pinPlaceholderEdit": "নতুন পিন (রাখতে খালি ছেড়ে দিন)",
     "pinSet": "✓ পিন সেট",
+    "noPin": "পিন নেই",
     "reactivate": "পুনরায় সক্রিয় করুন",
     "resetPasswordBody": "এর জন্য পাসওয়ার্ড রিসেট করুন {name}",
     "resetPasswordTitle": "পাসওয়ার্ড রিসেট করুন",

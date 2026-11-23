@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "Code PIN (4 chiffres)",
     "pinPlaceholderEdit": "Nouveau code PIN (laisser vide pour conserver l’actuel)",
     "pinSet": "✓ Code PIN défini",
+    "noPin": "Pas de code PIN",
     "reactivate": "Réactiver",
     "resetPasswordBody": "Réinitialiser le mot de passe de {name}",
     "resetPasswordTitle": "Réinitialiser le mot de passe",

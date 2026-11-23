@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4 na digit)",
     "pinPlaceholderEdit": "Bagong PIN (iwanang blangko upang mapanatili)",
     "pinSet": "✓ Naitakda ang PIN",
+    "noPin": "Walang PIN",
     "reactivate": "Muling I-activate",
     "resetPasswordBody": "I-reset ang password para kay {name}",
     "resetPasswordTitle": "I-reset ang Password",

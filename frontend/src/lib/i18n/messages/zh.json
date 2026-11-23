@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN（4 位）",
     "pinPlaceholderEdit": "新 PIN（留空则保持不变）",
     "pinSet": "✓ PIN 已设置",
+    "noPin": "未设置 PIN",
     "reactivate": "重新启用",
     "resetPasswordBody": "为 {name} 重置密码",
     "resetPasswordTitle": "重置密码",

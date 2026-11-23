@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4자리)",
     "pinPlaceholderEdit": "새 PIN (비워 두면 유지)",
     "pinSet": "✓ PIN 설정됨",
+    "noPin": "PIN 없음",
     "reactivate": "활성화",
     "resetPasswordBody": "{name}의 비밀번호 재설정",
     "resetPasswordTitle": "비밀번호 재설정",

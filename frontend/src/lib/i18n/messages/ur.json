@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4 اعداد)",
     "pinPlaceholderEdit": "نیا PIN (وہی رکھنے کے لیے خالی چھوڑیں)",
     "pinSet": "✓ PIN مقرر ہے",
+    "noPin": "PIN نہیں",
     "reactivate": "دوبارہ فعال کریں",
     "resetPasswordBody": "{name} کا پاس ورڈ ری سیٹ کریں",
     "resetPasswordTitle": "پاس ورڈ ری سیٹ کریں",

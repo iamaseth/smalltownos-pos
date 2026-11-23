@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4 chữ số)",
     "pinPlaceholderEdit": "PIN mới (để trống nếu giữ nguyên)",
     "pinSet": "✓ Đã đặt PIN",
+    "noPin": "Chưa có PIN",
     "reactivate": "Kích hoạt lại",
     "resetPasswordBody": "Đặt lại mật khẩu cho {name}",
     "resetPasswordTitle": "Đặt lại mật khẩu",

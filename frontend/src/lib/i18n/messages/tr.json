@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4 basamak)",
     "pinPlaceholderEdit": "Yeni PIN (değiştirmemek için boş bırakın)",
     "pinSet": "✓ PIN ayarlandı",
+    "noPin": "PIN yok",
     "reactivate": "Yeniden Aktifleştir",
     "resetPasswordBody": "{name} için şifreyi sıfırla",
     "resetPasswordTitle": "Şifre Sıfırla",

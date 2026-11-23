@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4 Ziffern)",
     "pinPlaceholderEdit": "Neue PIN (leer lassen zum Beibehalten)",
     "pinSet": "✓ PIN festgelegt",
+    "noPin": "Keine PIN",
     "reactivate": "Reaktivieren",
     "resetPasswordBody": "Passwort für {name} zurücksetzen",
     "resetPasswordTitle": "Passwort zurücksetzen",

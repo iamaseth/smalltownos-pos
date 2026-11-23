@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4 หลัก)",
     "pinPlaceholderEdit": "PIN ใหม่ (เว้นว่างหากไม่เปลี่ยน)",
     "pinSet": "✓ ตั้ง PIN แล้ว",
+    "noPin": "ยังไม่มี PIN",
     "reactivate": "เปิดใช้งานอีกครั้ง",
     "resetPasswordBody": "ตั้งรหัสผ่านใหม่ให้ {name}",
     "resetPasswordTitle": "ตั้งรหัสผ่านใหม่",

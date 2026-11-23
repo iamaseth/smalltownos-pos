@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4 shifra)",
     "pinPlaceholderEdit": "PIN i ri (lër bosh për ta mbajtur)",
     "pinSet": "✓ PIN u caktua",
+    "noPin": "Pa PIN",
     "reactivate": "Riaktivizo",
     "resetPasswordBody": "Rivendosni fjalëkalimin për {name}",
     "resetPasswordTitle": "Rivendos fjalëkalimin",

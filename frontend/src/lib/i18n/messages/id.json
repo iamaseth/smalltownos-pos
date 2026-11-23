@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4 digit)",
     "pinPlaceholderEdit": "PIN Baru (biarkan kosong untuk mempertahankan)",
     "pinSet": "✓ PIN diatur",
+    "noPin": "Belum ada PIN",
     "reactivate": "Aktifkan kembali",
     "resetPasswordBody": "Atur ulang kata sandi untuk {name}",
     "resetPasswordTitle": "Atur Ulang Kata Sandi",

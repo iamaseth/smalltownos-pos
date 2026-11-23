@@ -2339,6 +2339,7 @@
     "pinPlaceholderAdd": "PIN (4 cijfers)",
     "pinPlaceholderEdit": "Nieuw PIN (leeg laten om te behouden)",
     "pinSet": "✓ PIN ingesteld",
+    "noPin": "Geen PIN",
     "reactivate": "Opnieuw activeren",
     "resetPasswordBody": "Wachtwoord opnieuw instellen voor {name}",
     "resetPasswordTitle": "Wachtwoord opnieuw instellen",
