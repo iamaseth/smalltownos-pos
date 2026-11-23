@@ -147,15 +147,18 @@ async function main() {
     assertOrThrow(docs.some((d) => d.includes('text/csv') && d.includes('product_name')), 'the CSV has the item columns');
 
     console.log('\n5. Duplicate prevention');
+    // Fixed clock: 11:00 on the business date, on a schedule whose weekly day is not that day.
+    const fixedNow = new Date(`${businessDate}T11:00:00+07:00`);
+    const fixedWeekday = fixedNow.getUTCDay();
+    telegram.saveSchedule({ weeklyDay: (fixedWeekday + 3) % 7 });
     calls.length = 0;
     telegram.notifyTelegram('day_close', { businessDate });
-    telegram.runScheduledChecks();
+    telegram.runScheduledChecks(db, fixedNow);
     await telegram.processQueue();
     assertEqualOrThrow((db.prepare(`SELECT COUNT(*) n FROM telegram_deliveries WHERE dedupe_key LIKE ?`).get(`daily|${businessDate}|%`) as { n: number }).n, 1, 'closing the same day again does not queue a second report');
     assertEqualOrThrow((db.prepare(`SELECT attempts FROM telegram_deliveries WHERE dedupe_key LIKE ?`).get(`daily|${businessDate}|%`) as { attempts: number }).attempts, 1, 'the closed day was sent once');
     const yesterdayKey = (db.prepare(`SELECT dedupe_key FROM telegram_deliveries WHERE report_type = 'daily' AND dedupe_key NOT LIKE ?`).get(`daily|${businessDate}|%`) as { dedupe_key: string } | undefined)?.dedupe_key ?? '';
-    const backupDue = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Phnom_Penh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()) >= '10:00';
-    assertEqualOrThrow(Boolean(yesterdayKey), backupDue, 'an unclosed previous day gets the 10:00 backup report only after 10:00');
+    assertOrThrow(Boolean(yesterdayKey), 'an unclosed previous day gets the 10:00 backup report after 10:00');
 
     console.log('\n6. Failed delivery and retry');
     db.prepare(`INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents) VALUES ('owner-tg', 'Owner', ?, 5000)`).run(now());
@@ -185,17 +188,16 @@ async function main() {
     console.log('\n7. Scheduled delivery and low stock');
     const { createSupply } = require('../main/services/supplies');
     createSupply(db, { name: 'Draft keg', baseUnit: 'each', lowStockThreshold: 1 });
-    const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Phnom_Penh', weekday: 'short' }).format(new Date()));
-    telegram.saveSchedule({ weeklyDay: weekday, weeklyTime: '00:00' });
+    telegram.saveSchedule({ weeklyDay: fixedWeekday, weeklyTime: '00:00' });
     calls.length = 0;
-    telegram.runScheduledChecks();
+    telegram.runScheduledChecks(db, fixedNow);
     await telegram.processQueue();
     const sent = calls.filter((c) => c.method === 'sendMessage').map((c) => c.body);
     assertOrThrow(sent.some((b) => b.includes('Weekly report')), 'weekly report sent on its day');
     assertOrThrow(sent.some((b) => b.includes('Purchasing')), 'purchasing summary sent with it');
     assertOrThrow(sent.some((b) => b.includes('Low stock') && b.includes('Draft keg')), 'low stock alert sent');
     calls.length = 0;
-    telegram.runScheduledChecks();
+    telegram.runScheduledChecks(db, fixedNow);
     await telegram.processQueue();
     assertEqualOrThrow(calls.length, 0, 'the next check sends nothing new');
     res = await request(app).put('/api/telegram/schedule').set('Authorization', owner).send({ weeklyTime: '25:00' });

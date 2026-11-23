@@ -273,10 +273,10 @@ export async function handleUpdate(update: TelegramUpdate, db: Db = getDatabase(
 
 // ---- Delivery queue ----
 
-function localNow(): { date: string; time: string; weekday: number } {
+function localNow(at: Date): { date: string; time: string; weekday: number } {
   const tz = (require('../routes/cash-closures') as typeof import('../routes/cash-closures')).tenantTimezone();
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short', hourCycle: 'h23' })
-    .formatToParts(new Date()).reduce<Record<string, string>>((acc, p) => { acc[p.type] = p.value; return acc; }, {});
+    .formatToParts(at).reduce<Record<string, string>>((acc, p) => { acc[p.type] = p.value; return acc; }, {});
   const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(parts.weekday);
   return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}`, weekday };
 }
@@ -489,12 +489,13 @@ function shiftIso(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function runScheduledChecks(db: Db = getDatabase()): void {
+/** `now` is injectable so schedule tests do not depend on the real day and time. */
+export function runScheduledChecks(db: Db = getDatabase(), now: Date = new Date()): void {
   if (!isEnabled(db) || !botToken()) return;
   const schedule = getSchedule(db);
-  const local = localNow();
+  const local = localNow(now);
   const reports = require('./telegram-reports') as typeof import('./telegram-reports');
-  const businessToday = reports.currentBusinessDate(db);
+  const businessToday = reports.currentBusinessDate(db, now);
 
   if (local.time >= schedule.dailyFallbackTime) {
     const yesterday = shiftIso(businessToday, -1);
