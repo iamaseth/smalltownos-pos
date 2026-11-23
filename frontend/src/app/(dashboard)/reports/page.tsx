@@ -15,7 +15,7 @@ import { tenantCan } from '@/lib/permissions';
 import { DayReports, type DayView } from '@/components/reports/DayReports';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
-type Preset = 'today' | 'thisWeek' | 'thisMonth' | 'custom';
+type Preset = 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'custom';
 
 interface Summary { orders: number; netSales: number; discounts: number; discountedOrders: number; averageBill: number }
 interface ReportItem { productId: string; name: string; category: string | null; onMenu: boolean; quantity: number; orders: number; net: number; cost?: number | null; profit?: number | null }
@@ -45,10 +45,17 @@ function isoDate(d: Date): string {
 function presetRange(preset: Exclude<Preset, 'custom'>): [string, string] {
   const today = new Date();
   if (preset === 'today') return [isoDate(today), isoDate(today)];
-  if (preset === 'thisWeek') {
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-    return [isoDate(monday), isoDate(today)];
+  if (preset === 'yesterday') {
+    const y = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    return [isoDate(y), isoDate(y)];
+  }
+  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7));
+  if (preset === 'thisWeek') return [isoDate(monday), isoDate(today)];
+  if (preset === 'lastWeek') {
+    return [isoDate(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 7)), isoDate(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() - 1))];
+  }
+  if (preset === 'lastMonth') {
+    return [isoDate(new Date(today.getFullYear(), today.getMonth() - 1, 1)), isoDate(new Date(today.getFullYear(), today.getMonth(), 0))];
   }
   return [isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), isoDate(today)];
 }
@@ -186,7 +193,7 @@ export default function ReportsPage() {
       <div className="mb-6 flex flex-wrap items-center gap-3 print:hidden">
         <h1 className="me-2 text-2xl font-bold text-foreground">{t('title')}</h1>
         <div className="flex h-10 rounded-xl border-2 border-border bg-card p-1" role="group" aria-label={t('periodView')}>
-          {(['today', 'thisWeek', 'thisMonth', 'custom'] as const).map((key) => (
+          {(['today', 'yesterday', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'custom'] as const).map((key) => (
             <button key={key} type="button" onClick={() => choosePreset(key)} aria-pressed={preset === key}
               className={`rounded-lg px-3 text-sm font-semibold transition-colors ${preset === key ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted'}`}>
               {t(key)}
