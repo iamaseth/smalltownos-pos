@@ -426,16 +426,25 @@ function getPaperStyles(size: PaperSize): string {
     .text-italic { font-style: italic; color: #888; }
   `;
 
+  // Thermal heads cannot print grey: dithered greys and thin strokes come out faint.
+  const thermalInk = `
+    body, .bill-container, .bill-container * { color: #000 !important; font-weight: 600; }
+    .header h1, .items-table th, .total-row, .total-row *, .reprint-banner { font-weight: 800; }
+    .items-table th, .tax-table th, .payments-table th { background: none; }
+    .header, .footer, .items-table th, .items-table td { border-color: #000 !important; }
+    .reprint-banner { border-color: #000; }
+  `;
+
   switch (size) {
     case 'thermal58':
-      return baseStyles + `
-        .bill-container { padding: 5px; max-width: 58mm; font-size: 10px; }
+      return baseStyles + thermalInk + `
+        .bill-container { padding: 5px; max-width: 58mm; font-size: 11px; }
         .header h1 { font-size: 14px; }
         .items-table th, .items-table td, .tax-table td, .totals-table td, .payments-table td { padding: 2px 4px; }
       `;
     case 'thermal80':
-      return baseStyles + `
-        .bill-container { padding: 10px; max-width: 80mm; font-size: 11px; }
+      return baseStyles + thermalInk + `
+        .bill-container { padding: 10px; max-width: 80mm; font-size: 13px; }
         .header h1 { font-size: 16px; }
       `;
     default:
