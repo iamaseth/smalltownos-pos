@@ -230,7 +230,7 @@ export default function ProductGrid({
     finally { setSaving(false); }
   };
   // Category buttons are driven by the active category records.
-  const [catalogView, setCatalogView] = useState<'photo' | 'compact'>('compact');
+  const [catalogView, setCatalogView] = useState<'photo' | 'compact'>('photo');
   const isTouch = useSyncExternalStore(subscribeCoarsePointer, getCoarsePointer, () => false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const gridScrollRef = useRef<HTMLDivElement>(null);
