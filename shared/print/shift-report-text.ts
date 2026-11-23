@@ -44,6 +44,8 @@ export interface ShiftReportData {
   kind: 'X' | 'Z';
   businessName: string; register: string; shiftNumber: number; timezone: string;
   cashier: string; openedAt: string; closedAt: string | null; printedAt: string;
+  /** Who pressed Close; may differ from the cashier who opened the shift. */
+  closedBy?: string | null;
   sales: ReportSales;
   payments: ReportPaymentRow[];
   unpaid: { count: number; totalCents: number; labels: string[] };
@@ -220,6 +222,7 @@ export function renderShiftReport(d: ShiftReportData, w: ReportWidth, timezone: 
   const out: string[] = [
     ...header(w, d.businessName, closing ? 'Z-REPORT  SHIFT CLOSE' : 'X-REPORT  (shift still open)', closing ? `Shift #${d.shiftNumber}` : 'Not a closing report', reprint),
     lr(w, 'Cashier', d.cashier),
+    ...(closing && d.closedBy ? [lr(w, 'Closed by', d.closedBy)] : []),
     lr(w, 'Register', d.register),
     lr(w, closing ? 'Opened' : 'Shift opened', formatStamp(d.openedAt, timezone)),
   ];
