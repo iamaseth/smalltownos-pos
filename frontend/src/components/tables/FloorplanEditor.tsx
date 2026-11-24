@@ -45,7 +45,7 @@ const ALL_FLOORS = '__all__';
 
 // Virtual canvas coordinate space (percentage of width) ensuring proportional
 // scaling on narrow screens.
-const VIRTUAL_WIDTH = 1000;
+export const VIRTUAL_WIDTH = 1000;
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
@@ -98,7 +98,7 @@ const EMPTY_FORM: TableForm = { name: '', capacity: '4', floor: '', section: '' 
 
 // Auto-fit canvas aspect ratio to bounding box of placed tables
 // using saved positions to maintain drag stability.
-function computeCanvasAspect(placed: Table[]): number {
+export function computeCanvasAspect(placed: Table[]): number {
   if (placed.length === 0) return 4 / 3;
   let minX = 100, maxX = 0, minY = 100, maxY = 0;
   for (const tb of placed) {
@@ -154,7 +154,7 @@ function findNextFreePosition(
 // Persist the per-floor canvas size so the user's room dimensions survive a
 // reload. Floor key: "__unassigned__" for the null-floor bucket.
 type SavedCanvasSize = { mode: 'auto' | 'custom'; w: number; h: number };
-function loadSavedCanvasSize(floor: string): SavedCanvasSize {
+export function loadSavedCanvasSize(floor: string): SavedCanvasSize {
   const key = `floorplan.size.${floor || '__unassigned__'}`;
   try {
     const raw = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
