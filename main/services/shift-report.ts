@@ -441,3 +441,106 @@ export function buildDailyReport(businessDate: string): DailyReportData {
     unpaid: unpaidSummary(orders),
   };
 }
+
+export interface CashierReportShift { id: number; cashier: string; openedAt: string; closedAt: string | null; open: boolean; part: 'day' | 'night' }
+export interface CashierReportData {
+  timezone: string;
+  startDate: string; endDate: string; sessionId: number | null;
+  shifts: CashierReportShift[];
+  days: { date: string; orders: number; netCents: number }[];
+  sales: ReportSales;
+  payments: ReportPaymentRow[];
+  items: ReportQtyRow[];
+  tickets: ReportOrderRow[];
+  unpaid: { count: number; totalCents: number; labels: string[] };
+  cash: { openingUsdCents: number; expectedUsdCents: number; countedUsdCents: number | null; differenceUsdCents: number | null; openingKhrRiel: number; expectedKhrRiel: number; countedKhrRiel: number | null; differenceKhrRiel: number | null; shiftsCounted: number; shiftsTotal: number };
+}
+
+/** A register session opened before this local hour is labelled a Day shift, later ones Night. */
+const DAY_SHIFT_UNTIL_HOUR = 16;
+
+function shiftPart(openedAt: string, timeZone: string): 'day' | 'night' {
+  const date = new Date(openedAt.includes('T') ? openedAt : `${openedAt.replace(' ', 'T')}Z`);
+  const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(date));
+  return hour >= 5 && hour < DAY_SHIFT_UNTIL_HOUR ? 'day' : 'night';
+}
+
+function itemsFor(db: Db, billIds: number[]): ReportQtyRow[] {
+  return (db.prepare(`
+    SELECT oi.product_name AS product, SUM(oi.quantity) AS qty, SUM(oi.total) AS total
+    FROM order_items oi JOIN bills b ON b.order_id = oi.order_id
+    WHERE b.id IN (${inList(billIds)}) AND oi.status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
+    GROUP BY oi.product_name
+  `).all() as { product: string; qty: number; total: number }[])
+    .map((i) => ({ label: i.product, qty: Number(i.qty || 0), netCents: cents(i.total) }))
+    .sort((a, b) => b.qty - a.qty || b.netCents - a.netCents);
+}
+
+function datesBetween(startDate: string, endDate: string): string[] {
+  const out: string[] = [];
+  const d = new Date(`${startDate}T12:00:00Z`);
+  const end = new Date(`${endDate}T12:00:00Z`);
+  while (d <= end && out.length < 400) { out.push(d.toISOString().slice(0, 10)); d.setUTCDate(d.getUTCDate() + 1); }
+  return out;
+}
+
+/** Cashier-facing report for a business-day range, or one register session; no cost or profit figures. */
+export function buildCashierReport(input: { startDate: string; endDate: string; sessionId?: number | null }): CashierReportData {
+  const db = getDatabase();
+  const tz = tenantTimezone();
+  const dayStart = tenantBusinessDayStartTime(db);
+  const [start] = dayBoundsInTimezone(input.startDate, tz, dayStart);
+  const [, end] = dayBoundsInTimezone(input.endDate, tz, dayStart);
+  const sessions = db.prepare(`SELECT * FROM cash_sessions WHERE datetime(opened_at) >= datetime(?) AND datetime(opened_at) < datetime(?) ORDER BY opened_at`)
+    .all(start, end) as SessionRow[];
+  const shifts: CashierReportShift[] = sessions.map((s) => ({
+    id: s.id, cashier: s.opened_by_name || '—', openedAt: s.opened_at, closedAt: s.closed_at, open: s.status !== 'closed', part: shiftPart(s.opened_at, tz),
+  }));
+
+  let w: Window = { start, end, sessionId: null };
+  let picked = sessions;
+  if (input.sessionId != null) {
+    const session = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(input.sessionId) as SessionRow | undefined;
+    if (!session) throw Object.assign(new Error('Shift not found'), { statusCode: 404 });
+    w = { start: session.opened_at, end: secondAfter(session.status === 'closed' && session.closed_at ? session.closed_at : now()), sessionId: session.id };
+    picked = [session];
+  }
+  const billIds = paidBillIds(db, w);
+  const orders = ordersInWindow(db, w, input.sessionId != null && picked[0]?.status !== 'closed');
+
+  const cash = { openingUsdCents: 0, expectedUsdCents: 0, countedUsdCents: 0, differenceUsdCents: 0, openingKhrRiel: 0, expectedKhrRiel: 0, countedKhrRiel: 0, differenceKhrRiel: 0, shiftsCounted: 0, shiftsTotal: picked.length };
+  for (const s of picked) {
+    const c = buildShiftReport(s.id).cash;
+    cash.openingUsdCents += c.openingUsdCents; cash.openingKhrRiel += c.openingKhrRiel;
+    cash.expectedUsdCents += c.expectedUsdCents; cash.expectedKhrRiel += c.expectedKhrRiel;
+    if (c.countedUsdCents != null) {
+      cash.shiftsCounted += 1;
+      cash.countedUsdCents += c.countedUsdCents; cash.countedKhrRiel += c.countedKhrRiel ?? 0;
+      cash.differenceUsdCents += c.varianceUsdCents ?? 0; cash.differenceKhrRiel += c.varianceKhrRiel ?? 0;
+    }
+  }
+  const anyCounted = cash.shiftsCounted > 0;
+
+  const multiDay = input.sessionId == null && input.startDate !== input.endDate;
+  const days = multiDay ? datesBetween(input.startDate, input.endDate).map((date) => {
+    const [ds, de] = dayBoundsInTimezone(date, tz, dayStart);
+    const dw: Window = { start: ds, end: de, sessionId: null };
+    const s = salesFor(db, dw, paidBillIds(db, dw));
+    return { date, orders: s.orders, netCents: s.netCents };
+  }) : [];
+
+  return {
+    timezone: tz, startDate: input.startDate, endDate: input.endDate, sessionId: input.sessionId ?? null,
+    shifts, days,
+    sales: salesFor(db, w, billIds),
+    payments: paymentsFor(db, w),
+    items: itemsFor(db, billIds),
+    tickets: orderRows(db, orders, (o) => sessions.find((x) => o.created_at >= x.opened_at && (!x.closed_at || o.created_at <= x.closed_at))?.id ?? null),
+    unpaid: unpaidSummary(orders),
+    cash: {
+      ...cash,
+      countedUsdCents: anyCounted ? cash.countedUsdCents : null, countedKhrRiel: anyCounted ? cash.countedKhrRiel : null,
+      differenceUsdCents: anyCounted ? cash.differenceUsdCents : null, differenceKhrRiel: anyCounted ? cash.differenceKhrRiel : null,
+    },
+  };
+}
