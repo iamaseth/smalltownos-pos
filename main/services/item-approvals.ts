@@ -14,8 +14,17 @@ export const REASON_LABELS: Record<string, string> = {
   customer_left: 'Customer left', duplicate: 'Rung in twice', other: 'Other',
 };
 const REQUEST_TTL_MINUTES = 30;
+export const CHANGE_WINDOW_MINUTES = 5;
 
-export interface Approval { approvedBy: string; channel: 'pin' | 'telegram' | 'allowance'; requestId?: number }
+/** A sent item swapped for another within a few minutes of being sent needs no manager approval. */
+export function withinChangeWindow(createdAt: string | null | undefined, nowMs = Date.now()): boolean {
+  if (!createdAt) return false;
+  const iso = createdAt.includes('T') ? createdAt : `${createdAt.replace(' ', 'T')}Z`;
+  const sentMs = Date.parse(iso);
+  return Number.isFinite(sentMs) && nowMs - sentMs >= 0 && nowMs - sentMs <= CHANGE_WINDOW_MINUTES * 60_000;
+}
+
+export interface Approval { approvedBy: string; channel: 'pin' | 'telegram' | 'allowance' | 'change_window'; requestId?: number }
 
 const httpError = (statusCode: number, message: string, extra: Record<string, unknown> = {}) => Object.assign(new Error(message), { statusCode, ...extra });
 
