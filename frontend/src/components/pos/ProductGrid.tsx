@@ -404,7 +404,7 @@ export default function ProductGrid({
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-bold text-white tracking-tight">{selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : favoritesOnly ? 'Favorites' : 'All Products'}</h2>
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length}</span>
-              {!arranging && <span className="hidden lg:inline text-xs font-semibold text-slate-400">{editingFavorites ? 'Tap products to pin or unpin' : 'Tap to add · hold for options'}</span>}
+              {editingFavorites && <span className="hidden lg:inline text-xs font-semibold text-slate-400">Tap products to pin or unpin</span>}
             </div>
             <div className="flex items-center gap-2">
             {editingFavorites && (
@@ -500,7 +500,7 @@ export default function ProductGrid({
                         <TagBadge tag={product.tags[0]} />
                       </span>
                     )}
-                    <span data-testid="pos-product-price" style={{ color: '#ffffff', textShadow: '0 0 3px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.6)' }} className="absolute top-1 end-1.5 z-10 text-lg font-black tabular-nums">
+                    <span data-testid="pos-product-price" style={{ color: product.special_normal_price != null && product.special_show ? '#993C1D' : '#000000', backgroundColor: '#ffffff' }} className="absolute top-1.5 end-1.5 z-10 rounded-md px-1.5 py-0.5 text-base font-black leading-tight tabular-nums shadow-md">
                       {product.special_normal_price != null && product.special_show && <span className="me-1 text-[11px] font-bold line-through opacity-80">{fmt(product.special_normal_price)}</span>}
                       {fmt(Number(product.price))}
                     </span>
