@@ -348,7 +348,7 @@ export default function AddonGroupsPage() {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
               </div>
               <div className="flex items-center gap-2">
-                <input type="checkbox" checked={form.is_required} onChange={(e) => setForm({ ...form, is_required: e.target.checked })}
+                <input type="checkbox" checked={form.is_required} onChange={(e) => setForm({ ...form, is_required: e.target.checked, min_selection: e.target.checked ? String(Math.max(1, Number(form.min_selection) || 0)) : '0' })}
                   className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
                 <span className="text-sm text-foreground">{tProducts('requiredSelection')}</span>
               </div>
