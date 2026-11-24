@@ -13,7 +13,7 @@ import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countrie
 import { computeDayAggregates, paymentMethodBreakdown } from './cash-closures';
 import { getCurrencyFractionDigits } from '../countries';
 import { buildDailySalesExportDataset } from '../services/daily-sales-export';
-import { buildDailyReport, buildOrderDetail, buildShiftReport } from '../services/shift-report';
+import { buildCashierReport, buildDailyReport, buildOrderDetail, buildShiftReport } from '../services/shift-report';
 import { sendPrintoutNow } from '../services/telegram';
 import {
   dailySalesExportFilename,
@@ -1268,11 +1268,23 @@ router.get('/shift-report', requirePermission('cash.shifts.view'), (req: Request
   } catch (error) { sendReportError(res, error); }
 });
 
-router.get('/daily-report', requirePermission('reports.view'), (req: Request, res: Response) => {
+router.get('/daily-report', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
   try {
     const date = String(req.query.date || '');
     if (!DAY_RE.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
     res.json(buildDailyReport(date));
+  } catch (error) { sendReportError(res, error); }
+});
+
+router.get('/cashier', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
+  try {
+    const startDate = String(req.query.start_date || '');
+    const endDate = String(req.query.end_date || startDate);
+    if (!DAY_RE.test(startDate) || !DAY_RE.test(endDate) || endDate < startDate) return res.status(400).json({ error: 'start_date and end_date must be YYYY-MM-DD' });
+    const sessionRaw = req.query.session_id;
+    const sessionId = sessionRaw == null || sessionRaw === '' ? null : Number(sessionRaw);
+    if (sessionId != null && (!Number.isInteger(sessionId) || sessionId <= 0)) return res.status(400).json({ error: 'session_id must be a shift number' });
+    res.json(buildCashierReport({ startDate, endDate, sessionId }));
   } catch (error) { sendReportError(res, error); }
 });
 
@@ -1293,7 +1305,7 @@ router.post('/shift-report/telegram', requirePermission('cash.shifts.view'), asy
   } catch (error) { sendReportError(res, error); }
 });
 
-router.post('/daily-report/telegram', requirePermission('reports.view'), async (req: Request, res: Response) => {
+router.post('/daily-report/telegram', requirePermission('cash.shifts.view'), async (req: Request, res: Response) => {
   try {
     const date = String(req.body?.date || '');
     if (!DAY_RE.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });

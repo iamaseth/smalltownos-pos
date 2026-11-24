@@ -117,8 +117,8 @@ export function OrderSidePanel({
           <>
             <h3 className="mt-5 mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Problems</h3>
             <div className="grid grid-cols-2 gap-2">
-              {editable && <button type="button" className={`${btn} border-violet-200 text-violet-700`} onClick={onComp}>🎁 Comp an item</button>}
-              {editable && <button type="button" className={`${btn} border-red-200 text-red-700`} onClick={onVoid}>Void an item</button>}
+              {editable && <button type="button" className={`${btn} border-violet-200 text-violet-700`} onClick={onComp}>🎁 Free an item</button>}
+              {editable && <button type="button" className={`${btn} border-red-200 text-red-700`} onClick={onVoid}>🗑 Delete an item</button>}
               {editable && <button type="button" className={`${btn} col-span-2 border-red-200 text-red-700`} onClick={onCancelOrder}>Cancel order</button>}
               {onRefund && <button type="button" className={`${btn} col-span-2 border-red-200 text-red-700`} onClick={onRefund}>Refund</button>}
             </div>
