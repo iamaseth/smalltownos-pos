@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
@@ -18,6 +18,7 @@ import {
 import ProductGrid from '@/components/pos/ProductGrid';
 import CartPanel, { type OrderDestination } from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
+import { CartItemPanel, CartNoteDialog, ChangeItemDialog } from '@/components/pos/BillItemActions';
 import CustomerSearch from '@/components/pos/CustomerSearch';
 import TablePickerModal from '@/components/pos/TablePickerModal';
 import TabChoiceModal from '@/components/pos/TabChoiceModal';
@@ -122,6 +123,7 @@ export default function POSPage() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [specials, setSpecials] = useState<{ prices: Record<string, { price: number; eventId: string; eventName: string }>; active: { id: string; name: string; show_banner: boolean; show_on_buttons: boolean }[] }>({ prices: {}, active: [] });
   const [tables, setTables] = useState<Table[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -137,6 +139,7 @@ export default function POSPage() {
   const [pendingDestination, setPendingDestination] = useState<Exclude<OrderDestination, 'togo'> | null>(null);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
+  const [cartAction, setCartAction] = useState<'change' | 'note' | 'options' | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
@@ -591,6 +594,26 @@ export default function POSPage() {
     fetchData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      api.get('/special-prices')
+        .then(({ data }) => { if (!cancelled) setSpecials({ prices: data.prices || {}, active: data.active || [] }); })
+        .catch(() => undefined);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+
+  const shownProducts = useMemo(() => products.map((p) => {
+    const sp = specials.prices[String(p.id)];
+    if (!sp) return p;
+    const event = specials.active.find((a) => a.id === sp.eventId);
+    return { ...p, price: sp.price, special_normal_price: Number(p.price), special_event: sp.eventName, special_show: event?.show_on_buttons !== false };
+  }), [products, specials]);
+  const specialBanner = specials.active.filter((a) => a.show_banner).map((a) => a.name);
 
   const handleProductClick = (product: Product) => {
     // Always open modal so user can add notes and adjust quantity
@@ -1435,14 +1458,20 @@ export default function POSPage() {
         canUseShift={canUseShift}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
+        canArrange={tenantCan(currentTenant, 'catalog.manage')}
         searchSlotRef={setSearchSlot}
       />
         <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
+          {specialBanner.length > 0 && (
+            <div role="status" className="mx-3 mt-2 rounded-xl bg-amber-400 px-4 py-2 text-center text-lg font-black text-black">
+              🎉 {specialBanner.join(' + ')} on now: special prices
+            </div>
+          )}
           <ProductGrid
             categories={categories}
-            products={products}
+            products={shownProducts}
             selectedCategory={selectedCategory}
             setSelectedCategory={setSelectedCategory}
             search={search}
@@ -1548,7 +1577,39 @@ export default function POSPage() {
         />
       )}
 
-      {editingCartItem && (
+      {editingCartItem && cartAction === null && (
+        <CartItemPanel item={editingCartItem} hasOptions={(editingCartItem.product.addon_groups || []).some((g) => g.is_active)}
+          onClose={() => setEditingCartItem(null)}
+          onQuantity={(q) => {
+            if (q <= 0) { cart.removeItem(editingCartItem.id); setEditingCartItem(null); return; }
+            cart.updateQuantity(editingCartItem.id, q);
+            setEditingCartItem({ ...editingCartItem, quantity: q });
+          }}
+          onPick={(action) => {
+            if (action === 'remove') { cart.removeItem(editingCartItem.id); setEditingCartItem(null); return; }
+            setCartAction(action);
+          }} />
+      )}
+      {editingCartItem && cartAction === 'note' && (
+        <CartNoteDialog name={`${editingCartItem.quantity} × ${editingCartItem.product.name}`} initial={editingCartItem.special_instructions}
+          onClose={() => setCartAction(null)}
+          onSave={(note) => {
+            cart.updateItemDetails(editingCartItem.id, editingCartItem.quantity, editingCartItem.addons, note);
+            setEditingCartItem(null); setCartAction(null);
+          }} />
+      )}
+      {editingCartItem && cartAction === 'change' && (
+        <ChangeItemDialog notSent item={{ quantity: editingCartItem.quantity, product_name: editingCartItem.product.name }}
+          onClose={() => setCartAction(null)}
+          onChange={async (product, note) => {
+            const old = editingCartItem;
+            cart.removeItem(old.id);
+            setEditingCartItem(null); setCartAction(null);
+            if ((product.addon_groups || []).some((g) => g.is_active)) { setAddonProduct(product); return; }
+            cart.addItem(product, old.quantity, [], note || old.special_instructions);
+          }} />
+      )}
+      {editingCartItem && cartAction === 'options' && (
         <AddonModal
           product={editingCartItem.product}
           currency={currency}
@@ -1557,7 +1618,7 @@ export default function POSPage() {
           initialAddons={editingCartItem.addons}
           initialInstructions={editingCartItem.special_instructions}
           onAdd={handleEditItemSave}
-          onClose={() => setEditingCartItem(null)}
+          onClose={() => { setEditingCartItem(null); setCartAction(null); }}
         />
       )}
 

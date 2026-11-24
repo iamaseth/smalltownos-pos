@@ -64,7 +64,7 @@ export async function printReportReceipt(target: ReportTarget, opts: { auto?: bo
     const { printHtmlInFrame } = await import('./frame-print');
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title(target, data))}</title>
 <style>body{margin:0}pre{margin:0;padding:2mm 0;font:12px/1.25 'Courier New',monospace;white-space:pre}</style></head>
-<body><pre>${escapeHtml(lines.join('\n'))}</pre></body></html>`;
+<body><div class="bill-container"><pre>${escapeHtml(lines.join('\n'))}</pre></div></body></html>`;
     await printHtmlInFrame(html, { receiptPaperWidthMm: paper });
   });
 }

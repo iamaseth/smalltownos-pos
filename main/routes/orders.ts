@@ -21,6 +21,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes, validateProductQuantity } from './orders-validation';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { COMP_REASONS, removalRequiresApproval, resolveApproval, withinChangeWindow, type Approval } from '../services/item-approvals';
+import { activeSpecialPrices, readSpecialPriceEvents } from '../services/special-prices';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
@@ -688,10 +689,13 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
+      const specials = currentSpecialPrices(db);
       for (const item of items) {
         const product = getSellableProduct(db, item.product_id);
 
-        const unitPrice = parseFloat(product.price);
+        const special = specials.get(String(product.id));
+        const unitPrice = special ? special.price : parseFloat(product.price);
+        const itemName = special ? `${product.name} · ${special.eventName}` : product.name;
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.
         const itemDiscount = 0;
@@ -736,7 +740,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         const itemCreatedAt = now();
         const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity);
         const insertItemResult = insertItem.run(
-          orderId, product.id, product.name, product.sku, unitPrice, quantity,
+          orderId, product.id, itemName, product.sku, unitPrice, quantity,
           deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
@@ -928,9 +932,12 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
       `);
 
       const insertedItemIds: (number | bigint)[] = [];
+      const specials = currentSpecialPrices(db);
       for (const item of items) {
         const product = getSellableProduct(db, item.product_id);
-        const unitPrice = parseFloat(product.price);
+        const special = specials.get(String(product.id));
+        const unitPrice = special ? special.price : parseFloat(product.price);
+        const itemName = special ? `${product.name} · ${special.eventName}` : product.name;
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.
         const itemDiscount = 0;
@@ -964,7 +971,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         const itemCreatedAt = now();
         const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity);
         const insertItemResult = insertItem.run(
-          req.params.id, product.id, product.name, product.sku, unitPrice, quantity,
+          req.params.id, product.id, itemName, product.sku, unitPrice, quantity,
           deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
@@ -2057,6 +2064,15 @@ router.patch('/:orderId/items/:itemId/comp', orderItemCancelRateLimit, (req: Req
     res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Internal server error', ...(error.approvalRequired && { approvalRequired: true }) });
   }
 });
+
+function currentSpecialPrices(db: ReturnType<typeof getDatabase>) {
+  const priceOf = db.prepare('SELECT price FROM products WHERE id = ?');
+  const { tenantTimezone } = require('./cash-closures') as typeof import('./cash-closures');
+  return activeSpecialPrices(readSpecialPriceEvents(), new Date(), tenantTimezone(), (id) => {
+    const row = priceOf.get(id) as { price: number } | undefined;
+    return row ? Number(row.price) : null;
+  });
+}
 
 const MOVE_LOCKED_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
 type MoveOrderRow = {

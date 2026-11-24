@@ -3,8 +3,9 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
-import { Search, Keyboard, Star, Zap, LayoutGrid } from 'lucide-react';
+import { Search, Keyboard, Star, ChevronUp, ChevronDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
+import { usePosViewStore } from '@/store/pos-view';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { nameToColor } from '@/lib/image-utils';
@@ -101,7 +102,7 @@ export default function ProductGrid({
 }: Props) {
   const cart = useCartStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [arranging, setArranging] = useState(false);
+  const { arranging, setArranging, editingFavorites, setEditingFavorites, catalogView, subcategoriesOpen, setSubcategoriesOpen } = usePosViewStore();
   const [saving, setSaving] = useState(false);
   const [ids, setIds] = useState<string[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -118,7 +119,6 @@ export default function ProductGrid({
   }, [cart.items]);
 
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [editingFavorites, setEditingFavorites] = useState(false);
   const pressTimer = useRef<number | null>(null);
   const longPressed = useRef(false);
   const startPress = (product: Product) => {
@@ -217,12 +217,13 @@ export default function ProductGrid({
     }
     return (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name);
   });
-  const displayed = arranging ? [...ordered].sort((a,b) => ids.indexOf(String(a.id))-ids.indexOf(String(b.id))) : ordered;
+  const displayed = arranging && ids.length > 0 ? [...ordered].sort((a,b) => ids.indexOf(String(a.id))-ids.indexOf(String(b.id))) : ordered;
   const saveOrder = async () => {
     setSaving(true);
     try {
       const base = Math.max(0,...products.map(p => p.sort_order || 0)) + 1;
       for (let i=0;i<ids.length;i++) await api.put('/products/'+ids[i], {sort_order:base+i});
+      setIds([]);
       await onOrderSaved?.();
       setArranging(false);
       toast.success('Menu order saved');
@@ -230,10 +231,10 @@ export default function ProductGrid({
     finally { setSaving(false); }
   };
   // Category buttons are driven by the active category records.
-  const [catalogView, setCatalogView] = useState<'photo' | 'compact'>('photo');
   const isTouch = useSyncExternalStore(subscribeCoarsePointer, getCoarsePointer, () => false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const gridScrollRef = useRef<HTMLDivElement>(null);
+  const subListRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -337,18 +338,6 @@ export default function ProductGrid({
               style={{ backgroundColor: categoryColor(cat.color) }}><span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="text-base leading-none">{cat.icon || '▦'}</span>{cat.name}</span></button>;
           })}
         </nav>
-        {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && (
-          <nav aria-label="Menu subcategories" className="flex gap-2 overflow-x-auto py-1">
-            {['All', ...subcategoryNames].map(name => {
-              const active = name === 'All' ? !selectedSubcategory : selectedSubcategory === name;
-              return <button key={name} type="button" aria-pressed={active}
-                onClick={() => { setSelectedSubcategory(name === 'All' ? null : name); setArranging(false); }}
-                className={`h-9 shrink-0 rounded-lg border px-3 text-xs font-semibold ${active ? 'border-blue-500 bg-blue-600 text-white' : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'}`}>
-                {name}
-              </button>;
-            })}
-          </nav>
-        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -365,24 +354,15 @@ export default function ProductGrid({
               {!arranging && <span className="hidden lg:inline text-xs font-semibold text-slate-400">{editingFavorites ? 'Tap products to pin or unpin' : 'Tap to add · hold for options'}</span>}
             </div>
             <div className="flex items-center gap-2">
-            {!arranging && (
-              <button type="button" aria-pressed={editingFavorites} onClick={() => setEditingFavorites((on) => !on)}
-                className={`h-10 rounded-xl border px-3 text-xs font-semibold ${editingFavorites ? 'border-amber-400 bg-amber-400 text-black' : 'border-[#1e293b] bg-[#131d31] text-slate-300 hover:bg-[#182234]'}`}>
-                {editingFavorites ? 'Done' : '★ Favorites'}
-              </button>
+            {editingFavorites && (
+              <button type="button" onClick={() => setEditingFavorites(false)} className="h-10 rounded-xl border border-amber-400 bg-amber-400 px-4 text-xs font-bold text-black">Done</button>
             )}
-            {canArrange && (arranging ? (
+            {canArrange && arranging && (
               <>
-                <button type="button" disabled={saving} onClick={() => setArranging(false)} className="h-10 rounded-xl border border-[#1e293b] bg-[#131d31] px-3 text-xs font-semibold text-slate-300 hover:bg-[#182234]">Cancel</button>
-                <button type="button" disabled={saving} onClick={saveOrder} className="h-10 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save order'}</button>
+                <button type="button" disabled={saving} onClick={() => { setIds([]); setArranging(false); }} className="h-10 rounded-xl border border-[#1e293b] bg-[#131d31] px-3 text-xs font-semibold text-slate-300 hover:bg-[#182234]">Cancel</button>
+                <button type="button" disabled={saving || ids.length === 0} onClick={saveOrder} className="h-10 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save order'}</button>
               </>
-            ) : (
-              <button type="button" onClick={() => { setIds(ordered.map(p => String(p.id))); setArranging(true); }} className="h-10 rounded-xl border border-[#1e293b] bg-[#131d31] px-3 text-xs font-semibold text-slate-300 hover:bg-[#182234]">Arrange</button>
-            ))}
-            <div className="flex items-center bg-[#131d31] p-1 rounded-xl border border-[#1e293b] gap-1 shadow-sm">
-              <button type="button" onClick={() => setCatalogView('photo')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'photo' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><LayoutGrid size={12} className="inline-block me-1.5 align-[-2px]" />Photo View</button>
-              <button type="button" onClick={() => setCatalogView('compact')} className={`px-3 py-1.5 rounded-lg font-semibold text-xs ${catalogView === 'compact' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-[#182234]'}`}><Zap size={12} className="inline-block me-1.5 align-[-2px] text-amber-300 fill-amber-300" />Quick-Tap Grid</button>
-            </div>
+            )}
             </div>
           </div>
           <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
@@ -400,7 +380,7 @@ export default function ProductGrid({
                 draggable={arranging}
                 onDragStart={e => {setDragId(String(product.id));e.dataTransfer.effectAllowed='move';}}
                 onDragOver={e => {if(arranging)e.preventDefault();}}
-                onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=[...old],a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
+                onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=old.length ? [...old] : ordered.map(p => String(p.id)),a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
                 className="group pos-product-tile flex flex-col justify-between bg-[#182234] text-slate-100 rounded-2xl border-2 border-s-[7px] border-[#3d4f7c] shadow-sm active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 style={{ borderInlineStartColor: categoryAccent }}
@@ -468,20 +448,50 @@ export default function ProductGrid({
                 )}
 
                 <h3 className={`${catalogView === 'photo' ? 'text-sm leading-[1.2] line-clamp-2' : 'text-[18px] leading-[1.18] line-clamp-3'} font-extrabold tracking-[-0.01em] text-slate-100 break-words ${inCartQty > 0 ? 'pe-9' : ''}`}>{product.name}</h3>
-                <p className="mt-auto pt-1 text-[18px] font-extrabold text-blue-400 tabular-nums">{fmt(Number(product.price))}</p>
+                {product.special_normal_price != null && product.special_show ? (
+                  <p className="mt-auto pt-1 tabular-nums"><span className="me-1.5 text-sm font-semibold text-slate-400 line-through">{fmt(product.special_normal_price)}</span><span className="text-[18px] font-extrabold text-orange-600">{fmt(Number(product.price))}</span><span className="block truncate text-[11px] font-bold uppercase tracking-wide text-orange-600">{product.special_event}</span></p>
+                ) : (
+                  <p className="mt-auto pt-1 text-[18px] font-extrabold text-blue-400 tabular-nums">{fmt(Number(product.price))}</p>
+                )}
                 </div>
               </div>
             );
           })}
           </div></>}
       </div>
-      {!arranging && !search.trim() && displayed.length > 24 && (
-        <div aria-label="Jump to letter" className="flex w-9 shrink-0 flex-col justify-between py-1">
-          {Array.from(new Set(displayed.map(p => p.name.trim().charAt(0).toUpperCase()))).map(letter => (
-            <button key={letter} type="button"
-              onClick={() => gridScrollRef.current?.querySelector(`[data-initial="${letter}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' })}
-              className="flex min-h-0 flex-1 items-center justify-center text-xs font-bold text-slate-400 hover:text-white active:text-blue-400 touch-manipulation">{letter}</button>
-          ))}
+      {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && !search.trim() && (
+        <div className="relative flex shrink-0">
+          <button type="button" aria-label={subcategoriesOpen ? 'Hide subcategories' : 'Show subcategories'} aria-expanded={subcategoriesOpen}
+            onClick={() => setSubcategoriesOpen(!subcategoriesOpen)}
+            className="absolute start-0 top-1/2 z-10 flex h-24 w-9 -translate-x-full -translate-y-1/2 items-center justify-center rounded-s-xl bg-blue-600 text-white shadow-lg hover:bg-blue-500 rtl:translate-x-full">
+            {subcategoriesOpen ? <ChevronsRight size={26} /> : <ChevronsLeft size={26} />}
+          </button>
+          {subcategoriesOpen && (
+            <nav aria-label="Menu subcategories" className="flex w-36 flex-col border-s-2 border-blue-600 bg-card">
+              <button type="button" aria-label="Scroll subcategories up" onClick={() => subListRef.current?.scrollBy({ top: -200, behavior: 'smooth' })} className="flex h-11 shrink-0 items-center justify-center border-b border-border text-foreground hover:bg-muted"><ChevronUp size={26} /></button>
+              <div ref={subListRef} tabIndex={0} aria-label="Subcategory list"
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+                  e.preventDefault();
+                  const names: (string | null)[] = [null, ...subcategoryNames];
+                  const at = names.indexOf(selectedSubcategory ?? null);
+                  const next = names[Math.min(names.length - 1, Math.max(0, at + (e.key === 'ArrowDown' ? 1 : -1)))];
+                  setSelectedSubcategory(next); setArranging(false);
+                  subListRef.current?.querySelector(`[data-sub="${next ?? '__all__'}"]`)?.scrollIntoView({ block: 'nearest' });
+                }}
+                className="min-h-0 flex-1 overflow-y-auto outline-none">
+                {['All', ...subcategoryNames].map(name => {
+                  const active = name === 'All' ? !selectedSubcategory : selectedSubcategory === name;
+                  return <button key={name} type="button" data-sub={name === 'All' ? '__all__' : name} aria-pressed={active}
+                    onClick={() => { setSelectedSubcategory(name === 'All' ? null : name); setArranging(false); }}
+                    className={`block min-h-12 w-full border-b border-border px-3 py-2 text-start text-sm font-bold uppercase leading-tight ${active ? 'bg-blue-600 text-white' : 'text-foreground hover:bg-muted'}`}>
+                    {name}
+                  </button>;
+                })}
+              </div>
+              <button type="button" aria-label="Scroll subcategories down" onClick={() => subListRef.current?.scrollBy({ top: 200, behavior: 'smooth' })} className="flex h-11 shrink-0 items-center justify-center border-t border-border text-foreground hover:bg-muted"><ChevronDown size={26} /></button>
+            </nav>
+          )}
         </div>
       )}
       </div>

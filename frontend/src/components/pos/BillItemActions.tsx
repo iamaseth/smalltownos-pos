@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowLeftRight, Flame, Gift, NotebookPen, Percent, Plus, Replace, Search, Trash2, X } from 'lucide-react';
+import { ArrowLeftRight, Flame, Gift, List, MapPinned, Minus, NotebookPen, Percent, Plus, Replace, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { FloorPlanCanvas, planTone } from '@/components/tables/FloorPlanCanvas';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
-import type { Order, OrderItem, Product, Table } from '@/lib/types';
+import type { CartItem, Order, OrderItem, Product, Table } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 const CHANGE_WINDOW_MS = 5 * 60_000;
@@ -28,7 +29,7 @@ function Shell({ title, subtitle, onClose, children, wide = false }: { title: st
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}
-        className={`dark max-h-[92vh] w-full ${wide ? 'max-w-3xl' : 'max-w-md'} overflow-y-auto rounded-2xl border-2 border-neutral-700 bg-neutral-950 p-5 text-white`}>
+        className={`dark max-h-[94vh] w-full ${wide ? 'max-w-5xl' : 'max-w-md'} overflow-y-auto rounded-2xl border-2 border-neutral-700 bg-neutral-950 p-5 text-white`}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-2xl font-black">{title}</h2>
@@ -112,8 +113,8 @@ function PinInput({ value, onChange }: { value: string; onChange: (v: string) =>
   );
 }
 
-export function ChangeItemDialog({ item, onChange, onClose }: {
-  item: OrderItem; onChange: (product: Product, note: string, pin: string) => Promise<void>; onClose: () => void;
+export function ChangeItemDialog({ item, onChange, onClose, notSent = false }: {
+  item: Pick<OrderItem, 'quantity' | 'product_name' | 'created_at'>; onChange: (product: Product, note: string, pin: string) => Promise<void>; onClose: () => void; notSent?: boolean;
 }) {
   const fmt = useFormatCurrency();
   const [products, setProducts] = useState<Product[] | null>(null);
@@ -122,7 +123,7 @@ export function ChangeItemDialog({ item, onChange, onClose }: {
   const [note, setNote] = useState('');
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
-  const needsPin = !withinChangeWindow(item);
+  const needsPin = !notSent && !withinChangeWindow(item as OrderItem);
 
   useEffect(() => {
     api.get('/products', { params: { per_page: 500 } })
@@ -180,17 +181,12 @@ export function ChangeItemDialog({ item, onChange, onClose }: {
             <button type="button" disabled={busy || (needsPin && !pin)} onClick={confirm}
               className="h-14 rounded-xl bg-green-500 text-lg font-black text-black hover:bg-green-400 disabled:opacity-40">{busy ? 'Changing…' : 'Change'}</button>
           </div>
-          <p className="text-center text-sm text-neutral-400">The kitchen gets a CHANGE ticket.</p>
+          <p className="text-center text-sm text-neutral-400">{notSent ? 'Not sent yet: no kitchen ticket.' : 'The kitchen gets a CHANGE ticket.'}</p>
         </div>
       )}
     </Shell>
   );
 }
-
-const tableTone: Record<string, string> = {
-  available: 'border-emerald-500 bg-emerald-950 text-emerald-50',
-  occupied: 'border-orange-500 bg-orange-950 text-orange-50',
-};
 
 export function MoveItemsDialog({ order, items, currentTableId, tables, initialIds, onMove, onClose }: {
   order: Order; items: OrderItem[]; currentTableId: string; tables: Table[]; initialIds: number[];
@@ -202,6 +198,13 @@ export function MoveItemsDialog({ order, items, currentTableId, tables, initialI
   const toggle = (id: number) => setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const all = selected.length === items.length;
   const targets = tables.filter((tb) => tb.id !== currentTableId && tb.is_active !== false && ['available', 'occupied'].includes(tb.status));
+  const placed = (tb: Table) => tb.position_x != null && tb.position_y != null;
+  const hasPlan = tables.some(placed);
+  const [view, setView] = useState<'plan' | 'list'>(hasPlan ? 'plan' : 'list');
+  const floors = [...new Set(tables.filter(placed).map((tb) => tb.floor || ''))];
+  const [floor, setFloor] = useState<string>(() => tables.find((tb) => tb.id === currentTableId)?.floor || floors[0] || '');
+  const planTables = tables.filter((tb) => placed(tb) && (tb.floor || '') === floor);
+  const canTarget = (tb: Table) => targets.some((x) => x.id === tb.id);
   const sections = [...new Set(targets.map((tb) => tb.section?.trim() || ''))].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
   const move = async (target: Table) => {
     if (selected.length === 0) return;
@@ -227,24 +230,104 @@ export function MoveItemsDialog({ order, items, currentTableId, tables, initialI
           );
         })}
       </div>
-      <p className="mt-5 mb-2 text-sm font-bold uppercase tracking-wide text-neutral-300">2. To which table?</p>
-      {selected.length === 0 && <p className="text-sm text-amber-300">Tick at least one item first.</p>}
-      <div className="space-y-3">
-        {sections.map((sec) => (
-          <div key={sec || '__none__'}>
-            {sec && <p className="mb-1 text-sm font-bold text-neutral-400">{sec}</p>}
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-              {targets.filter((tb) => (tb.section?.trim() || '') === sec).map((tb) => (
-                <button key={tb.id} type="button" disabled={busy || selected.length === 0} onClick={() => move(tb)}
-                  className={`flex h-16 flex-col items-center justify-center rounded-xl border-[3px] text-lg font-black disabled:opacity-40 ${tableTone[tb.status] || tableTone.available}`}>
-                  {tb.name}
-                  {tb.status === 'occupied' && <span className="text-xs font-bold">add to bill</span>}
-                </button>
+      <div className="mt-5 mb-2 flex items-center justify-between gap-2">
+        <p className="text-sm font-bold uppercase tracking-wide text-neutral-300">2. Tap the new table</p>
+        {hasPlan && (
+          <div className="flex rounded-xl border border-neutral-600 p-1">
+            <button type="button" aria-pressed={view === 'plan'} onClick={() => setView('plan')} className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-bold ${view === 'plan' ? 'bg-blue-600 text-white' : 'text-neutral-300'}`}><MapPinned size={16} />Floor plan</button>
+            <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')} className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-bold ${view === 'list' ? 'bg-blue-600 text-white' : 'text-neutral-300'}`}><List size={16} />List</button>
+          </div>
+        )}
+      </div>
+      {selected.length === 0 && <p className="mb-2 text-sm text-amber-300">Tick at least one item first.</p>}
+      {view === 'plan' && hasPlan ? (
+        <>
+          {floors.length > 1 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {floors.map((f) => (
+                <button key={f || '__none__'} type="button" onClick={() => setFloor(f)}
+                  className={`h-10 rounded-full border-2 px-4 text-sm font-bold ${f === floor ? 'border-blue-500 bg-blue-600 text-white' : 'border-neutral-600'}`}>{f || 'Floor'}</button>
               ))}
             </div>
-          </div>
-        ))}
+          )}
+          <FloorPlanCanvas floor={floor} tables={planTables} testIdPrefix="move-table" reservedHeight="18rem"
+            isDisabled={(tb) => busy || selected.length === 0 || !canTarget(tb)} selectedId={currentTableId} onPick={(tb) => { void move(tb); }} />
+          <p className="text-center text-sm text-neutral-400">Green = free (new bill) · Orange = busy (added to its bill) · Ringed = this table</p>
+        </>
+      ) : (
+        <div className="space-y-3">
+          {sections.map((sec) => (
+            <div key={sec || '__none__'}>
+              {sec && <p className="mb-1 text-sm font-bold text-neutral-400">{sec}</p>}
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {targets.filter((tb) => (tb.section?.trim() || '') === sec).map((tb) => (
+                  <button key={tb.id} type="button" disabled={busy || selected.length === 0} onClick={() => move(tb)}
+                    className={`flex h-16 flex-col items-center justify-center rounded-xl border-[3px] text-lg font-black disabled:opacity-40 ${planTone[tb.status] || planTone.available}`}>
+                    {tb.name}
+                    {tb.status === 'occupied' && <span className="text-xs font-bold">add to bill</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+export type CartItemAction = 'change' | 'note' | 'options' | 'remove';
+
+export function CartItemPanel({ item, hasOptions, onQuantity, onPick, onClose }: {
+  item: CartItem; hasOptions: boolean; onQuantity: (quantity: number) => void; onPick: (action: CartItemAction) => void; onClose: () => void;
+}) {
+  const fmt = useFormatCurrency();
+  const addonTotal = item.addons.reduce((sum, a) => sum + Number(a.price) * (a.quantity || 1), 0);
+  const lineTotal = (Number(item.product.price) + addonTotal) * item.quantity;
+  const later = (label: string, icon: ReactNode) => (
+    <button type="button" disabled className={bigBtn} title="Do this on the bill after Send">{icon}{label}<span className="text-xs font-semibold text-neutral-400">on the bill after Send</span></button>
+  );
+  return (
+    <Shell title={`${item.quantity} × ${item.product.name}`} subtitle={`${fmt(lineTotal)} · not sent yet${item.special_instructions ? ` · ${item.special_instructions}` : ''}`} onClose={onClose}>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => onPick('change')} className={bigBtn}><Replace size={36} strokeWidth={2.25} />Change</button>
+        <button type="button" onClick={() => onPick('note')} className={bigBtn}><NotebookPen size={36} strokeWidth={2.25} />Note</button>
+        {later('Discount', <Percent size={36} strokeWidth={2.25} />)}
+        {later('Free', <Gift size={36} strokeWidth={2.25} />)}
       </div>
+      {hasOptions && (
+        <button type="button" onClick={() => onPick('options')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 border-neutral-600 bg-neutral-900 text-base font-bold hover:bg-neutral-800">
+          <SlidersHorizontal size={24} strokeWidth={2.25} />Options / add-ons
+        </button>
+      )}
+      <div className="mt-2 flex items-center justify-between rounded-xl border-2 border-neutral-600 bg-neutral-900 px-3 py-2">
+        <span className="text-base font-bold">Quantity</span>
+        <span className="flex items-center gap-2">
+          <button type="button" aria-label="One less" onClick={() => onQuantity(item.quantity - 1)} className="flex h-12 w-12 items-center justify-center rounded-xl border-2 border-neutral-600 text-2xl font-black hover:bg-neutral-800"><Minus size={22} /></button>
+          {[1, 2, 3].map((n) => (
+            <button key={n} type="button" aria-pressed={item.quantity === n} onClick={() => onQuantity(n)}
+              className={`h-12 w-12 rounded-xl border-2 text-xl font-black ${item.quantity === n ? 'border-blue-500 bg-blue-600 text-white' : 'border-neutral-600 hover:bg-neutral-800'}`}>{n}</button>
+          ))}
+          <span className="w-10 text-center text-2xl font-black tabular-nums">{item.quantity}</span>
+          <button type="button" aria-label="One more" onClick={() => onQuantity(item.quantity + 1)} className="flex h-12 w-12 items-center justify-center rounded-xl border-2 border-neutral-600 text-2xl font-black hover:bg-neutral-800"><Plus size={22} /></button>
+        </span>
+      </div>
+      <button type="button" onClick={() => onPick('remove')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 border-red-700 bg-red-950 text-base font-bold text-red-200 hover:bg-red-900">
+        <Trash2 size={28} strokeWidth={2.25} />Remove
+      </button>
+      <p className="mt-2 text-center text-sm text-neutral-400">Not sent yet: no PIN needed</p>
+    </Shell>
+  );
+}
+
+export function CartNoteDialog({ name, initial, onSave, onClose }: { name: string; initial: string; onSave: (note: string) => void; onClose: () => void }) {
+  const [note, setNote] = useState(initial);
+  return (
+    <Shell title="Note" subtitle={name} onClose={onClose}>
+      <textarea autoFocus value={note} onChange={(e) => setNote(e.target.value)} maxLength={100} rows={3} placeholder="no ice, no chili…"
+        className="w-full rounded-xl border-2 border-neutral-600 bg-neutral-900 p-3 text-lg text-white" />
+      <button type="button" onClick={() => onSave(note.trim())}
+        className="mt-3 h-14 w-full rounded-xl bg-green-500 text-lg font-black text-black hover:bg-green-400">Save note</button>
     </Shell>
   );
 }

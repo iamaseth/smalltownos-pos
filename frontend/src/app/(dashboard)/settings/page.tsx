@@ -30,6 +30,7 @@ import { CurrencyResetDialog } from '@/components/settings/CurrencyResetDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TelegramReportsCard } from '@/components/settings/TelegramReportsCard';
 import { VoidCompSettingsCard } from '@/components/settings/VoidCompSettingsCard';
+import { SpecialPricesCard } from '@/components/settings/SpecialPricesCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { GeneralSettingsTab, type BusinessForm, type InvoiceResetPeriod, type OrderNumberForm } from '@/components/settings/GeneralSettingsTab';
@@ -267,6 +268,7 @@ export default function SettingsPage() {
   const isOwner = tenantCan(currentTenant, 'cloud.account.manage');
   const canManageDatabase = tenantCan(currentTenant, 'database.manage');
   const canManageTelegram = tenantCan(currentTenant, 'settings.manage') && tenantCan(currentTenant, 'reports.financial.view');
+  const canManageSpecialPrices = tenantCan(currentTenant, 'settings.manage');
   const canManageTaxPacks = tenantCan(currentTenant, 'tax-packs.manage');
   const canViewTaxConfiguration = tenantCan(currentTenant, 'tax-packs.view-test');
   const canManageMobileAccess = tenantCan(currentTenant, 'mobile-access.manage');
@@ -2898,6 +2900,9 @@ export default function SettingsPage() {
             </div>
             <SettingsNavItem label={t('loyalty')} value="loyalty" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('discounts')} value="discounts" active={activeTab} onClick={handleSettingsTabChange} />
+            {canManageSpecialPrices && (
+              <SettingsNavItem label="Special prices" value="special-prices" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
 
             {/* Integrations group (formerly "Data") */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
@@ -3713,6 +3718,14 @@ export default function SettingsPage() {
             </div>
           </SettingsTabShell>
         </TabsContent>
+
+        {canManageSpecialPrices && (
+          <TabsContent value="special-prices">
+            <SettingsTabShell>
+              <SpecialPricesCard />
+            </SettingsTabShell>
+          </TabsContent>
+        )}
 
         <TabsContent value="discounts">
           <SettingsTabShell>
