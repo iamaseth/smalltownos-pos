@@ -451,7 +451,7 @@ export default function ProductGrid({
                   onPointerCancel={cancelPress}
                   onContextMenu={(event) => { event.preventDefault(); cancelPress(); if (!arranging) onProductClick(product); }}
                   className="absolute inset-0 z-0 w-full h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl" />
-                {inCartQty > 0 && <span data-testid="pos-product-qty" aria-label={`${inCartQty} in order`} className="pos-qty-badge pointer-events-none absolute -top-0.5 -end-0.5 z-[2] grid h-10 min-w-10 place-items-center rounded-se-xl rounded-es-xl px-2 text-xl font-black">{inCartQty}</span>}
+                {inCartQty > 0 && <span data-testid="pos-product-qty" aria-label={`${inCartQty} in order`} className={`pos-qty-badge pointer-events-none absolute -top-0.5 z-[12] grid h-10 min-w-10 place-items-center px-2 text-xl font-black ${catalogView === 'photo' ? '-start-0.5 rounded-ss-xl rounded-ee-xl' : '-end-0.5 rounded-se-xl rounded-es-xl'}`}>{inCartQty}</span>}
                 {(editingFavorites || favorites.includes(String(product.id))) && (
                   <Star aria-hidden size={18} className={`pointer-events-none absolute bottom-2.5 end-2.5 z-[2] ${favorites.includes(String(product.id)) ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
                 )}
@@ -500,12 +500,17 @@ export default function ProductGrid({
                         <TagBadge tag={product.tags[0]} />
                       </span>
                     )}
+                    <span data-testid="pos-product-price" style={{ color: '#ffffff', backgroundColor: product.special_normal_price != null && product.special_show ? '#993C1D' : '#042C53' }} className="absolute top-1.5 end-1.5 z-10 rounded-lg px-2 py-0.5 text-base font-black tabular-nums shadow-md">
+                      {product.special_normal_price != null && product.special_show && <span className="me-1 text-[11px] font-bold line-through opacity-80">{fmt(product.special_normal_price)}</span>}
+                      {fmt(Number(product.price))}
+                    </span>
                   </div>
                 )}
 
-                <h3 className={`${catalogView === 'photo' ? 'text-sm leading-[1.2] line-clamp-2' : 'text-[18px] leading-[1.18] line-clamp-3'} font-extrabold tracking-[-0.01em] text-slate-100 break-words ${inCartQty > 0 ? 'pe-9' : ''}`}>{product.name}</h3>
-                {sub && subTone && !selectedSubcategory && <span className="mt-0.5 inline-flex max-w-full items-center gap-1 self-start truncate rounded-md px-1.5 py-0.5 text-[11px] font-bold" style={{ backgroundColor: subTone.soft, color: subTone.ink }}>{subTone.icon} {sub}</span>}
-                {product.special_normal_price != null && product.special_show ? (
+                <h3 className={`${catalogView === 'photo' ? 'text-sm leading-[1.2] line-clamp-2' : 'text-[18px] leading-[1.18] line-clamp-3'} font-extrabold tracking-[-0.01em] text-slate-100 break-words ${inCartQty > 0 && catalogView !== 'photo' ? 'pe-9' : ''}`}>{product.name}</h3>
+                {catalogView === 'photo' ? (
+                  product.special_normal_price != null && product.special_show && <span className="truncate text-[11px] font-bold uppercase tracking-wide text-orange-600">{product.special_event}</span>
+                ) : product.special_normal_price != null && product.special_show ? (
                   <p className="mt-auto pt-1 tabular-nums"><span className="me-1.5 text-sm font-semibold text-slate-400 line-through">{fmt(product.special_normal_price)}</span><span className="text-[18px] font-extrabold text-orange-600">{fmt(Number(product.price))}</span><span className="block truncate text-[11px] font-bold uppercase tracking-wide text-orange-600">{product.special_event}</span></p>
                 ) : (
                   <p className="mt-auto pt-1 text-[18px] font-extrabold text-blue-400 tabular-nums">{fmt(Number(product.price))}</p>
