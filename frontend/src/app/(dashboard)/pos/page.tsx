@@ -1571,6 +1571,8 @@ export default function POSPage() {
           onPayment={(bill) => { setCheckoutTable(null); setPaymentBill(bill); }}
           onAddCartToOrder={handleAddCartToOrder}
           onPrintBill={(order, bill) => (bill ? printSplitBill(bill.id) : printCustomerBill(order.id))}
+          tables={tables}
+          onTablesChanged={() => { void refreshTables(); }}
         />
       )}
 

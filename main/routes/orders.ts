@@ -20,7 +20,7 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes, validateProductQuantity } from './orders-validation';
 import { hasPermission, requirePermission } from '../services/authorization';
-import { COMP_REASONS, removalRequiresApproval, resolveApproval, type Approval } from '../services/item-approvals';
+import { COMP_REASONS, removalRequiresApproval, resolveApproval, withinChangeWindow, type Approval } from '../services/item-approvals';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
@@ -1820,7 +1820,10 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
       const isItemVoid = ['preparing', 'ready'].includes(currentItem.status) || (strictRemoval && currentItem.status === 'served');
       let approvedByUserId: string | undefined;
       let approval: Approval | undefined;
-      if (strictRemoval) {
+      if (strictRemoval && req.body?.changing === true && withinChangeWindow(currentItem.created_at)) {
+        approval = { approvedBy: actorId, channel: 'change_window' };
+        approvedByUserId = actorId;
+      } else if (strictRemoval) {
         approval = resolveApproval(db, req, {
           orderId: Number(orderId), itemId: Number(itemId), action: 'void',
           overridePin: override_pin, approvalRequestId: approval_request_id,
@@ -2052,6 +2055,133 @@ router.patch('/:orderId/items/:itemId/comp', orderItemCancelRateLimit, (req: Req
     const error = caught as { statusCode?: number; message?: string; approvalRequired?: boolean };
     if (!error.statusCode) console.error('[Orders] Comp item error:', caught);
     res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Internal server error', ...(error.approvalRequired && { approvalRequired: true }) });
+  }
+});
+
+const MOVE_LOCKED_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
+type MoveOrderRow = {
+  id: number; status: string; table_id: string | null; customer_id: string | null; subtotal: number;
+  discount_amount: number | null; discount_type: string | null; discount_value: number | null;
+  delivery_charge: number | null; packaging_charge: number | null; service_charge: number | null;
+} & Record<string, unknown>;
+type MoveTableRow = { id: string; number: string; status: string };
+type MoveItemRow = { id: number; status: string };
+
+function recalcOrderTotalsAfterItemMove(db: ReturnType<typeof getDatabase>, orderId: number, reason: string) {
+  const current = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as MoveOrderRow;
+  const orderTotals = calculateOrderTotals(db, orderId);
+  const decimals = getCurrencyFractionDigits(getTenantCurrency());
+  let discountAmount = Number(current.discount_amount || 0);
+  if (discountAmount > 0 && current.discount_type === 'percentage') {
+    discountAmount = Number((orderTotals.subtotal * Number(current.discount_value || 0) / 100).toFixed(decimals));
+  }
+  discountAmount = Math.min(discountAmount, orderTotals.subtotal);
+  const tenantInfo = {
+    country: getSettingValue('country') || '',
+    business_type: getSettingValue('business_type') || 'restaurant',
+    state_code: getSettingValue('state_code') || '',
+    currency: getTenantCurrency(),
+    taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+  };
+  const customer = current.customer_id ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(current.customer_id) as Parameters<typeof recomputeOrderTotals>[0]['customer'] | undefined) ?? null : null;
+  const { taxRollup, total, roundOff } = recomputeOrderTotals({
+    tenantInfo, chargeContext: current, customer, totals: orderTotals, discountAmount, taxScaling: 'when-discounted',
+  });
+  const emptied = orderTotals.activeItems.length === 0;
+  db.prepare(`UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?,
+      status = CASE WHEN ? THEN 'cancelled' ELSE status END, cancelled_at = CASE WHEN ? THEN ? ELSE cancelled_at END,
+      cancellation_reason = CASE WHEN ? THEN ? ELSE cancellation_reason END, updated_at = ? WHERE id = ?`)
+    .run(orderTotals.subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, discountAmount, total, roundOff,
+      emptied ? 1 : 0, emptied ? 1 : 0, now(), emptied ? 1 : 0, reason, now(), orderId);
+  if (emptied && current.table_id) db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(now(), current.table_id);
+  syncUnpaidBillsForOrder(db, orderId, {
+    subtotal: orderTotals.subtotal, taxAmount: taxRollup.taxAmount, taxBreakdown: JSON.stringify(taxRollup.breakdowns), taxSnapshot: taxRollup.snapshotJson,
+    discountAmount, deliveryCharge: current.delivery_charge || 0, packagingCharge: current.packaging_charge || 0, serviceCharge: current.service_charge || 0, total,
+  }, tenantInfo.country);
+}
+
+router.post('/:id/move-items', orderWriteRateLimit, requirePermission('tables.orders.move'), (req: Request, res: Response) => {
+  try {
+    const sourceOrderId = Number(req.params.id);
+    const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    if (!actorId) return res.status(403).json({ error: 'Authentication required' });
+    const { target_table_id } = req.body || {};
+    const itemIds: number[] = Array.isArray(req.body?.item_ids) ? [...new Set((req.body.item_ids as unknown[]).map(Number))] : [];
+    if (typeof target_table_id !== 'string' || !target_table_id) return res.status(400).json({ error: 'Choose a table to move to' });
+    if (itemIds.length === 0 || itemIds.some((id) => !Number.isInteger(id) || id <= 0)) return res.status(400).json({ error: 'Choose at least one item to move' });
+    const db = getDatabase();
+    const paymentStarted = (orderId: number) => db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND (split_group_id IS NOT NULL OR payment_status <> 'unpaid' OR COALESCE(paid_amount, 0) > 0) LIMIT 1`).get(orderId);
+    const result = withTxn(() => {
+      const source = db.prepare('SELECT * FROM orders WHERE id = ?').get(sourceOrderId) as MoveOrderRow | undefined;
+      if (!source) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      if (['completed', 'cancelled'].includes(source.status)) throw Object.assign(new Error('This order is already closed'), { statusCode: 400 });
+      if (paymentStarted(sourceOrderId)) throw Object.assign(new Error('Items cannot be moved after payment has started or the check was split'), { statusCode: 409 });
+      const target = db.prepare('SELECT * FROM tables WHERE id = ?').get(target_table_id) as MoveTableRow | undefined;
+      if (!target) throw Object.assign(new Error('Table not found'), { statusCode: 404 });
+      if (target.id === source.table_id) throw Object.assign(new Error('Those items are already on this table'), { statusCode: 400 });
+      const found = itemIds.map((id) => db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(id, sourceOrderId) as MoveItemRow | undefined);
+      const items = found.filter((item): item is MoveItemRow => Boolean(item));
+      if (items.length !== found.length) throw Object.assign(new Error('Item not found in this order'), { statusCode: 404 });
+      if (items.some((item) => MOVE_LOCKED_ITEM_STATUSES.includes(item.status))) throw Object.assign(new Error('Removed items cannot be moved'), { statusCode: 400 });
+
+      let targetOrder = db.prepare(`SELECT * FROM orders WHERE table_id = ? AND status NOT IN ('completed', 'cancelled') ORDER BY created_at DESC LIMIT 1`).get(target.id) as MoveOrderRow | undefined;
+      if (targetOrder && paymentStarted(Number(targetOrder.id))) throw Object.assign(new Error('That table has started paying. Choose another table.'), { statusCode: 409 });
+      const createdTarget = !targetOrder;
+      if (!targetOrder) {
+        const inserted = db.prepare(`INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
+            packaging_charge, delivery_charge, service_charge, status, created_at, updated_at)
+          VALUES (?, ?, NULL, ?, 'dine_in', NULL, NULL, 0, 0, 0, ?, ?, ?)`)
+          .run(generateOrderNumber(), target.id, actorId, source.status, now(), now());
+        targetOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(inserted.lastInsertRowid) as MoveOrderRow;
+      }
+      const moveItem = db.prepare('UPDATE order_items SET order_id = ?, updated_at = ? WHERE id = ? AND order_id = ?');
+      for (const item of items) moveItem.run(targetOrder.id, now(), item.id, sourceOrderId);
+      db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?").run(now(), target.id);
+      recalcOrderTotalsAfterItemMove(db, Number(targetOrder.id), 'All items moved');
+      recalcOrderTotalsAfterItemMove(db, sourceOrderId, `All items moved to ${target.number}`);
+      const sourceTable = source.table_id ? db.prepare('SELECT number FROM tables WHERE id = ?').get(source.table_id) as { number: string } | undefined : undefined;
+      const details = { item_ids: itemIds, from_order_id: sourceOrderId, to_order_id: Number(targetOrder.id), from_table: sourceTable?.number ?? null, to_table: target.number, new_order: createdTarget };
+      recordOrderAudit(db, { orderId: sourceOrderId, actorUserId: actorId, action: 'items_moved_out', details });
+      recordOrderAudit(db, { orderId: Number(targetOrder.id), actorUserId: actorId, action: 'items_moved_in', details });
+      return { sourceOrderId, targetOrderId: Number(targetOrder.id), targetTable: target.number as string };
+    });
+    cloudSync.recordOrderChanged(String(result.sourceOrderId), 'order.items_moved');
+    cloudSync.recordOrderChanged(String(result.targetOrderId), 'order.items_moved');
+    notifyKdsUpdate();
+    res.json(result);
+  } catch (caught) {
+    const error = caught as { statusCode?: number; message?: string };
+    if (!error.statusCode) console.error('[Orders] Move items error:', caught);
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Could not move the items' });
+  }
+});
+
+router.patch('/:orderId/items/:itemId/note', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
+  try {
+    const orderId = Number(req.params.orderId);
+    const itemId = Number(req.params.itemId);
+    const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    if (!actorId) return res.status(403).json({ error: 'Authentication required' });
+    const raw = req.body?.note;
+    if (raw !== null && raw !== undefined && typeof raw !== 'string') return res.status(400).json({ error: 'Note must be text' });
+    const note = typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 200) : null;
+    const db = getDatabase();
+    const order = db.prepare('SELECT status FROM orders WHERE id = ?').get(orderId) as { status: string } | undefined;
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (['completed', 'cancelled'].includes(order.status)) return res.status(400).json({ error: 'Cannot change notes on a completed or cancelled order' });
+    const item = db.prepare('SELECT id, status, special_instructions FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as { id: number; status: string; special_instructions: string | null } | undefined;
+    if (!item) return res.status(404).json({ error: 'Item not found in this order' });
+    if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status)) return res.status(400).json({ error: 'Item is already removed' });
+    withTxn(() => {
+      db.prepare('UPDATE order_items SET special_instructions = ?, updated_at = ? WHERE id = ?').run(note, now(), itemId);
+      recordOrderAudit(db, { orderId, orderItemId: itemId, actorUserId: actorId, action: 'item_note_changed', details: { from: item.special_instructions ?? null, to: note } });
+    });
+    cloudSync.recordOrderChanged(String(orderId), 'order.item_note_changed');
+    notifyKdsUpdate();
+    res.json({ item: db.prepare('SELECT * FROM order_items WHERE id = ?').get(itemId) });
+  } catch (caught) {
+    console.error('[Orders] Item note error:', caught);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

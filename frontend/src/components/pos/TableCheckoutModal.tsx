@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart, Users, Trash2, BadgePercent, Printer, Undo2 } from 'lucide-react';
+import { X, ShoppingCart, Users, BadgePercent, Printer, Undo2, ArrowLeftRight, Plus, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -14,6 +14,11 @@ import DiscountDialog, { type DiscountInput } from '@/components/pos/DiscountDia
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
 import { VoidCompDialog } from '@/components/orders/VoidCompDialog';
+import { ItemActionsPanel, NoteDialog, ChangeItemDialog, MoveItemsDialog, errorText, sentAtMs, type ItemAction } from '@/components/pos/BillItemActions';
+import { usePrinterStore } from '@/hooks/usePrinter';
+import { usePosSettingsStore } from '@/store/pos-settings';
+import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
+import type { Product } from '@/lib/types';
 
 interface Props {
   table: Table;
@@ -26,6 +31,8 @@ interface Props {
   /** Prints the bill for the customer to check before paying. */
   /** Prints the customer bill; pass a split bill to print just that guest's bill. */
   onPrintBill?: (order: Order, bill?: Bill) => Promise<void> | void;
+  tables?: Table[];
+  onTablesChanged?: () => void;
 }
 
 export default function TableCheckoutModal({
@@ -37,16 +44,24 @@ export default function TableCheckoutModal({
   onPayment,
   onAddCartToOrder,
   onPrintBill,
+  tables = [],
+  onTablesChanged,
 }: Props) {
   const t = useTranslations('pos');
   const tOrders = useTranslations('orders');
-  const tCommon = useTranslations('common');
   const { currentTenant } = useAuthStore();
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
   const canDiscount = tenantCan(currentTenant, 'orders.discount.apply');
   const [discountTarget, setDiscountTarget] = useState<{ kind: 'order' } | { kind: 'item'; item: OrderItem } | null>(null);
   const [printingBill, setPrintingBill] = useState(false);
   const [removingId, setRemovingId] = useState<number | string | null>(null);
+  const [compId, setCompId] = useState<number | null>(null);
+  const [actionItem, setActionItem] = useState<OrderItem | null>(null);
+  const [noteItem, setNoteItem] = useState<OrderItem | null>(null);
+  const [changeItem, setChangeItem] = useState<OrderItem | null>(null);
+  const [moveIds, setMoveIds] = useState<number[] | null>(null);
+  const { printKot } = usePrinterStore();
+  const { kotPrintingEnabled, autoPrintKot } = usePosSettingsStore();
   const fmt = useFormatCurrency();
   const formatItemTotal = (value: unknown, fallback: unknown) => {
     const total = Number(value);
@@ -160,6 +175,125 @@ export default function TableCheckoutModal({
     }
   };
 
+  const reloadOrder = async (orderId: number | string) => {
+    const { data } = await api.get(`/orders/${orderId}`);
+    const next = data.order as Order;
+    if (!next || ['completed', 'cancelled'].includes(next.status)) {
+      onTablesChanged?.();
+      onClose();
+      return null;
+    }
+    setOrder(next);
+    return next;
+  };
+
+  const kitchenTicket = async (base: Order, items: OrderItem[], manual = false) => {
+    if (!kotPrintingEnabled || (!manual && !autoPrintKot)) return;
+    try {
+      showPrintWarningsToast(await printKot({ ...base, items }, { items }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Kitchen ticket did not print');
+    }
+  };
+
+  const addOneMore = async (item: OrderItem) => {
+    if (!order) return;
+    try {
+      const { data } = await api.post(`/orders/${order.id}/items`, {
+        items: [{ product_id: item.product_id, quantity: 1, addons: null, special_instructions: item.special_instructions || null }],
+      }, { headers: { 'Idempotency-Key': crypto.randomUUID() } });
+      const before = new Set((order.items || []).map((i) => Number(i.id)));
+      const added = ((data.order as Order).items || []).filter((i) => !before.has(Number(i.id)));
+      await kitchenTicket(data.order, added);
+      await reloadOrder(order.id);
+      toast.success(`1 more ${item.product_name}`);
+    } catch (error) {
+      toast.error(errorText(error, 'Could not add the item'));
+    }
+  };
+
+  const rush = async (item: OrderItem) => {
+    if (!order) return;
+    await kitchenTicket(order, [{ ...item, product_name: `!! RUSH !! ${item.product_name}` }], true);
+    toast.success(`Rush sent: ${item.product_name}`);
+  };
+
+  const saveNote = async (item: OrderItem, note: string) => {
+    if (!order) return;
+    try {
+      await api.patch(`/orders/${order.id}/items/${item.id}/note`, { note });
+      const clean = note.trim();
+      await kitchenTicket(order, [{ ...item, product_name: `NOTE: ${item.product_name}`, special_instructions: clean || 'note removed' }]);
+      setNoteItem(null);
+      await reloadOrder(order.id);
+    } catch (error) {
+      toast.error(errorText(error, 'Could not save the note'));
+    }
+  };
+
+  const changeTo = async (item: OrderItem, product: Product, note: string, pin: string) => {
+    if (!order) return;
+    let added: OrderItem[] = [];
+    try {
+      const { data } = await api.post(`/orders/${order.id}/items`, {
+        items: [{ product_id: product.id, quantity: item.quantity, addons: null, special_instructions: note || null }],
+      }, { headers: { 'Idempotency-Key': crypto.randomUUID() } });
+      const before = new Set((order.items || []).map((i) => Number(i.id)));
+      added = ((data.order as Order).items || []).filter((i) => !before.has(Number(i.id)));
+    } catch (error) {
+      toast.error(errorText(error, 'Could not add the new item'));
+      return;
+    }
+    try {
+      await api.patch(`/orders/${order.id}/items/${item.id}/cancel`, {
+        reason: 'customer_changed_mind', note: `Changed to ${product.name}`, changing: true, ...(pin && { override_pin: pin }),
+      });
+    } catch (error) {
+      for (const extra of added) {
+        await api.patch(`/orders/${order.id}/items/${extra.id}/cancel`, { reason: 'customer_changed_mind', changing: true }).catch(() => undefined);
+      }
+      toast.error(errorText(error, 'Could not change the item'));
+      return;
+    }
+    await kitchenTicket(order, [
+      { ...item, product_name: `CANCEL: ${item.product_name}`, special_instructions: null },
+      ...added.map((n) => ({ ...n, product_name: `NEW: ${n.product_name}` })),
+    ]);
+    toast.success(`${item.product_name} changed to ${product.name}`);
+    setChangeItem(null);
+    await reloadOrder(order.id);
+  };
+
+  const moveItems = async (itemIds: number[], target: Table, allItems: boolean) => {
+    if (!order) return;
+    try {
+      if (allItems && target.status === 'available') {
+        await api.post(`/tables/${table.id}/move-order`, { target_table_id: target.id, order_id: order.id });
+      } else {
+        await api.post(`/orders/${order.id}/move-items`, { item_ids: itemIds, target_table_id: target.id });
+      }
+      toast.success(`Moved to ${target.name}`);
+      setMoveIds(null);
+      onTablesChanged?.();
+      if (allItems) { onClose(); return; }
+      await reloadOrder(order.id);
+    } catch (error) {
+      toast.error(errorText(error, 'Could not move'));
+    }
+  };
+
+  const pickAction = (item: OrderItem, action: ItemAction) => {
+    setActionItem(null);
+    if (action === 'change') setChangeItem(item);
+    else if (action === 'note') setNoteItem(item);
+    else if (action === 'discount') setDiscountTarget({ kind: 'item', item });
+    else if (action === 'free') setCompId(Number(item.id));
+    else if (action === 'move') setMoveIds([Number(item.id)]);
+    else if (action === 'rush') void rush(item);
+    else if (action === 'more') void addOneMore(item);
+    else if (action === 'remove') handleRemoveItem(item);
+  };
+
   const applyDiscount = async (input: DiscountInput) => {
     if (!order || !discountTarget) return;
     if (discountTarget.kind === 'order') {
@@ -243,38 +377,29 @@ export default function TableCheckoutModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
-          {/* Existing order items - shown as disabled/reference */}
-          <div className="mb-3">
-            <p className="text-sm font-bold text-neutral-300 uppercase tracking-[0.1em] mb-2">{t('previousItems')}</p>
-            <div className="space-y-2">
-              {activeItems.map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border-2 border-neutral-700 bg-neutral-900 px-4 py-2.5">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-lg text-white font-extrabold">
-                      {item.quantity}× {item.product_name}
-                    </p>
-                    {item.special_instructions && (
-                      <p className="text-sm font-semibold text-neutral-300">{item.special_instructions}</p>
-                    )}
-                  </div>
-                  <span className="ms-2 text-end">
-                    <span className="block text-lg font-extrabold text-white tabular-nums">{formatItemTotal(item.total, item.subtotal)}</span>
-                    {Number(item.discount_amount) > 0 && <span className="block text-sm font-bold text-green-400">−{fmt(Number(item.discount_amount))}</span>}
+          <div className="space-y-2">
+            {activeItems.map((item) => {
+              const sent = sentAtMs(item);
+              return (
+                <button key={item.id} type="button" disabled={!canEditOrder} onClick={() => setActionItem(item)}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border-2 border-neutral-700 bg-neutral-900 px-4 py-3 text-start hover:border-neutral-500 hover:bg-neutral-800 disabled:hover:border-neutral-700 disabled:hover:bg-neutral-900">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xl font-extrabold text-white">{item.quantity} × {item.product_name}</span>
+                    <span className="block text-sm font-semibold text-neutral-400">
+                      {sent ? `Sent ${new Date(sent).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+                      {item.special_instructions ? ` · ${item.special_instructions}` : ''}
+                    </span>
+                    {item.comped_at && <span className="mt-0.5 inline-flex items-center gap-1 text-sm font-bold text-sky-300"><Gift size={14} />Free</span>}
                   </span>
-                  {canDiscount && canEditOrder && (
-                    <button type="button" onClick={() => setDiscountTarget({ kind: 'item', item })}
-                      aria-label={`Discount ${item.product_name}`}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-green-700 bg-green-950 text-green-300 hover:bg-green-900"><BadgePercent size={20} /></button>
-                  )}
-                  {canCancelItems && canEditOrder && (
-                    <button type="button" disabled={removingId === item.id} onClick={() => handleRemoveItem(item)}
-                      aria-label={`${tCommon('remove')} ${item.product_name}`}
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border-2 border-red-800 bg-red-950 text-red-300 hover:bg-red-900 disabled:opacity-40"><Trash2 size={20} /></button>
-                  )}
-                </div>
-              ))}
-            </div>
+                  <span className="text-end">
+                    <span className="block text-xl font-extrabold tabular-nums text-white">{formatItemTotal(item.total, item.subtotal)}</span>
+                    {Number(item.discount_amount) > 0 && !item.comped_at && <span className="block text-sm font-bold text-green-400">Discount −{fmt(Number(item.discount_amount))}</span>}
+                  </span>
+                </button>
+              );
+            })}
           </div>
+          {canEditOrder && activeItems.length > 0 && <p className="mt-3 text-center text-sm font-semibold text-neutral-400">Tap an item for more options</p>}
         </div>
 
         <div className="bg-black px-5 pb-5 pt-4 border-t-2 border-neutral-800 space-y-3">
@@ -338,17 +463,31 @@ export default function TableCheckoutModal({
             </div>
           )}
 
-          {canDiscount && canEditOrder && (
-            <Button variant="outline" size="lg" className="w-full h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800" onClick={() => setDiscountTarget({ kind: 'order' })}>
-              <BadgePercent size={18} className="me-2" />{Number(order.discount_amount) > 0 ? 'Change bill discount' : 'Discount whole bill'}
-            </Button>
-          )}
-          {onPrintBill && order.bill?.payment_status !== 'paid' && splitBills.length === 0 && (
-            <Button variant="outline" size="lg" disabled={printingBill}
-              className="w-full h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800"
-              onClick={async () => { setPrintingBill(true); try { await onPrintBill(order); } finally { setPrintingBill(false); } }}>
-              <Printer size={18} className="me-2" />{printingBill ? 'Printing…' : 'Print bill for customer'}
-            </Button>
+          {splitBills.length === 0 && order.bill?.payment_status !== 'paid' && (
+            <div className="grid grid-cols-2 gap-2">
+              {canEditOrder && (
+                <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => setMoveIds(activeItems.map((i) => Number(i.id)))}>
+                  <ArrowLeftRight strokeWidth={2.25} className="me-2 size-7" />Move table
+                </Button>
+              )}
+              {canDiscount && canEditOrder && (
+                <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => setDiscountTarget({ kind: 'order' })}>
+                  <BadgePercent strokeWidth={2.25} className="me-2 size-7" />{Number(order.discount_amount) > 0 ? 'Change discount' : 'Discount bill'}
+                </Button>
+              )}
+              {cartItemCount === 0 && (
+                <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => onAddItems(table, order)}>
+                  <Plus strokeWidth={2.25} className="me-2 size-7" />{t('addItems')}
+                </Button>
+              )}
+              {onPrintBill && (
+                <Button variant="outline" size="lg" disabled={printingBill}
+                  className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800"
+                  onClick={async () => { setPrintingBill(true); try { await onPrintBill(order); } finally { setPrintingBill(false); } }}>
+                  <Printer strokeWidth={2.25} className="me-2 size-7" />{printingBill ? 'Printing…' : 'Print bill'}
+                </Button>
+              )}
+            </div>
           )}
           {/* Show different buttons based on cart state */}
           {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck')}</Button>}
@@ -369,15 +508,9 @@ export default function TableCheckoutModal({
               </Button>
             </div>
           ) : splitBills.length === 0 ? (
-            // Cart empty - show both options
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-400 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => onAddItems(table, order)}>
-                {t('addItems')}
-              </Button>
-              <Button size="lg" className="h-14 bg-green-500 text-xl font-black text-black hover:bg-green-400" onClick={handleCheckout} disabled={generating}>
-                {generating ? t('generating') : t('checkout')}
-              </Button>
-            </div>
+            <Button size="lg" className="h-16 w-full bg-green-500 text-2xl font-black text-black hover:bg-green-400" onClick={handleCheckout} disabled={generating}>
+              {generating ? t('generating') : `${t('checkout')} ${fmt(Number(order.bill?.balance ?? order.total))}`}
+            </Button>
           ) : null}
         </div>
       </div>
@@ -394,6 +527,18 @@ export default function TableCheckoutModal({
     )}
     {removingId != null && (
       <VoidCompDialog order={order} itemId={Number(removingId)} action="void" onClose={() => setRemovingId(null)} onDone={refreshAfterRemoval} />
+    )}
+    {compId != null && (
+      <VoidCompDialog order={order} itemId={compId} action="comp" onClose={() => setCompId(null)} onDone={async () => { setCompId(null); await reloadOrder(order.id); }} />
+    )}
+    {actionItem && (
+      <ItemActionsPanel item={actionItem} canDiscount={canDiscount} canRemove={canCancelItems} onClose={() => setActionItem(null)} onPick={(action) => pickAction(actionItem, action)} />
+    )}
+    {noteItem && <NoteDialog item={noteItem} onClose={() => setNoteItem(null)} onSave={(note) => saveNote(noteItem, note)} />}
+    {changeItem && <ChangeItemDialog item={changeItem} onClose={() => setChangeItem(null)} onChange={(product, note, pin) => changeTo(changeItem, product, note, pin)} />}
+    {moveIds && (
+      <MoveItemsDialog order={order} items={activeItems} currentTableId={table.id} tables={tables} initialIds={moveIds}
+        onClose={() => setMoveIds(null)} onMove={(ids, target) => moveItems(ids, target, ids.length === activeItems.length)} />
     )}
     {splitBill && <SplitCheckModal bill={splitBill} order={order} onClose={() => setSplitBill(null)} onSplit={(bills) => { setOrder({ ...order, bill: bills[0], bills }); setSplitBill(null); }} />}
     </>

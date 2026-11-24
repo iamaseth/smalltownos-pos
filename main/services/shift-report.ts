@@ -295,7 +295,7 @@ export function buildOrderDetail(orderId: number): OrderDetail {
     label: paymentLabel(l, names), amountCents: cents(l.amount), at: typeof l.timestamp === 'string' ? l.timestamp : null,
   }));
   const { REASON_LABELS } = require('./item-approvals') as typeof import('./item-approvals');
-  const viaLabel: Record<string, string> = { pin: 'PIN', telegram: 'Telegram', allowance: 'nightly allowance' };
+  const viaLabel: Record<string, string> = { pin: 'PIN', telegram: 'Telegram', allowance: 'nightly allowance', change_window: 'quick change' };
   const history = [{ at: o.created_at, text: `order placed${o.cashier ? ` · ${o.cashier}` : ''}` }, ...(db.prepare(`
     SELECT a.action, a.created_at, a.details_json, u.name, oi.product_name, app.name AS approver
     FROM order_audit_log a LEFT JOIN users u ON u.id = a.actor_user_id LEFT JOIN order_items oi ON oi.id = a.order_item_id

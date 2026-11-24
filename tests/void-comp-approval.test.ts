@@ -171,6 +171,60 @@ async function main() {
       const text = renderDailyReport(day, 42, tz).join('\n');
       assertOrThrow(text.includes('VOIDS, COMPS') && text.includes('Entertainer'), 'printed report has the section and entertainer drinks');
     }
+    console.log('Section 7: quick change, item notes, moving items');
+    {
+      const o = seedOrder(db, 'pending');
+      const r = await call(`/api/orders/${o.orderId}/items/${o.itemId}/cancel`, 'PATCH', { reason: 'customer_changed_mind', changing: true }, cashier);
+      assertEqualOrThrow(r.status, 200, `a fresh item can be swapped without a PIN (${r.data?.error || ''})`);
+      const audit = JSON.parse((db.prepare(`SELECT details_json FROM order_audit_log WHERE order_item_id = ? AND action = 'item_cancelled'`).get(o.itemId) as any).details_json);
+      assertEqualOrThrow(audit.approval_channel, 'change_window', 'quick change is recorded as such');
+      const old = seedOrder(db, 'pending');
+      db.prepare(`UPDATE order_items SET created_at = ? WHERE id = ?`).run(new Date(Date.now() - 6 * 60_000).toISOString(), old.itemId);
+      const late = await call(`/api/orders/${old.orderId}/items/${old.itemId}/cancel`, 'PATCH', { reason: 'customer_changed_mind', changing: true }, cashier);
+      assertEqualOrThrow(late.status, 403, 'after 5 minutes a change needs a manager PIN');
+      const noFlag = seedOrder(db, 'pending');
+      const plain = await call(`/api/orders/${noFlag.orderId}/items/${noFlag.itemId}/cancel`, 'PATCH', { reason: 'wrong_item' }, cashier);
+      assertEqualOrThrow(plain.status, 403, 'a plain removal still needs a manager PIN');
+      assertOrThrow(approvals.withinChangeWindow(new Date(Date.now() - 60_000).toISOString().replace('T', ' ').slice(0, 19)), 'SQLite-style timestamps are read as UTC');
+    }
+    {
+      const o = seedOrder(db, 'pending');
+      const n = await call(`/api/orders/${o.orderId}/items/${o.itemId}/note`, 'PATCH', { note: '  no ice  ' }, cashier);
+      assertEqualOrThrow(n.status, 200, `cashier changes a note (${n.data?.error || ''})`);
+      assertEqualOrThrow(item(o.itemId).special_instructions, 'no ice', 'note is saved trimmed');
+      const audit = db.prepare(`SELECT 1 FROM order_audit_log WHERE order_item_id = ? AND action = 'item_note_changed'`).get(o.itemId);
+      assertOrThrow(!!audit, 'note change is audited');
+      const bad = await call(`/api/orders/${o.orderId}/items/${o.itemId}/note`, 'PATCH', { note: 5 }, cashier);
+      assertEqualOrThrow(bad.status, 400, 'non-text note rejected');
+    }
+    {
+      db.prepare(`INSERT INTO tables (id, number, capacity, status, created_at, updated_at) VALUES ('t-a', 'A1', 2, 'occupied', ?, ?), ('t-b', 'B1', 2, 'available', ?, ?), ('t-c', 'C1', 2, 'available', ?, ?)`).run(now(), now(), now(), now(), now(), now());
+      const o = seedOrder(db, 'pending', 2, 4);
+      db.prepare(`UPDATE orders SET table_id = 't-a' WHERE id = ?`).run(o.orderId);
+      const waterId = (db.prepare(`SELECT id FROM order_items WHERE order_id = ? AND product_name = 'Water'`).get(o.orderId) as any).id;
+      const moved = await call(`/api/orders/${o.orderId}/move-items`, 'POST', { item_ids: [o.itemId], target_table_id: 't-b' }, cashier);
+      assertEqualOrThrow(moved.status, 200, `cashier moves one item to a free table (${moved.data?.error || ''})`);
+      const newOrder = moved.data.targetOrderId;
+      assertEqualOrThrow(Number(item(o.itemId).order_id), Number(newOrder), 'item now belongs to the new table order');
+      assertEqualOrThrow(orderTotal(newOrder), 8, 'new table order totals the moved item');
+      assertEqualOrThrow(orderTotal(o.orderId), 3, 'old table keeps only the rest');
+      assertEqualOrThrow((db.prepare(`SELECT status FROM tables WHERE id = 't-b'`).get() as any).status, 'occupied', 'target table is now occupied');
+      const back = await call(`/api/orders/${o.orderId}/move-items`, 'POST', { item_ids: [waterId], target_table_id: 't-b' }, cashier);
+      assertEqualOrThrow(back.status, 200, 'moving the last item onto a busy table works');
+      assertEqualOrThrow(Number(back.data.targetOrderId), Number(newOrder), 'items join the open order on that table');
+      assertEqualOrThrow(orderTotal(newOrder), 11, 'busy table total includes both items');
+      const src = db.prepare('SELECT status FROM orders WHERE id = ?').get(o.orderId) as any;
+      assertEqualOrThrow(src.status, 'cancelled', 'emptied order is closed');
+      assertEqualOrThrow((db.prepare(`SELECT status FROM tables WHERE id = 't-a'`).get() as any).status, 'available', 'emptied table is freed');
+      const same = await call(`/api/orders/${newOrder}/move-items`, 'POST', { item_ids: [waterId], target_table_id: 't-b' }, cashier);
+      assertEqualOrThrow(same.status, 400, 'cannot move to the same table');
+      db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, balance, payment_status, paid_amount, created_at, updated_at) VALUES ('MV-1', ?, 11, 0, 11, 5, 'partial', 6, ?, ?)`).run(newOrder, now(), now());
+      const paid = await call(`/api/orders/${newOrder}/move-items`, 'POST', { item_ids: [waterId], target_table_id: 't-c' }, cashier);
+      assertEqualOrThrow(paid.status, 409, 'cannot move items once payment has started');
+      const audit = db.prepare(`SELECT 1 FROM order_audit_log WHERE order_id = ? AND action = 'items_moved_in'`).get(newOrder);
+      assertOrThrow(!!audit, 'moves are audited');
+    }
+
     console.log('='.repeat(50));
     console.log('All void/comp checks passed');
   } finally {

@@ -207,6 +207,7 @@ export interface Order {
 export interface OrderItem {
   id: number;
   order_id: number;
+  created_at?: string;
   product_id: string;
   product_name: string;
   product_sku: string | null;
