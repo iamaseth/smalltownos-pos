@@ -59,6 +59,18 @@ function menuSearchScore(name: string, rawQuery: string): number {
 
 // Display-only grouping for existing Spirits products. Unrecognized products stay in Other.
 const SPIRIT_GROUPS = ['Whiskey', 'Gin', 'Rum', 'Vodka', 'Liqueurs', 'Other'] as const;
+const SUB_PALETTE = [
+  { edge: '#BA7517', soft: '#FAEEDA', ink: '#633806' },
+  { edge: '#185FA5', soft: '#E6F1FB', ink: '#0C447C' },
+  { edge: '#0F6E56', soft: '#E1F5EE', ink: '#085041' },
+  { edge: '#993C1D', soft: '#FAECE7', ink: '#712B13' },
+  { edge: '#534AB7', soft: '#EEEDFE', ink: '#3C3489' },
+  { edge: '#993556', soft: '#FBEAF0', ink: '#72243E' },
+  { edge: '#3B6D11', soft: '#EAF3DE', ink: '#27500A' },
+  { edge: '#A32D2D', soft: '#FCEBEB', ink: '#791F1F' },
+  { edge: '#5F5E5A', soft: '#F1EFE8', ink: '#2C2C2A' },
+  { edge: '#0C447C', soft: '#B5D4F4', ink: '#042C53' },
+] as const;
 function spiritGroup(name: string): typeof SPIRIT_GROUPS[number] {
   const n = name.toLowerCase();
   if (/whisk(e)?y|bourbon|scotch|jack daniel|chivas|ballantine|glenfiddich|jameson|jim beam|johnnie walker|fireball/.test(n)) return 'Whiskey';
@@ -94,7 +106,8 @@ interface Props {
   onOrderSaved?: () => Promise<void>;
 }
 
-const LONG_PRESS_MS = 500;
+const LONG_PRESS_MS = 700;
+const MOVE_TOLERANCE_PX = 8;
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
@@ -121,8 +134,12 @@ export default function ProductGrid({
   const [favorites, setFavorites] = useState<string[]>([]);
   const pressTimer = useRef<number | null>(null);
   const longPressed = useRef(false);
-  const startPress = (product: Product) => {
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const movedDuringPress = useRef(false);
+  const startPress = (product: Product, point: { x: number; y: number }) => {
     longPressed.current = false;
+    movedDuringPress.current = false;
+    pressStart.current = point;
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = window.setTimeout(() => { longPressed.current = true; onProductClick(product); }, LONG_PRESS_MS);
   };
@@ -130,9 +147,19 @@ export default function ProductGrid({
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = null;
   };
+  const trackPress = (point: { x: number; y: number }) => {
+    const start = pressStart.current;
+    if (!start || movedDuringPress.current) return;
+    if (Math.abs(point.x - start.x) > MOVE_TOLERANCE_PX || Math.abs(point.y - start.y) > MOVE_TOLERANCE_PX) {
+      movedDuringPress.current = true;
+      cancelPress();
+    }
+  };
   const tapProduct = (product: Product) => {
     cancelPress();
+    pressStart.current = null;
     if (longPressed.current) { longPressed.current = false; return; }
+    if (movedDuringPress.current) { movedDuringPress.current = false; return; }
     if (editingFavorites) { toggleFavorite(String(product.id)); return; }
     onQuickAdd(product);
   };
@@ -199,6 +226,18 @@ export default function ProductGrid({
   const spiritVirtualGroups = selectedMainCategory?.name.toLowerCase() === 'spirits' && childCategories.length === 0;
   const subcategoryNames = spiritVirtualGroups ? [...SPIRIT_GROUPS] : childCategories.map(c => c.name);
   const subcategoryId = childCategories.find(c => c.name === selectedSubcategory)?.id;
+  const subStyle = (name: string) => {
+    const tone = SUB_PALETTE[Math.max(0, subcategoryNames.indexOf(name as never)) % SUB_PALETTE.length];
+    const icon = childCategories.find(c => c.name === name)?.icon || (spiritVirtualGroups ? '🥃' : '');
+    return { ...tone, icon };
+  };
+  const subTrees = childCategories.map(c => ({ name: c.name, tree: categoryTreeIds(c.id) }));
+  const productSub = (p: Product): string | null => {
+    if (!selectedCategory || favoritesOnly || subcategoryNames.length === 0) return null;
+    if (spiritVirtualGroups) return spiritGroup(p.name);
+    return subTrees.find(t => t.tree.has(String(p.category_id)))?.name ?? null;
+  };
+
   const selectedCategoryTree = selectedCategory ? categoryTreeIds(selectedCategory) : null;
   const selectedSubcategoryTree = subcategoryId ? categoryTreeIds(subcategoryId) : null;
   const filtered = products.filter((p) => {
@@ -338,10 +377,24 @@ export default function ProductGrid({
               style={{ backgroundColor: categoryColor(cat.color) }}><span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="text-base leading-none">{cat.icon || '▦'}</span>{cat.name}</span></button>;
           })}
         </nav>
+        {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && (
+          <nav aria-label="Subcategory buttons" className="flex gap-2 overflow-x-auto py-1">
+            {['All', ...subcategoryNames].map(name => {
+              const active = name === 'All' ? !selectedSubcategory : selectedSubcategory === name;
+              const tone = name === 'All' ? null : subStyle(name);
+              return <button key={name} type="button" aria-pressed={active}
+                onClick={() => { setSelectedSubcategory(name === 'All' ? null : name); setArranging(false); }}
+                style={tone ? { borderColor: tone.edge, backgroundColor: active ? tone.edge : tone.soft, color: active ? '#ffffff' : tone.ink } : undefined}
+                className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-bold ${tone ? '' : active ? 'border-blue-500 bg-blue-600 text-white' : 'border-border bg-card text-foreground hover:bg-muted'}`}>
+                {tone?.icon && <span aria-hidden className="text-base leading-none">{tone.icon}</span>}{name}
+              </button>;
+            })}
+          </nav>
+        )}
       </div>
 
       <div className="flex min-h-0 flex-1">
-      <div ref={gridScrollRef} className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
+      <div ref={gridScrollRef} onScroll={() => { if (pressTimer.current) { movedDuringPress.current = true; cancelPress(); } }} className="min-w-0 flex-1 overflow-y-auto overscroll-contain pb-20 md:pb-0 px-3">
         {favoritesOnly && !search.trim() && displayed.length === 0 && (
           <p className="py-10 text-center text-sm text-slate-400">No favorites yet. Tap ★ Favorites, then tap products to pin them here.</p>
         )}
@@ -368,8 +421,10 @@ export default function ProductGrid({
           <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
           {displayed.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
-            const categoryAccent = favoritesOnly ? '#CA8A04' : categoryColor(categories.find(c => c.id === selectedCategory)?.color ?? null)
-              ?? '#2563EB';
+            const sub = productSub(product);
+            const subTone = sub ? subStyle(sub) : null;
+            const categoryAccent = subTone?.edge ?? (favoritesOnly ? '#CA8A04' : categoryColor(categories.find(c => c.id === selectedCategory)?.color ?? null)
+              ?? '#2563EB');
             
 
             return (
@@ -383,19 +438,20 @@ export default function ProductGrid({
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=old.length ? [...old] : ordered.map(p => String(p.id)),a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
                 className="group pos-product-tile flex flex-col justify-between bg-[#182234] text-slate-100 rounded-2xl border-2 border-s-[7px] border-[#3d4f7c] shadow-sm active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                style={{ borderInlineStartColor: categoryAccent }}
+                style={{ borderInlineStartColor: categoryAccent, contentVisibility: 'auto', containIntrinsicSize: 'auto 220px' }}
 
               >
                 <button type="button" aria-label={editingFavorites ? `${favorites.includes(String(product.id)) ? 'Unpin' : 'Pin'} ${product.name}` : `Add ${product.name}`}
                   disabled={arranging}
                   onClick={() => tapProduct(product)}
-                  onPointerDown={() => { if (!arranging && !editingFavorites) startPress(product); }}
+                  onPointerDown={(e) => { if (!arranging && !editingFavorites) startPress(product, { x: e.clientX, y: e.clientY }); }}
+                  onPointerMove={(e) => trackPress({ x: e.clientX, y: e.clientY })}
                   onPointerUp={cancelPress}
                   onPointerLeave={cancelPress}
                   onPointerCancel={cancelPress}
                   onContextMenu={(event) => { event.preventDefault(); cancelPress(); if (!arranging) onProductClick(product); }}
                   className="absolute inset-0 z-0 w-full h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl" />
-                {inCartQty > 0 && <span data-testid="pos-product-qty" aria-label={`${inCartQty} in order`} className="pos-qty-badge pointer-events-none absolute -top-0.5 -end-0.5 z-[2] grid h-10 min-w-10 place-items-center rounded-se-xl rounded-es-xl px-2 text-xl font-black">{inCartQty}</span>}
+                {inCartQty > 0 && <span data-testid="pos-product-qty" aria-label={`${inCartQty} in order`} className={`pos-qty-badge pointer-events-none absolute -top-0.5 z-[12] grid h-10 min-w-10 place-items-center px-2 text-xl font-black ${catalogView === 'photo' ? '-start-0.5 rounded-ss-xl rounded-ee-xl' : '-end-0.5 rounded-se-xl rounded-es-xl'}`}>{inCartQty}</span>}
                 {(editingFavorites || favorites.includes(String(product.id))) && (
                   <Star aria-hidden size={18} className={`pointer-events-none absolute bottom-2.5 end-2.5 z-[2] ${favorites.includes(String(product.id)) ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
                 )}
@@ -444,11 +500,17 @@ export default function ProductGrid({
                         <TagBadge tag={product.tags[0]} />
                       </span>
                     )}
+                    <span data-testid="pos-product-price" style={{ color: '#ffffff', textShadow: '0 0 3px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.6)' }} className="absolute top-1 end-1.5 z-10 text-lg font-black tabular-nums">
+                      {product.special_normal_price != null && product.special_show && <span className="me-1 text-[11px] font-bold line-through opacity-80">{fmt(product.special_normal_price)}</span>}
+                      {fmt(Number(product.price))}
+                    </span>
                   </div>
                 )}
 
-                <h3 className={`${catalogView === 'photo' ? 'text-sm leading-[1.2] line-clamp-2' : 'text-[18px] leading-[1.18] line-clamp-3'} font-extrabold tracking-[-0.01em] text-slate-100 break-words ${inCartQty > 0 ? 'pe-9' : ''}`}>{product.name}</h3>
-                {product.special_normal_price != null && product.special_show ? (
+                <h3 className={`${catalogView === 'photo' ? 'text-sm leading-[1.2] line-clamp-2' : 'text-[18px] leading-[1.18] line-clamp-3'} font-extrabold tracking-[-0.01em] text-slate-100 break-words ${inCartQty > 0 && catalogView !== 'photo' ? 'pe-9' : ''}`}>{product.name}</h3>
+                {catalogView === 'photo' ? (
+                  product.special_normal_price != null && product.special_show && <span className="truncate text-[11px] font-bold uppercase tracking-wide text-orange-600">{product.special_event}</span>
+                ) : product.special_normal_price != null && product.special_show ? (
                   <p className="mt-auto pt-1 tabular-nums"><span className="me-1.5 text-sm font-semibold text-slate-400 line-through">{fmt(product.special_normal_price)}</span><span className="text-[18px] font-extrabold text-orange-600">{fmt(Number(product.price))}</span><span className="block truncate text-[11px] font-bold uppercase tracking-wide text-orange-600">{product.special_event}</span></p>
                 ) : (
                   <p className="mt-auto pt-1 text-[18px] font-extrabold text-blue-400 tabular-nums">{fmt(Number(product.price))}</p>
@@ -467,7 +529,7 @@ export default function ProductGrid({
             {subcategoriesOpen ? <ChevronsRight size={26} /> : <ChevronsLeft size={26} />}
           </button>
           {subcategoriesOpen && (
-            <nav aria-label="Menu subcategories" className="flex w-36 flex-col border-s-2 border-blue-600 bg-card">
+            <nav aria-label="Menu subcategories" className="flex w-48 flex-col border-s-2 border-blue-600 bg-card">
               <button type="button" aria-label="Scroll subcategories up" onClick={() => subListRef.current?.scrollBy({ top: -200, behavior: 'smooth' })} className="flex h-11 shrink-0 items-center justify-center border-b border-border text-foreground hover:bg-muted"><ChevronUp size={26} /></button>
               <div ref={subListRef} tabIndex={0} aria-label="Subcategory list"
                 onKeyDown={(e) => {
@@ -482,10 +544,13 @@ export default function ProductGrid({
                 className="min-h-0 flex-1 overflow-y-auto outline-none">
                 {['All', ...subcategoryNames].map(name => {
                   const active = name === 'All' ? !selectedSubcategory : selectedSubcategory === name;
+                  const tone = name === 'All' ? null : subStyle(name);
                   return <button key={name} type="button" data-sub={name === 'All' ? '__all__' : name} aria-pressed={active}
                     onClick={() => { setSelectedSubcategory(name === 'All' ? null : name); setArranging(false); }}
-                    className={`block min-h-12 w-full border-b border-border px-3 py-2 text-start text-sm font-bold uppercase leading-tight ${active ? 'bg-blue-600 text-white' : 'text-foreground hover:bg-muted'}`}>
-                    {name}
+                    style={tone ? { borderInlineStartColor: tone.edge, ...(active && { backgroundColor: tone.soft, color: tone.ink }) } : undefined}
+                    className={`flex min-h-16 w-full items-center gap-2.5 border-b border-s-[7px] border-b-border px-3 py-2 text-start text-base font-extrabold uppercase leading-tight ${tone ? '' : 'border-s-transparent'} ${active ? (tone ? 'ring-2 ring-inset ring-current' : 'bg-blue-600 text-white') : 'text-foreground hover:bg-muted'}`}>
+                    {tone?.icon && <span aria-hidden className="text-2xl leading-none">{tone.icon}</span>}
+                    <span className="min-w-0 flex-1 break-words">{name === 'All' ? `All ${categories.find(c => c.id === selectedCategory)?.name ?? ''}`.trim() : name}</span>
                   </button>;
                 })}
               </div>
