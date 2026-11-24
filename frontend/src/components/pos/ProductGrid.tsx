@@ -500,7 +500,7 @@ export default function ProductGrid({
                         <TagBadge tag={product.tags[0]} />
                       </span>
                     )}
-                    <span data-testid="pos-product-price" style={{ color: '#ffffff', backgroundColor: product.special_normal_price != null && product.special_show ? '#993C1D' : '#042C53' }} className="absolute top-1.5 end-1.5 z-10 rounded-lg px-2 py-0.5 text-base font-black tabular-nums shadow-md">
+                    <span data-testid="pos-product-price" style={{ color: '#ffffff', textShadow: '0 0 3px rgba(0,0,0,0.95), 0 1px 2px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.6)' }} className="absolute top-1 end-1.5 z-10 text-lg font-black tabular-nums">
                       {product.special_normal_price != null && product.special_show && <span className="me-1 text-[11px] font-bold line-through opacity-80">{fmt(product.special_normal_price)}</span>}
                       {fmt(Number(product.price))}
                     </span>
