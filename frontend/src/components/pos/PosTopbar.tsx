@@ -8,7 +8,7 @@ import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown, UserRound, LogOut, Star, ArrowUpDown, Image as ImageIcon, Zap, Check } from 'lucide-react';
+import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown, UserRound, LogOut, Star, ArrowUpDown, Image as ImageIcon, Zap, Check, Search, Printer } from 'lucide-react';
 import { usePosViewStore } from '@/store/pos-view';
 import { useRegisterOperator } from '@/hooks/register-operator-context';
 import type { Table } from '@/lib/types';
@@ -26,21 +26,22 @@ interface Props {
   canUseShift: boolean;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
-  searchSlotRef?: (el: HTMLDivElement | null) => void;
+  onOpenSearch: () => void;
   canArrange?: boolean;
 }
 
-export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen, searchSlotRef, canArrange = false }: Props) {
+export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen, onOpenSearch, canArrange = false }: Props) {
   const view = usePosViewStore();
   const cart = useCartStore();
   const [actionsOpen, setActionsOpen] = useState(false);
   const [staffOpen, setStaffOpen] = useState(false);
+  const [printerOpen, setPrinterOpen] = useState(false);
   const operator = useRegisterOperator();
   const router = useRouter();
   // BackStreet: shifts open, close and hand over through the Cash Counter screen.
   const openCashScreen = () => router.push(shiftHasOpenSession ? '/cash?go=close' : '/cash?go=open');
   void onShowShift;
-  const { currentTenant } = useAuthStore();
+  const { currentTenant, user } = useAuthStore();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
   const t = useTranslations('pos');
   const tDashboard = useTranslations('dashboard');
@@ -56,13 +57,14 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
           <div className="relative shrink-0">
             <button type="button" onClick={() => setStaffOpen(v => !v)} aria-expanded={staffOpen}
               aria-label={`Signed in as ${operator.name}. Staff menu`}
-              className="flex max-w-44 items-center gap-1.5 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-100 hover:bg-[#243149]">
-              <UserRound size={15} className="shrink-0 text-sky-300" />
-              <span className="truncate">{operator.name}</span>
+              style={{ backgroundColor: '#EAF3DE', borderColor: '#3B6D11', color: '#27500A' }}
+              className="flex h-10 max-w-64 items-center gap-1.5 rounded-lg border px-3 text-sm font-bold">
+              <UserRound size={18} className="shrink-0" />
+              <span className="truncate">Logged in: {operator.name}</span>
               {canUseShift && (shiftHasOpenSession
-                ? <Lock size={12} className="shrink-0 text-emerald-400" aria-label="Shift open" />
-                : <LockOpen size={12} className="shrink-0 text-amber-400" aria-label="No shift open" />)}
-              <ChevronDown size={13} className="shrink-0 text-slate-400" />
+                ? <Lock size={12} className="shrink-0" aria-label="Shift open" />
+                : <LockOpen size={12} className="shrink-0 text-amber-600" aria-label="No shift open" />)}
+              <ChevronDown size={14} className="shrink-0" />
             </button>
             {staffOpen && <>
               <button type="button" className="fixed inset-0 z-40 cursor-default" aria-label="Close staff menu" onClick={() => setStaffOpen(false)} />
@@ -88,14 +90,22 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
               </div>
             </>}
           </div>
-        ) : canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={openCashScreen} className="hidden md:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
+        ) : <>
+          <span style={user ? { backgroundColor: '#EAF3DE', borderColor: '#3B6D11', color: '#27500A' } : { backgroundColor: '#FAEEDA', borderColor: '#BA7517', color: '#633806' }}
+            className="flex h-10 max-w-64 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-sm font-bold">
+            {user ? <UserRound size={18} className="shrink-0" /> : <Lock size={18} className="shrink-0" />}
+            <span className="truncate">{user ? `Logged in: ${user.name}` : 'POS locked'}</span>
+          </span>
+          {canUseShift && <button type="button" disabled={shiftLoading} title={shiftError||undefined} onClick={openCashScreen} className="hidden md:flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold text-slate-200 hover:bg-[#243149] disabled:opacity-50">
           {shiftHasOpenSession ? <Lock size={15} className="text-emerald-400" /> : <LockOpen size={15} className="text-amber-400" />}
           <span>{shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}</span>
         </button>}
-        {searchSlotRef && <div ref={searchSlotRef} className="min-w-0 flex-1 max-w-xl" />}
+        </>}
       </div>
       <div className="flex items-center gap-2">
-        <PrintCenter />
+        <button type="button" onClick={onOpenSearch} aria-label="Search menu" data-testid="pos-open-search"
+          className="flex size-10 items-center justify-center rounded-lg border border-[#1e293b] bg-[#182234] hover:bg-[#243149]"><Search size={20} /></button>
+        <PrintCenter open={printerOpen} onOpenChange={setPrinterOpen} />
         <div className="relative">
         <button type="button" onClick={() => setActionsOpen(v => !v)} aria-expanded={actionsOpen}
           aria-label="Cashier actions" className="flex items-center gap-2 rounded-lg border border-[#1e293b] bg-[#182234] px-2 py-1.5 text-[11px] font-semibold hover:bg-[#243149]">
@@ -122,6 +132,7 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
               <button type="button" onClick={() => {setActionsOpen(false);view.setCatalogView('compact');}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><Zap size={16}/>Quick-tap view{view.catalogView === 'compact' && <Check size={16} className="ms-auto text-emerald-400"/>}</button>
             </div>
             <div className="border-t border-slate-700 pt-2"><PrinterStatus /></div>
+            <button type="button" onClick={() => {setActionsOpen(false);setPrinterOpen(true);}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><Printer size={16}/>Printer settings</button>
             <button type="button" onClick={() => {setActionsOpen(false);onToggleFullscreen();}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700">
               {fullscreen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}
               {fullscreen ? t('exitFullscreen') : t('enterFullscreen')}

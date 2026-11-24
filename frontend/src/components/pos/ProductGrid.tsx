@@ -1,9 +1,8 @@
 'use client';
 
-import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import toast from 'react-hot-toast';
-import { Search, Keyboard, Star, ChevronUp, ChevronDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { Search, Keyboard, X, Star, ChevronUp, ChevronDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { usePosViewStore } from '@/store/pos-view';
 import { useCartStore } from '@/store/cart';
@@ -101,7 +100,8 @@ interface Props {
   currency: string;
   onProductClick: (product: Product) => void;
   onQuickAdd: (product: Product) => void;
-  searchSlot?: HTMLElement | null;
+  searchOpen: boolean;
+  setSearchOpen: (open: boolean) => void;
   canArrange?: boolean;
   onOrderSaved?: () => Promise<void>;
 }
@@ -111,7 +111,7 @@ const MOVE_TOLERANCE_PX = 8;
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, onProductClick, onQuickAdd, canArrange = false, onOrderSaved, searchSlot = null,
+  search, setSearch, onProductClick, onQuickAdd, canArrange = false, onOrderSaved, searchOpen, setSearchOpen,
 }: Props) {
   const cart = useCartStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -247,13 +247,9 @@ export default function ProductGrid({
     const matchSub = !selectedSubcategory ? true
       : spiritVirtualGroups ? spiritGroup(p.name) === selectedSubcategory
       : selectedSubcategoryTree?.has(String(p.category_id)) === true;
-    return matchCat && matchSub && menuSearchScore(p.name, search) > 0;
+    return matchCat && matchSub;
   });
   const ordered = [...filtered].sort((a,b) => {
-    if (search.trim()) {
-      const difference = menuSearchScore(b.name, search) - menuSearchScore(a.name, search);
-      if (difference) return difference;
-    }
     return (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name);
   });
   const displayed = arranging && ids.length > 0 ? [...ordered].sort((a,b) => ids.indexOf(String(a.id))-ids.indexOf(String(b.id))) : ordered;
@@ -299,58 +295,80 @@ export default function ProductGrid({
       // Do not steal keystrokes from other app screens or modal dialogs.
       if (!document.querySelector('[data-testid="pos-product-grid"]')) return;
       if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
-      if (event.key === 'Escape') {
-        if (search) { event.preventDefault(); setSearch(''); }
-        return;
-      }
       if (event.key.length !== 1 || !/^[\p{L}\p{N} ]$/u.test(event.key)) return;
+      if (event.key === ' ' && !search) return;
       event.preventDefault();
       setSearch(search + event.key);
-      searchInputRef.current?.focus();
+      setSearchOpen(true);
     };
     document.addEventListener('keydown', handleTyping);
     return () => document.removeEventListener('keydown', handleTyping);
-  }, [search, setSearch]);
+  }, [search, setSearch, setSearchOpen]);
 
-  const searchBlock = (
-    <div className="flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+  const query = search.trim();
+  const searchResults = query
+    ? products
+      .filter(p => hasActiveCategoryPath(p.category_id) && menuSearchScore(p.name, query) > 0)
+      .sort((a, b) => menuSearchScore(b.name, query) - menuSearchScore(a.name, query) || a.name.localeCompare(b.name))
+      .slice(0, 40)
+    : [];
+  const closeSearch = () => { setSearchOpen(false); setSearch(''); setKeyboardOpen(false); };
+  const pickResult = (product: Product) => { closeSearch(); onProductClick(product); };
+
+  const searchOverlay = searchOpen && (
+    <div role="dialog" aria-modal="true" aria-label="Search menu" data-testid="pos-search-overlay"
+      className="fixed inset-0 z-[45] flex items-start justify-center bg-black/50 p-4 pt-[8vh]"
+      onClick={(e) => { if (e.target === e.currentTarget) closeSearch(); }}>
+      <div className="flex max-h-[80vh] w-full max-w-xl flex-col rounded-2xl border border-border bg-card p-4 text-foreground shadow-2xl">
+        <div className="flex items-center gap-3 rounded-xl border-2 border-blue-500 px-3 py-2">
+          <Search size={26} className="shrink-0 text-muted-foreground" />
           <input
             ref={searchInputRef}
+            autoFocus
             type="text"
             inputMode={isTouch ? 'none' : undefined}
             onFocus={() => { if (isTouch) setKeyboardOpen(true); }}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === 'Escape') { e.preventDefault(); closeSearch(); return; }
               if (e.key !== 'Enter') return;
-              // Typed or pasted barcode, not just a scanner — a dedicated
-              // action into this field works regardless of typing speed.
-              const trimmed = search.trim();
-              if (!trimmed) return;
-              const match = resolveScannedProduct(trimmed, products);
+              e.preventDefault();
+              if (!query) return;
+              const match = resolveScannedProduct(query, products);
               if (match) {
+                closeSearch();
                 if (match.scaleBarcode) cart.addItem(match.product, match.quantity);
                 else onProductClick(match.product);
-                setSearch('');
-              }
+              } else if (searchResults[0]) pickResult(searchResults[0]);
             }}
-            placeholder="Search products…"
-            className="w-full ps-10 pe-10 py-2 bg-[#131d31] border border-[#1e293b] rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/10 outline-none transition-colors text-sm shadow-sm"
+            aria-label="Search the whole menu"
+            placeholder="Type to search"
+            className="min-w-0 flex-1 bg-transparent text-4xl font-bold uppercase tracking-[0.2em] outline-none placeholder:text-xl placeholder:font-normal placeholder:normal-case placeholder:tracking-normal"
           />
-          {search && <button type="button" aria-label="Clear product search" onClick={() => setSearch('')} className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-blue-300 hover:text-white">Clear</button>}
+          <button type="button" aria-label="Close search" onClick={closeSearch} className="flex size-11 shrink-0 items-center justify-center rounded-lg hover:bg-muted"><X size={26} /></button>
         </div>
-        <button type="button" aria-label={keyboardOpen ? 'Hide on-screen keyboard' : 'Show on-screen keyboard'} aria-pressed={keyboardOpen}
-          onClick={() => setKeyboardOpen(v => !v)}
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#1e293b] ${keyboardOpen ? 'bg-blue-600 text-white' : 'bg-[#131d31] text-slate-300 hover:bg-[#182234]'}`}><Keyboard size={20} /></button>
+        <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
+          <span>{query ? `${searchResults.length}${searchResults.length === 40 ? '+' : ''} items · tap to add · Esc to close` : 'Whole menu · Esc to close'}</span>
+          {isTouch && <button type="button" aria-label={keyboardOpen ? 'Hide on-screen keyboard' : 'Show on-screen keyboard'} onClick={() => setKeyboardOpen(v => !v)} className="flex size-9 items-center justify-center rounded-lg border border-border"><Keyboard size={18} /></button>}
+        </div>
+        <div className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain">
+          {query && searchResults.length === 0 && <p className="py-8 text-center text-base text-muted-foreground">No items found</p>}
+          {searchResults.map(product => (
+            <button key={product.id} type="button" data-testid="pos-search-result" onClick={() => pickResult(product)}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-start text-lg font-semibold hover:bg-muted active:scale-[0.99]">
+              <span className="min-w-0 truncate">{product.name}</span>
+              <span className="shrink-0 tabular-nums">{fmt(Number(product.price))}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 
   return (
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <div className="shrink-0 mb-2 px-3 pt-2">
-        {!searchSlot && <div className="mb-2">{searchBlock}</div>}
         <div className="hidden">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Menu</span>
           {showProductImages && <button type="button" onClick={() => setShowMenuPhotos(v => !v)}
@@ -395,15 +413,13 @@ export default function ProductGrid({
 
       <div className="flex min-h-0 flex-1">
       <div ref={gridScrollRef} onScroll={() => { if (pressTimer.current) { movedDuringPress.current = true; cancelPress(); } }} className="min-w-0 flex-1 overflow-y-auto overscroll-contain pb-20 md:pb-0 px-3">
-        {favoritesOnly && !search.trim() && displayed.length === 0 && (
+        {favoritesOnly && displayed.length === 0 && (
           <p className="py-10 text-center text-sm text-slate-400">No favorites yet. Tap ★ Favorites, then tap products to pin them here.</p>
         )}
         
         {<>
-          <div className="flex items-center justify-between mb-2 gap-2">
+          {(editingFavorites || (canArrange && arranging)) && <div className="flex items-center justify-between mb-2 gap-2">
             <div className="flex items-center gap-3">
-              <h2 className="text-sm font-bold text-white tracking-tight">{selectedCategory && !search.trim() ? categories.find(c => c.id === selectedCategory)?.name || 'Items' : favoritesOnly ? 'Favorites' : 'All Products'}</h2>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/60 border border-purple-500/40 text-purple-300">{displayed.length}</span>
               {editingFavorites && <span className="hidden lg:inline text-xs font-semibold text-slate-400">Tap products to pin or unpin</span>}
             </div>
             <div className="flex items-center gap-2">
@@ -417,7 +433,7 @@ export default function ProductGrid({
               </>
             )}
             </div>
-          </div>
+          </div>}
           <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${catalogView === 'photo' ? 'gap-2' : 'gap-1.5'} pb-8`}>
           {displayed.map((product) => {
             const inCartQty = cartQuantities.get(product.id) || 0;
@@ -560,7 +576,7 @@ export default function ProductGrid({
         </div>
       )}
       </div>
-      {searchSlot && createPortal(searchBlock, searchSlot)}
+      {searchOverlay}
       {keyboardOpen && <OnScreenKeyboard value={search} onChange={setSearch} onClose={() => setKeyboardOpen(false)} />}
     </div>
   );
