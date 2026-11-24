@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Wallet, Sparkles, User, Percent, Send } from 'lucide-react';
+import { X, Wallet, Sparkles, User, Percent, Send, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -556,6 +556,38 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const paySubLabel = change > 0
     ? `· give change ${currencyFmt(change)}`
     : usedTenders.length > 1 ? `· ${usedTenders.join(' + ')}` : '';
+
+  if (justPaid && change > 0) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div role="dialog" aria-label="Give change" className="dark w-full max-w-xl rounded-2xl border-2 border-neutral-700 bg-neutral-950 p-6 text-white shadow-2xl">
+          <div className="flex items-center justify-between">
+            <span className="truncate text-base font-semibold text-neutral-300">{t('billNumber', { number: bill.bill_number })}</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-green-900 px-3 py-1 text-base font-bold text-green-200"><Check size={18} />{t('paid')}</span>
+          </div>
+          <div role="status" className="my-5 rounded-2xl bg-yellow-400 px-4 py-5 text-center text-black">
+            <p className="text-2xl font-black tracking-wide">GIVE CHANGE</p>
+            <p className="text-7xl font-black leading-tight tabular-nums sm:text-8xl">{currencyFmt(change)}</p>
+            <p className="text-2xl font-extrabold text-yellow-950">= {toRielDisplay(change)}</p>
+          </div>
+          <div className="mb-5 flex justify-center gap-6 text-lg font-semibold text-neutral-300">
+            <span>Received <b className="text-white tabular-nums">{currencyFmt(totalPayment)}</b></span>
+            <span>Bill <b className="text-white tabular-nums">{currencyFmt(remaining)}</b></span>
+          </div>
+          {cartCustomer?.phone && (
+            <Button onClick={isWhatsAppReady ? handleSendWhatsApp : handleShareWhatsApp} disabled={sendingWa} variant="outline" className="mb-3 w-full border-2 border-neutral-600 bg-neutral-900 text-white" size="lg">
+              <Send size={16} className="me-2" />
+              {isWhatsAppReady ? (sendingWa ? t('processingPayment') : t('sendViaWhatsApp')) : tCommon('shareViaWhatsApp')}
+            </Button>
+          )}
+          <button type="button" autoFocus onClick={onPaid} className="h-18 min-h-[4.5rem] w-full rounded-2xl bg-green-600 text-3xl font-black text-white hover:bg-green-500">
+            {tCommon('done')}
+          </button>
+          <p className="mt-2 text-center text-sm text-neutral-400">Give the change, then press Done</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
