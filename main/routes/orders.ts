@@ -2059,9 +2059,16 @@ router.patch('/:orderId/items/:itemId/comp', orderItemCancelRateLimit, (req: Req
 });
 
 const MOVE_LOCKED_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
+type MoveOrderRow = {
+  id: number; status: string; table_id: string | null; customer_id: string | null; subtotal: number;
+  discount_amount: number | null; discount_type: string | null; discount_value: number | null;
+  delivery_charge: number | null; packaging_charge: number | null; service_charge: number | null;
+} & Record<string, unknown>;
+type MoveTableRow = { id: string; number: string; status: string };
+type MoveItemRow = { id: number; status: string };
 
 function recalcOrderTotalsAfterItemMove(db: ReturnType<typeof getDatabase>, orderId: number, reason: string) {
-  const current = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+  const current = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as MoveOrderRow;
   const orderTotals = calculateOrderTotals(db, orderId);
   const decimals = getCurrencyFractionDigits(getTenantCurrency());
   let discountAmount = Number(current.discount_amount || 0);
@@ -2076,7 +2083,7 @@ function recalcOrderTotalsAfterItemMove(db: ReturnType<typeof getDatabase>, orde
     currency: getTenantCurrency(),
     taxes_enabled: getSettingValue('taxes_enabled') === 'true',
   };
-  const customer = current.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(current.customer_id) as any : null;
+  const customer = current.customer_id ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(current.customer_id) as Parameters<typeof recomputeOrderTotals>[0]['customer'] | undefined) ?? null : null;
   const { taxRollup, total, roundOff } = recomputeOrderTotals({
     tenantInfo, chargeContext: current, customer, totals: orderTotals, discountAmount, taxScaling: 'when-discounted',
   });
@@ -2105,18 +2112,19 @@ router.post('/:id/move-items', orderWriteRateLimit, requirePermission('tables.or
     const db = getDatabase();
     const paymentStarted = (orderId: number) => db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND (split_group_id IS NOT NULL OR payment_status <> 'unpaid' OR COALESCE(paid_amount, 0) > 0) LIMIT 1`).get(orderId);
     const result = withTxn(() => {
-      const source = db.prepare('SELECT * FROM orders WHERE id = ?').get(sourceOrderId) as any;
+      const source = db.prepare('SELECT * FROM orders WHERE id = ?').get(sourceOrderId) as MoveOrderRow | undefined;
       if (!source) throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       if (['completed', 'cancelled'].includes(source.status)) throw Object.assign(new Error('This order is already closed'), { statusCode: 400 });
       if (paymentStarted(sourceOrderId)) throw Object.assign(new Error('Items cannot be moved after payment has started or the check was split'), { statusCode: 409 });
-      const target = db.prepare('SELECT * FROM tables WHERE id = ?').get(target_table_id) as any;
+      const target = db.prepare('SELECT * FROM tables WHERE id = ?').get(target_table_id) as MoveTableRow | undefined;
       if (!target) throw Object.assign(new Error('Table not found'), { statusCode: 404 });
       if (target.id === source.table_id) throw Object.assign(new Error('Those items are already on this table'), { statusCode: 400 });
-      const items = itemIds.map((id) => db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(id, sourceOrderId) as any);
-      if (items.some((item) => !item)) throw Object.assign(new Error('Item not found in this order'), { statusCode: 404 });
+      const found = itemIds.map((id) => db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(id, sourceOrderId) as MoveItemRow | undefined);
+      const items = found.filter((item): item is MoveItemRow => Boolean(item));
+      if (items.length !== found.length) throw Object.assign(new Error('Item not found in this order'), { statusCode: 404 });
       if (items.some((item) => MOVE_LOCKED_ITEM_STATUSES.includes(item.status))) throw Object.assign(new Error('Removed items cannot be moved'), { statusCode: 400 });
 
-      let targetOrder = db.prepare(`SELECT * FROM orders WHERE table_id = ? AND status NOT IN ('completed', 'cancelled') ORDER BY created_at DESC LIMIT 1`).get(target.id) as any;
+      let targetOrder = db.prepare(`SELECT * FROM orders WHERE table_id = ? AND status NOT IN ('completed', 'cancelled') ORDER BY created_at DESC LIMIT 1`).get(target.id) as MoveOrderRow | undefined;
       if (targetOrder && paymentStarted(Number(targetOrder.id))) throw Object.assign(new Error('That table has started paying. Choose another table.'), { statusCode: 409 });
       const createdTarget = !targetOrder;
       if (!targetOrder) {
@@ -2124,7 +2132,7 @@ router.post('/:id/move-items', orderWriteRateLimit, requirePermission('tables.or
             packaging_charge, delivery_charge, service_charge, status, created_at, updated_at)
           VALUES (?, ?, NULL, ?, 'dine_in', NULL, NULL, 0, 0, 0, ?, ?, ?)`)
           .run(generateOrderNumber(), target.id, actorId, source.status, now(), now());
-        targetOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(inserted.lastInsertRowid) as any;
+        targetOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(inserted.lastInsertRowid) as MoveOrderRow;
       }
       const moveItem = db.prepare('UPDATE order_items SET order_id = ?, updated_at = ? WHERE id = ? AND order_id = ?');
       for (const item of items) moveItem.run(targetOrder.id, now(), item.id, sourceOrderId);
