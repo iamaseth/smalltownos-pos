@@ -18,6 +18,7 @@ import {
 import ProductGrid from '@/components/pos/ProductGrid';
 import CartPanel, { type OrderDestination } from '@/components/pos/CartPanel';
 import AddonModal from '@/components/pos/AddonModal';
+import { CartItemPanel, CartNoteDialog, ChangeItemDialog } from '@/components/pos/BillItemActions';
 import CustomerSearch from '@/components/pos/CustomerSearch';
 import TablePickerModal from '@/components/pos/TablePickerModal';
 import TabChoiceModal from '@/components/pos/TabChoiceModal';
@@ -137,6 +138,7 @@ export default function POSPage() {
   const [pendingDestination, setPendingDestination] = useState<Exclude<OrderDestination, 'togo'> | null>(null);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
   const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
+  const [cartAction, setCartAction] = useState<'change' | 'note' | 'options' | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
@@ -1548,7 +1550,39 @@ export default function POSPage() {
         />
       )}
 
-      {editingCartItem && (
+      {editingCartItem && cartAction === null && (
+        <CartItemPanel item={editingCartItem} hasOptions={(editingCartItem.product.addon_groups || []).some((g) => g.is_active)}
+          onClose={() => setEditingCartItem(null)}
+          onQuantity={(q) => {
+            if (q <= 0) { cart.removeItem(editingCartItem.id); setEditingCartItem(null); return; }
+            cart.updateQuantity(editingCartItem.id, q);
+            setEditingCartItem({ ...editingCartItem, quantity: q });
+          }}
+          onPick={(action) => {
+            if (action === 'remove') { cart.removeItem(editingCartItem.id); setEditingCartItem(null); return; }
+            setCartAction(action);
+          }} />
+      )}
+      {editingCartItem && cartAction === 'note' && (
+        <CartNoteDialog name={`${editingCartItem.quantity} × ${editingCartItem.product.name}`} initial={editingCartItem.special_instructions}
+          onClose={() => setCartAction(null)}
+          onSave={(note) => {
+            cart.updateItemDetails(editingCartItem.id, editingCartItem.quantity, editingCartItem.addons, note);
+            setEditingCartItem(null); setCartAction(null);
+          }} />
+      )}
+      {editingCartItem && cartAction === 'change' && (
+        <ChangeItemDialog notSent item={{ quantity: editingCartItem.quantity, product_name: editingCartItem.product.name }}
+          onClose={() => setCartAction(null)}
+          onChange={async (product, note) => {
+            const old = editingCartItem;
+            cart.removeItem(old.id);
+            setEditingCartItem(null); setCartAction(null);
+            if ((product.addon_groups || []).some((g) => g.is_active)) { setAddonProduct(product); return; }
+            cart.addItem(product, old.quantity, [], note || old.special_instructions);
+          }} />
+      )}
+      {editingCartItem && cartAction === 'options' && (
         <AddonModal
           product={editingCartItem.product}
           currency={currency}
@@ -1557,7 +1591,7 @@ export default function POSPage() {
           initialAddons={editingCartItem.addons}
           initialInstructions={editingCartItem.special_instructions}
           onAdd={handleEditItemSave}
-          onClose={() => setEditingCartItem(null)}
+          onClose={() => { setEditingCartItem(null); setCartAction(null); }}
         />
       )}
 
