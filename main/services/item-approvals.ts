@@ -6,10 +6,10 @@ import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 type Db = ReturnType<typeof getDatabase>;
 export type ItemAction = 'void' | 'comp';
 
-export const COMP_REASONS = ['entertainer', 'complaint', 'wrong_item', 'staff_meal', 'friends_owner', 'too_slow', 'other'] as const;
+export const COMP_REASONS = ['entertainer', 'event_person', 'owner_comp', 'complaint', 'wrong_item', 'staff_meal', 'friends_owner', 'too_slow', 'other'] as const;
 export const VOID_REASONS = ['wrong_item', 'customer_changed_mind', 'customer_left', 'duplicate', 'too_slow', 'other'] as const;
 export const REASON_LABELS: Record<string, string> = {
-  entertainer: 'Entertainer / band drink', complaint: 'Customer complaint', wrong_item: 'Wrong item', staff_meal: 'Staff meal',
+  entertainer: 'Entertainer / band drink', event_person: 'Event person drinks', owner_comp: 'Owner comp (Thida)', complaint: 'Customer complaint', wrong_item: 'Wrong item', staff_meal: 'Staff meal',
   friends_owner: 'Friends / owner', too_slow: 'Took too long', customer_changed_mind: 'Customer changed mind',
   customer_left: 'Customer left', duplicate: 'Rung in twice', other: 'Other',
 };
