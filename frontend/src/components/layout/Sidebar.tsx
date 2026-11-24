@@ -73,7 +73,7 @@ interface NavItem {
 const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/pos', labelKey: 'pos', icon: ShoppingCart, permission: 'pos.use', businessTypes: null },
   { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard, permission: 'dashboard.view', businessTypes: null },
-  { href: '/reports', labelKey: 'reports', icon: BarChart3, permission: 'reports.view', businessTypes: null },
+  { href: '/reports', labelKey: 'reports', icon: BarChart3, permission: 'cash.shifts.view', businessTypes: null },
   { href: '/orders', labelKey: 'orders', icon: ClipboardList, permission: 'orders.read', businessTypes: null },
   { href: '/whatsapp', labelKey: 'whatsapp', icon: MessageCircle, permission: 'whatsapp.use', businessTypes: null },
   { href: '/products', labelKey: 'products', icon: Package, permission: 'catalog.manage', businessTypes: null },
