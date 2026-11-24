@@ -96,9 +96,9 @@ export function ItemActionsPanel({ item, canDiscount, canRemove, onPick, onClose
       {canRemove && (
         <>
           <button type="button" onClick={() => onPick('remove')} style={toneStyle('remove')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 text-base font-bold hover:brightness-125">
-            <Trash2 size={28} strokeWidth={2.25} />Remove
+            <Trash2 size={28} strokeWidth={2.25} />Delete
           </button>
-          <p className="mt-2 text-center text-sm text-neutral-400">Already sent to the kitchen: Remove needs a manager PIN</p>
+          <p className="mt-2 text-center text-sm text-neutral-400">Already sent to the kitchen: Delete needs a manager PIN</p>
         </>
       )}
     </Shell>
@@ -332,7 +332,7 @@ export function CartItemPanel({ item, hasOptions, onQuantity, onPick, onClose }:
         </span>
       </div>
       <button type="button" onClick={() => onPick('remove')} style={toneStyle('remove')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 text-base font-bold hover:brightness-125">
-        <Trash2 size={28} strokeWidth={2.25} />Remove
+        <Trash2 size={28} strokeWidth={2.25} />Delete
       </button>
       <p className="mt-2 text-center text-sm text-neutral-400">Not sent yet: no PIN needed</p>
     </Shell>
