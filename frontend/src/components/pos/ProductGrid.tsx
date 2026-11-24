@@ -468,7 +468,11 @@ export default function ProductGrid({
                 )}
 
                 <h3 className={`${catalogView === 'photo' ? 'text-sm leading-[1.2] line-clamp-2' : 'text-[18px] leading-[1.18] line-clamp-3'} font-extrabold tracking-[-0.01em] text-slate-100 break-words ${inCartQty > 0 ? 'pe-9' : ''}`}>{product.name}</h3>
-                <p className="mt-auto pt-1 text-[18px] font-extrabold text-blue-400 tabular-nums">{fmt(Number(product.price))}</p>
+                {product.special_normal_price != null && product.special_show ? (
+                  <p className="mt-auto pt-1 tabular-nums"><span className="me-1.5 text-sm font-semibold text-slate-400 line-through">{fmt(product.special_normal_price)}</span><span className="text-[18px] font-extrabold text-amber-300">{fmt(Number(product.price))}</span><span className="block truncate text-[11px] font-bold uppercase tracking-wide text-amber-300">{product.special_event}</span></p>
+                ) : (
+                  <p className="mt-auto pt-1 text-[18px] font-extrabold text-blue-400 tabular-nums">{fmt(Number(product.price))}</p>
+                )}
                 </div>
               </div>
             );

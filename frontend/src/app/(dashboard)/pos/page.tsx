@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
@@ -123,6 +123,7 @@ export default function POSPage() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
+  const [specials, setSpecials] = useState<{ prices: Record<string, { price: number; eventId: string; eventName: string }>; active: { id: string; name: string; show_banner: boolean; show_on_buttons: boolean }[] }>({ prices: {}, active: [] });
   const [tables, setTables] = useState<Table[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -593,6 +594,26 @@ export default function POSPage() {
     fetchData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestaurant, setBillingType, setTablesRequired, setKotPrintingEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      api.get('/special-prices')
+        .then(({ data }) => { if (!cancelled) setSpecials({ prices: data.prices || {}, active: data.active || [] }); })
+        .catch(() => undefined);
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+
+  const shownProducts = useMemo(() => products.map((p) => {
+    const sp = specials.prices[String(p.id)];
+    if (!sp) return p;
+    const event = specials.active.find((a) => a.id === sp.eventId);
+    return { ...p, price: sp.price, special_normal_price: Number(p.price), special_event: sp.eventName, special_show: event?.show_on_buttons !== false };
+  }), [products, specials]);
+  const specialBanner = specials.active.filter((a) => a.show_banner).map((a) => a.name);
 
   const handleProductClick = (product: Product) => {
     // Always open modal so user can add notes and adjust quantity
@@ -1442,9 +1463,14 @@ export default function POSPage() {
         <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
+          {specialBanner.length > 0 && (
+            <div role="status" className="mx-3 mt-2 rounded-xl bg-amber-400 px-4 py-2 text-center text-lg font-black text-black">
+              🎉 {specialBanner.join(' + ')} on now: special prices
+            </div>
+          )}
           <ProductGrid
             categories={categories}
-            products={products}
+            products={shownProducts}
             selectedCategory={selectedCategory}
             setSelectedCategory={setSelectedCategory}
             search={search}

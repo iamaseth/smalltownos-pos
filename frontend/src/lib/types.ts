@@ -72,6 +72,9 @@ export interface LoyaltyLedger {
 
 export interface Product {
   id: string;
+  special_normal_price?: number;
+  special_event?: string;
+  special_show?: boolean;
   category_id: string | null;
   name: string;
   sku: string | null;
