@@ -19,6 +19,14 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/en.json'),
   },
+  km: {
+    locale: 'km-KH',
+    nativeName: 'ខ្មែរ',
+    direction: 'ltr',
+    // Not selectable until all untranslated English fallback messages are reviewed.
+    selectable: false,
+    load: () => import('./messages/km.json'),
+  },
   es: {
     locale: 'es',
     nativeName: 'Español',
