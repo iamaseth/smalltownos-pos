@@ -13,6 +13,7 @@ import CogsReport from '@/components/reports/CogsReport';
 import TelegramSendButton from '@/components/reports/TelegramSendButton';
 import { tenantCan } from '@/lib/permissions';
 import { DayReports, type DayView } from '@/components/reports/DayReports';
+import { SimpleReports } from '@/components/reports/SimpleReports';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type Preset = 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'custom';
@@ -79,7 +80,7 @@ function Bars({ rows, format }: { rows: { label: string; value: number; title: s
   );
 }
 
-export default function ReportsPage() {
+function FullReports() {
   const t = useTranslations('reports');
   const tDash = useTranslations('dashboard');
   const tPos = useTranslations('pos');
@@ -377,6 +378,29 @@ export default function ReportsPage() {
         </div>
       )}
       </>)}
+    </div>
+  );
+}
+
+/** Cashiers get the simple reports page; owners and managers can switch to the full reports. */
+export default function ReportsPage() {
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const canFull = tenantCan(currentTenant, 'reports.view');
+  const [view, setView] = useState<'simple' | 'full'>('simple');
+  if (!canFull) {
+    return <div className="mx-auto w-full max-w-7xl p-4 sm:p-6"><SimpleReports canTelegram={tenantCan(currentTenant, 'cash.shifts.view')} /></div>;
+  }
+  return (
+    <div>
+      <div className="mx-auto flex w-full max-w-7xl gap-2 px-4 pt-4 sm:px-6 print:hidden" role="tablist" aria-label="Report view">
+        {([['simple', 'Reports'], ['full', 'Full reports']] as const).map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={view === key} onClick={() => setView(key)}
+            className={`h-11 rounded-xl border-2 px-5 text-base font-bold ${view === key ? 'border-foreground bg-foreground text-background' : 'border-border bg-card text-foreground hover:bg-muted'}`}>{label}</button>
+        ))}
+      </div>
+      {view === 'simple'
+        ? <div className="mx-auto w-full max-w-7xl p-4 sm:p-6"><SimpleReports canTelegram={tenantCan(currentTenant, 'cash.shifts.view')} /></div>
+        : <FullReports />}
     </div>
   );
 }

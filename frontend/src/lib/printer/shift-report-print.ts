@@ -43,16 +43,20 @@ export async function printReportReceipt(target: ReportTarget, opts: { auto?: bo
   const columns = columnsForConfiguredPrinter((printer.webusbPrinter ?? printer.hardwarePrinter)?.paper_width, paper);
   const reprint = !opts.auto && target.kind === 'shift' && (data as ShiftReportData).kind === 'Z';
   const lines = render(target, data, columns, reprint);
-  const transport = printer.currentTransport() === 'webusb' ? 'webusb' : 'browser';
   const key = target.kind === 'shift' ? `shift-report:${(data as ShiftReportData).kind}:${target.sessionId}` : `daily-report:${target.date}`;
-  await printerService.awaitPendingReconnect();
-  await runPrintJob({
+  await printLines(lines, columns, paper, {
     jobKey: opts.auto ? key : `${key}:print:${Date.now()}`,
-    kind: 'other',
     label: `${title(target, data)}${reprint ? ' (reprint)' : ''}`,
-    transport,
     payload: target,
-  }, async () => {
+  });
+}
+
+/** Prints plain report lines on the receipt printer (WebUSB) or the browser print path. */
+async function printLines(lines: string[], columns: number, paper: 58 | 80, job: { jobKey: string; label: string; payload: unknown }): Promise<void> {
+  const printer = usePrinterStore.getState();
+  const transport = printer.currentTransport() === 'webusb' ? 'webusb' : 'browser';
+  await printerService.awaitPendingReconnect();
+  await runPrintJob({ jobKey: job.jobKey, kind: 'other', label: job.label, transport, payload: job.payload }, async () => {
     if (transport === 'webusb') {
       const enc = new ReceiptPrinterEncoder({ columns });
       enc.initialize();
@@ -62,11 +66,19 @@ export async function printReportReceipt(target: ReportTarget, opts: { auto?: bo
       return;
     }
     const { printHtmlInFrame } = await import('./frame-print');
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title(target, data))}</title>
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(job.label)}</title>
 <style>body{margin:0}pre{margin:0;padding:2mm 0;font:12px/1.25 'Courier New',monospace;white-space:pre}</style></head>
 <body><div class="bill-container"><pre>${escapeHtml(lines.join('\n'))}</pre></div></body></html>`;
     await printHtmlInFrame(html, { receiptPaperWidthMm: paper });
   });
+}
+
+/** Week or month summary for the simple Reports page, printed as one compact receipt. */
+export async function printSummaryReceipt(titleText: string, build: (columns: number) => string[]): Promise<void> {
+  const paper = usePosSettingsStore.getState().printerPaperSize === 'thermal80' ? 80 : 58;
+  const printer = usePrinterStore.getState();
+  const columns = columnsForConfiguredPrinter((printer.webusbPrinter ?? printer.hardwarePrinter)?.paper_width, paper);
+  await printLines(build(columns), columns, paper, { jobKey: `summary:${titleText}:${Date.now()}`, label: titleText, payload: { kind: 'summary', title: titleText } });
 }
 
 /**
