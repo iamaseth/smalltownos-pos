@@ -94,7 +94,8 @@ interface Props {
   onOrderSaved?: () => Promise<void>;
 }
 
-const LONG_PRESS_MS = 500;
+const LONG_PRESS_MS = 700;
+const MOVE_TOLERANCE_PX = 8;
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
@@ -121,8 +122,12 @@ export default function ProductGrid({
   const [favorites, setFavorites] = useState<string[]>([]);
   const pressTimer = useRef<number | null>(null);
   const longPressed = useRef(false);
-  const startPress = (product: Product) => {
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
+  const movedDuringPress = useRef(false);
+  const startPress = (product: Product, point: { x: number; y: number }) => {
     longPressed.current = false;
+    movedDuringPress.current = false;
+    pressStart.current = point;
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = window.setTimeout(() => { longPressed.current = true; onProductClick(product); }, LONG_PRESS_MS);
   };
@@ -130,9 +135,19 @@ export default function ProductGrid({
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
     pressTimer.current = null;
   };
+  const trackPress = (point: { x: number; y: number }) => {
+    const start = pressStart.current;
+    if (!start || movedDuringPress.current) return;
+    if (Math.abs(point.x - start.x) > MOVE_TOLERANCE_PX || Math.abs(point.y - start.y) > MOVE_TOLERANCE_PX) {
+      movedDuringPress.current = true;
+      cancelPress();
+    }
+  };
   const tapProduct = (product: Product) => {
     cancelPress();
+    pressStart.current = null;
     if (longPressed.current) { longPressed.current = false; return; }
+    if (movedDuringPress.current) { movedDuringPress.current = false; return; }
     if (editingFavorites) { toggleFavorite(String(product.id)); return; }
     onQuickAdd(product);
   };
@@ -341,7 +356,7 @@ export default function ProductGrid({
       </div>
 
       <div className="flex min-h-0 flex-1">
-      <div ref={gridScrollRef} className="min-w-0 flex-1 overflow-y-auto pb-20 md:pb-0 px-3">
+      <div ref={gridScrollRef} onScroll={() => { if (pressTimer.current) { movedDuringPress.current = true; cancelPress(); } }} className="min-w-0 flex-1 overflow-y-auto overscroll-contain pb-20 md:pb-0 px-3">
         {favoritesOnly && !search.trim() && displayed.length === 0 && (
           <p className="py-10 text-center text-sm text-slate-400">No favorites yet. Tap ★ Favorites, then tap products to pin them here.</p>
         )}
@@ -383,13 +398,14 @@ export default function ProductGrid({
                 onDrop={e => {e.preventDefault();if(!dragId)return;setIds(old=>{const next=old.length ? [...old] : ordered.map(p => String(p.id)),a=next.indexOf(dragId),b=next.indexOf(String(product.id));if(a<0||b<0)return old;next.splice(a,1);next.splice(b,0,dragId);return next;});setDragId(null);}}
                 onDragEnd={() => setDragId(null)}
                 className="group pos-product-tile flex flex-col justify-between bg-[#182234] text-slate-100 rounded-2xl border-2 border-s-[7px] border-[#3d4f7c] shadow-sm active:scale-95 transition text-start relative cursor-pointer overflow-hidden touch-manipulation select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                style={{ borderInlineStartColor: categoryAccent }}
+                style={{ borderInlineStartColor: categoryAccent, contentVisibility: 'auto', containIntrinsicSize: 'auto 220px' }}
 
               >
                 <button type="button" aria-label={editingFavorites ? `${favorites.includes(String(product.id)) ? 'Unpin' : 'Pin'} ${product.name}` : `Add ${product.name}`}
                   disabled={arranging}
                   onClick={() => tapProduct(product)}
-                  onPointerDown={() => { if (!arranging && !editingFavorites) startPress(product); }}
+                  onPointerDown={(e) => { if (!arranging && !editingFavorites) startPress(product, { x: e.clientX, y: e.clientY }); }}
+                  onPointerMove={(e) => trackPress({ x: e.clientX, y: e.clientY })}
                   onPointerUp={cancelPress}
                   onPointerLeave={cancelPress}
                   onPointerCancel={cancelPress}
