@@ -43,7 +43,26 @@ function Shell({ title, subtitle, onClose, children, wide = false }: { title: st
   );
 }
 
-const bigBtn = 'flex h-24 flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800 disabled:opacity-40';
+const bigBtn = 'flex h-24 flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:brightness-125 disabled:opacity-40';
+
+export type ActionTone = 'move' | 'change' | 'discount' | 'add' | 'note' | 'free' | 'rush' | 'print' | 'remove';
+const TONES: Record<ActionTone, { bg: string; border: string; text: string }> = {
+  move: { bg: '#0C447C', border: '#378ADD', text: '#ffffff' },
+  change: { bg: '#0C447C', border: '#378ADD', text: '#ffffff' },
+  discount: { bg: '#3C3489', border: '#7F77DD', text: '#ffffff' },
+  add: { bg: '#085041', border: '#1D9E75', text: '#ffffff' },
+  note: { bg: '#633806', border: '#EF9F27', text: '#ffffff' },
+  free: { bg: '#72243E', border: '#D4537E', text: '#ffffff' },
+  rush: { bg: '#712B13', border: '#D85A30', text: '#ffffff' },
+  print: { bg: '#444441', border: '#888780', text: '#ffffff' },
+  remove: { bg: '#501313', border: '#E24B4A', text: '#F7C1C1' },
+};
+/** Same colour for the same action on every POS screen. */
+export function toneStyle(tone: ActionTone, enabled = true): CSSProperties | undefined {
+  if (!enabled) return undefined;
+  const t = TONES[tone];
+  return { backgroundColor: t.bg, borderColor: t.border, color: t.text };
+}
 
 export type ItemAction = 'change' | 'note' | 'discount' | 'free' | 'move' | 'rush' | 'more' | 'remove';
 
@@ -66,17 +85,17 @@ export function ItemActionsPanel({ item, canDiscount, canRemove, onPick, onClose
     <Shell title={`${item.quantity} × ${item.product_name}`} subtitle={`${fmt(Number(item.total))}${sentText ? ` · sent ${sentText}` : ''}${item.special_instructions ? ` · ${item.special_instructions}` : ''}`} onClose={onClose}>
       <div className="grid grid-cols-2 gap-2">
         {buttons.map(([key, label, icon, enabled]) => (
-          <button key={key} type="button" disabled={!enabled} onClick={() => onPick(key)} className={bigBtn}>{icon}{label}</button>
+          <button key={key} type="button" disabled={!enabled} onClick={() => onPick(key)} style={toneStyle(key as ActionTone, enabled)} className={bigBtn}>{icon}{label}</button>
         ))}
       </div>
       {!hasAddons && !item.comped_at && (
-        <button type="button" onClick={() => onPick('more')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 border-neutral-600 bg-neutral-900 text-base font-bold hover:bg-neutral-800">
+        <button type="button" onClick={() => onPick('more')} style={toneStyle('add')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 text-base font-bold hover:brightness-125">
           <Plus size={28} strokeWidth={2.25} />Add 1 more
         </button>
       )}
       {canRemove && (
         <>
-          <button type="button" onClick={() => onPick('remove')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 border-red-700 bg-red-950 text-base font-bold text-red-200 hover:bg-red-900">
+          <button type="button" onClick={() => onPick('remove')} style={toneStyle('remove')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 text-base font-bold hover:brightness-125">
             <Trash2 size={28} strokeWidth={2.25} />Remove
           </button>
           <p className="mt-2 text-center text-sm text-neutral-400">Already sent to the kitchen: Remove needs a manager PIN</p>
@@ -290,8 +309,8 @@ export function CartItemPanel({ item, hasOptions, onQuantity, onPick, onClose }:
   return (
     <Shell title={`${item.quantity} × ${item.product.name}`} subtitle={`${fmt(lineTotal)} · not sent yet${item.special_instructions ? ` · ${item.special_instructions}` : ''}`} onClose={onClose}>
       <div className="grid grid-cols-2 gap-2">
-        <button type="button" onClick={() => onPick('change')} className={bigBtn}><Replace size={36} strokeWidth={2.25} />Change</button>
-        <button type="button" onClick={() => onPick('note')} className={bigBtn}><NotebookPen size={36} strokeWidth={2.25} />Note</button>
+        <button type="button" onClick={() => onPick('change')} style={toneStyle('change')} className={bigBtn}><Replace size={36} strokeWidth={2.25} />Change</button>
+        <button type="button" onClick={() => onPick('note')} style={toneStyle('note')} className={bigBtn}><NotebookPen size={36} strokeWidth={2.25} />Note</button>
         {later('Discount', <Percent size={36} strokeWidth={2.25} />)}
         {later('Free', <Gift size={36} strokeWidth={2.25} />)}
       </div>
@@ -312,7 +331,7 @@ export function CartItemPanel({ item, hasOptions, onQuantity, onPick, onClose }:
           <button type="button" aria-label="One more" onClick={() => onQuantity(item.quantity + 1)} className="flex h-12 w-12 items-center justify-center rounded-xl border-2 border-neutral-600 text-2xl font-black hover:bg-neutral-800"><Plus size={22} /></button>
         </span>
       </div>
-      <button type="button" onClick={() => onPick('remove')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 border-red-700 bg-red-950 text-base font-bold text-red-200 hover:bg-red-900">
+      <button type="button" onClick={() => onPick('remove')} style={toneStyle('remove')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 text-base font-bold hover:brightness-125">
         <Trash2 size={28} strokeWidth={2.25} />Remove
       </button>
       <p className="mt-2 text-center text-sm text-neutral-400">Not sent yet: no PIN needed</p>

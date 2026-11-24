@@ -14,7 +14,7 @@ import DiscountDialog, { type DiscountInput } from '@/components/pos/DiscountDia
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
 import { VoidCompDialog } from '@/components/orders/VoidCompDialog';
-import { ItemActionsPanel, NoteDialog, ChangeItemDialog, MoveItemsDialog, errorText, sentAtMs, type ItemAction } from '@/components/pos/BillItemActions';
+import { ItemActionsPanel, NoteDialog, ChangeItemDialog, MoveItemsDialog, errorText, sentAtMs, toneStyle, type ItemAction } from '@/components/pos/BillItemActions';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
@@ -466,23 +466,23 @@ export default function TableCheckoutModal({
           {splitBills.length === 0 && order.bill?.payment_status !== 'paid' && (
             <div className="grid grid-cols-2 gap-2">
               {canEditOrder && (
-                <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => setMoveIds(activeItems.map((i) => Number(i.id)))}>
+                <Button variant="outline" size="lg" style={toneStyle('move')} className="h-14 border-2 text-lg font-bold hover:brightness-125" onClick={() => setMoveIds(activeItems.map((i) => Number(i.id)))}>
                   <ArrowLeftRight strokeWidth={2.25} className="me-2 size-7" />Move table
                 </Button>
               )}
               {canDiscount && canEditOrder && (
-                <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => setDiscountTarget({ kind: 'order' })}>
+                <Button variant="outline" size="lg" style={toneStyle('discount')} className="h-14 border-2 text-lg font-bold hover:brightness-125" onClick={() => setDiscountTarget({ kind: 'order' })}>
                   <BadgePercent strokeWidth={2.25} className="me-2 size-7" />{Number(order.discount_amount) > 0 ? 'Change discount' : 'Discount bill'}
                 </Button>
               )}
               {cartItemCount === 0 && (
-                <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => onAddItems(table, order)}>
+                <Button variant="outline" size="lg" style={toneStyle('add')} className="h-14 border-2 text-lg font-bold hover:brightness-125" onClick={() => onAddItems(table, order)}>
                   <Plus strokeWidth={2.25} className="me-2 size-7" />{t('addItems')}
                 </Button>
               )}
               {onPrintBill && (
                 <Button variant="outline" size="lg" disabled={printingBill}
-                  className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800"
+                  style={toneStyle('print')} className="h-14 border-2 text-lg font-bold hover:brightness-125"
                   onClick={async () => { setPrintingBill(true); try { await onPrintBill(order); } finally { setPrintingBill(false); } }}>
                   <Printer strokeWidth={2.25} className="me-2 size-7" />{printingBill ? 'Printing…' : 'Print bill'}
                 </Button>
