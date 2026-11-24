@@ -8,7 +8,8 @@ import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown, UserRound, LogOut } from 'lucide-react';
+import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown, UserRound, LogOut, Star, ArrowUpDown, Image as ImageIcon, Zap, Check } from 'lucide-react';
+import { usePosViewStore } from '@/store/pos-view';
 import { useRegisterOperator } from '@/hooks/register-operator-context';
 import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
@@ -26,9 +27,11 @@ interface Props {
   fullscreen: boolean;
   onToggleFullscreen: () => void;
   searchSlotRef?: (el: HTMLDivElement | null) => void;
+  canArrange?: boolean;
 }
 
-export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen, searchSlotRef }: Props) {
+export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen, searchSlotRef, canArrange = false }: Props) {
+  const view = usePosViewStore();
   const cart = useCartStore();
   const [actionsOpen, setActionsOpen] = useState(false);
   const [staffOpen, setStaffOpen] = useState(false);
@@ -111,6 +114,13 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
               {shiftHasOpenSession ? <Lock size={16}/> : <LockOpen size={16}/>}
               {shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
             </button>}
+            <div className="border-t border-slate-700 pt-2">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Menu view</p>
+              <button type="button" onClick={() => {setActionsOpen(false);view.setEditingFavorites(true);}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><Star size={16}/>Edit favorites</button>
+              {canArrange && <button type="button" onClick={() => {setActionsOpen(false);view.setArranging(true);}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><ArrowUpDown size={16}/>Arrange products</button>}
+              <button type="button" onClick={() => {setActionsOpen(false);view.setCatalogView('photo');}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><ImageIcon size={16}/>Photo view{view.catalogView === 'photo' && <Check size={16} className="ms-auto text-emerald-400"/>}</button>
+              <button type="button" onClick={() => {setActionsOpen(false);view.setCatalogView('compact');}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><Zap size={16}/>Quick-tap view{view.catalogView === 'compact' && <Check size={16} className="ms-auto text-emerald-400"/>}</button>
+            </div>
             <div className="border-t border-slate-700 pt-2"><PrinterStatus /></div>
             <button type="button" onClick={() => {setActionsOpen(false);onToggleFullscreen();}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700">
               {fullscreen ? <Minimize2 size={16}/> : <Maximize2 size={16}/>}

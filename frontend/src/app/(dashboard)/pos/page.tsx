@@ -1458,6 +1458,7 @@ export default function POSPage() {
         canUseShift={canUseShift}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
+        canArrange={tenantCan(currentTenant, 'catalog.manage')}
         searchSlotRef={setSearchSlot}
       />
         <div className="flex min-h-0 flex-1 overflow-hidden">
