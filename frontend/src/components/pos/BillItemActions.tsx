@@ -42,7 +42,7 @@ function Shell({ title, subtitle, onClose, children, wide = false }: { title: st
   );
 }
 
-const bigBtn = 'flex h-20 flex-col items-center justify-center gap-1 rounded-xl border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800 disabled:opacity-40';
+const bigBtn = 'flex h-24 flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800 disabled:opacity-40';
 
 export type ItemAction = 'change' | 'note' | 'discount' | 'free' | 'move' | 'rush' | 'more' | 'remove';
 
@@ -54,12 +54,12 @@ export function ItemActionsPanel({ item, canDiscount, canRemove, onPick, onClose
   const sent = sentAtMs(item);
   const sentText = sent ? new Date(sent).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
   const buttons: [ItemAction, string, ReactNode, boolean][] = [
-    ['change', 'Change', <Replace key="c" size={24} />, true],
-    ['note', 'Note', <NotebookPen key="n" size={24} />, true],
-    ['discount', 'Discount', <Percent key="d" size={24} />, canDiscount && !item.comped_at],
-    ['free', 'Free', <Gift key="f" size={24} />, !item.comped_at],
-    ['move', 'Move', <ArrowLeftRight key="m" size={24} />, true],
-    ['rush', 'Rush', <Flame key="r" size={24} />, true],
+    ['change', 'Change', <Replace key="c" size={36} strokeWidth={2.25} />, true],
+    ['note', 'Note', <NotebookPen key="n" size={36} strokeWidth={2.25} />, true],
+    ['discount', 'Discount', <Percent key="d" size={36} strokeWidth={2.25} />, canDiscount && !item.comped_at],
+    ['free', 'Free', <Gift key="f" size={36} strokeWidth={2.25} />, !item.comped_at],
+    ['move', 'Move', <ArrowLeftRight key="m" size={36} strokeWidth={2.25} />, true],
+    ['rush', 'Rush', <Flame key="r" size={36} strokeWidth={2.25} />, true],
   ];
   return (
     <Shell title={`${item.quantity} × ${item.product_name}`} subtitle={`${fmt(Number(item.total))}${sentText ? ` · sent ${sentText}` : ''}${item.special_instructions ? ` · ${item.special_instructions}` : ''}`} onClose={onClose}>
@@ -70,13 +70,13 @@ export function ItemActionsPanel({ item, canDiscount, canRemove, onPick, onClose
       </div>
       {!hasAddons && !item.comped_at && (
         <button type="button" onClick={() => onPick('more')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 border-neutral-600 bg-neutral-900 text-base font-bold hover:bg-neutral-800">
-          <Plus size={20} />Add 1 more
+          <Plus size={28} strokeWidth={2.25} />Add 1 more
         </button>
       )}
       {canRemove && (
         <>
           <button type="button" onClick={() => onPick('remove')} className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl border-2 border-red-700 bg-red-950 text-base font-bold text-red-200 hover:bg-red-900">
-            <Trash2 size={20} />Remove
+            <Trash2 size={28} strokeWidth={2.25} />Remove
           </button>
           <p className="mt-2 text-center text-sm text-neutral-400">Already sent to the kitchen: Remove needs a manager PIN</p>
         </>

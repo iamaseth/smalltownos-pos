@@ -466,25 +466,25 @@ export default function TableCheckoutModal({
           {splitBills.length === 0 && order.bill?.payment_status !== 'paid' && (
             <div className="grid grid-cols-2 gap-2">
               {canEditOrder && (
-                <Button variant="outline" size="lg" className="h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800" onClick={() => setMoveIds(activeItems.map((i) => Number(i.id)))}>
-                  <ArrowLeftRight size={18} className="me-2" />Move table
+                <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => setMoveIds(activeItems.map((i) => Number(i.id)))}>
+                  <ArrowLeftRight size={26} strokeWidth={2.25} className="me-2" />Move table
                 </Button>
               )}
               {canDiscount && canEditOrder && (
-                <Button variant="outline" size="lg" className="h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800" onClick={() => setDiscountTarget({ kind: 'order' })}>
-                  <BadgePercent size={18} className="me-2" />{Number(order.discount_amount) > 0 ? 'Change discount' : 'Discount bill'}
+                <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => setDiscountTarget({ kind: 'order' })}>
+                  <BadgePercent size={26} strokeWidth={2.25} className="me-2" />{Number(order.discount_amount) > 0 ? 'Change discount' : 'Discount bill'}
                 </Button>
               )}
               {cartItemCount === 0 && (
-                <Button variant="outline" size="lg" className="h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800" onClick={() => onAddItems(table, order)}>
-                  <Plus size={18} className="me-2" />{t('addItems')}
+                <Button variant="outline" size="lg" className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800" onClick={() => onAddItems(table, order)}>
+                  <Plus size={26} strokeWidth={2.25} className="me-2" />{t('addItems')}
                 </Button>
               )}
               {onPrintBill && (
                 <Button variant="outline" size="lg" disabled={printingBill}
-                  className="h-12 border-2 border-neutral-600 bg-neutral-900 text-base font-bold text-white hover:bg-neutral-800"
+                  className="h-14 border-2 border-neutral-600 bg-neutral-900 text-lg font-bold text-white hover:bg-neutral-800"
                   onClick={async () => { setPrintingBill(true); try { await onPrintBill(order); } finally { setPrintingBill(false); } }}>
-                  <Printer size={18} className="me-2" />{printingBill ? 'Printing…' : 'Print bill'}
+                  <Printer size={26} strokeWidth={2.25} className="me-2" />{printingBill ? 'Printing…' : 'Print bill'}
                 </Button>
               )}
             </div>
