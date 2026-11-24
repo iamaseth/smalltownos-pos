@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { List, MapPinned, X } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { TableTurnoverBadge } from '@/components/tables/TableTurnoverBadge';
-import { shapeFor, computeCanvasAspect, loadSavedCanvasSize, VIRTUAL_WIDTH } from '@/components/tables/FloorplanEditor';
-import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { FloorPlanCanvas, planTone } from '@/components/tables/FloorPlanCanvas';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n';
 
 interface Props {
@@ -22,16 +21,6 @@ interface Props {
 }
 
 type PosKey = keyof AppConfig['Messages']['pos'];
-
-const planTone: Record<string, string> = {
-  available: 'border-emerald-700 bg-emerald-100 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-950 dark:text-emerald-50',
-  occupied: 'border-orange-700 bg-orange-100 text-orange-950 dark:border-orange-400 dark:bg-orange-950 dark:text-orange-50',
-  reserved: 'border-yellow-600 bg-yellow-100 text-yellow-950 dark:border-yellow-400 dark:bg-yellow-950 dark:text-yellow-50',
-  cleaning: 'border-gray-400 bg-gray-100 text-gray-700 dark:border-gray-500 dark:bg-gray-800 dark:text-gray-200',
-  held: 'border-blue-600 bg-blue-100 text-blue-950 dark:border-blue-400 dark:bg-blue-950 dark:text-blue-50',
-};
-const SECTION_PAD = 22;
-const SECTION_LABEL = 26;
 
 const statusStyles: Record<string, { border: string; badge: string; badgeKey: PosKey | null }> = {
   available: { border: 'border-border hover:border-brand/40', badge: '', badgeKey: null },
@@ -63,58 +52,6 @@ export default function TablePickerModal({
   const unplacedTables = floorTables.filter((tb) => !placed(tb));
   const showPlan = view === 'plan' && hasPlan;
   const floorHasPlan = planTables.length > 0;
-  const fmt = useFormatCurrency();
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const [canvasWidth, setCanvasWidth] = useState(VIRTUAL_WIDTH);
-  const savedSize = loadSavedCanvasSize(floor);
-  const roomAspect = savedSize.mode === 'custom'
-    ? Math.max(1, Math.min(100, savedSize.w)) / Math.max(1, Math.min(100, savedSize.h))
-    : computeCanvasAspect(planTables);
-  const roomHeight = Math.round(VIRTUAL_WIDTH / roomAspect);
-  const layout = useMemo(() => {
-    const groups = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
-    const all = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-    for (const tb of planTables) {
-      const { w, h } = shapeFor(tb.capacity);
-      const cx = (tb.position_x! / 100) * VIRTUAL_WIDTH;
-      const cy = (tb.position_y! / 100) * roomHeight;
-      all.minX = Math.min(all.minX, cx - w / 2); all.maxX = Math.max(all.maxX, cx + w / 2);
-      all.minY = Math.min(all.minY, cy - h / 2); all.maxY = Math.max(all.maxY, cy + h / 2);
-      const name = tb.section?.trim();
-      if (!name) continue;
-      const g = groups.get(name) ?? { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-      g.minX = Math.min(g.minX, cx - w / 2); g.maxX = Math.max(g.maxX, cx + w / 2);
-      g.minY = Math.min(g.minY, cy - h / 2); g.maxY = Math.max(g.maxY, cy + h / 2);
-      groups.set(name, g);
-    }
-    const sections = [...groups.entries()].map(([name, g]) => ({
-      name, left: g.minX - SECTION_PAD, top: g.minY - SECTION_PAD - SECTION_LABEL,
-      width: g.maxX - g.minX + SECTION_PAD * 2, height: g.maxY - g.minY + SECTION_PAD * 2 + SECTION_LABEL,
-    }));
-    for (const sec of sections) {
-      all.minX = Math.min(all.minX, sec.left); all.maxX = Math.max(all.maxX, sec.left + sec.width);
-      all.minY = Math.min(all.minY, sec.top); all.maxY = Math.max(all.maxY, sec.top + sec.height);
-    }
-    const margin = 16;
-    const w = Math.max(all.maxX - all.minX + margin * 2, 560);
-    const h = Math.max(all.maxY - all.minY + margin * 2, 360);
-    const view = { x: (all.minX + all.maxX - w) / 2, y: (all.minY + all.maxY - h) / 2, w, h };
-    return { sections, view };
-  }, [planTables, roomHeight]);
-  const { sections, view: viewBox } = layout;
-  const aspect = viewBox.w > 0 && viewBox.h > 0 ? viewBox.w / viewBox.h : roomAspect;
-  const canvasScale = canvasWidth > 0 && viewBox.w > 0 ? canvasWidth / viewBox.w : 1;
-
-  useEffect(() => {
-    const el = canvasRef.current;
-    if (!el) return;
-    const update = () => { if (el.clientWidth > 0) setCanvasWidth(el.clientWidth); };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [showPlan, floorHasPlan, floor]);
-
   const handleClick = (table: Table) => {
     if (heldOrders.hasHeldOrder(table.id)) {
       onSelectHeld(table.id);
@@ -176,38 +113,8 @@ export default function TablePickerModal({
         )}
 
         {showPlan && floorHasPlan && (
-          <div ref={canvasRef} data-testid="table-picker-plan"
-            className="relative mx-auto mb-4 w-full overflow-hidden rounded-xl border border-border bg-card"
-            style={{ aspectRatio: aspect, maxWidth: `calc((94vh - 9rem) * ${aspect})` }}>
-            <div style={{ position: 'absolute', top: 0, left: 0, width: VIRTUAL_WIDTH, height: roomHeight, transform: `scale(${canvasScale}) translate(${-viewBox.x}px, ${-viewBox.y}px)`, transformOrigin: 'top left' }}>
-              {sections.map((sec) => (
-                <div key={sec.name} data-testid="table-picker-section" aria-hidden
-                  className="absolute rounded-2xl border-2 border-dashed border-gray-400 bg-muted/70 dark:border-gray-600"
-                  style={{ left: sec.left, top: sec.top, width: sec.width, height: sec.height }}>
-                  <span className="absolute start-3 top-1 text-[15px] font-bold text-muted-foreground">{sec.name}</span>
-                </div>
-              ))}
-              {planTables.map((table) => {
-                const isHeld = heldOrders.hasHeldOrder(table.id);
-                const isSelected = selectedTableId === table.id;
-                const isDisabled = table.status === 'cleaning';
-                const shape = shapeFor(table.capacity);
-                const order = table.current_order || table.activeOrder;
-                const tone = planTone[isHeld ? 'held' : table.status] || planTone.available;
-                return (
-                  <button key={table.id} type="button" disabled={isDisabled} onClick={() => handleClick(table)}
-                    data-testid={`table-picker-table-${table.name}`}
-                    aria-label={`${table.name} — ${tTables(TABLE_STATUS_LABEL_KEYS[isHeld ? 'held' : table.status])}`}
-                    style={{ left: `${table.position_x}%`, top: `${table.position_y}%`, width: shape.w, height: shape.h }}
-                    className={`absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center border-[3px] p-1 text-center leading-tight ${shape.round ? 'rounded-full' : 'rounded-xl'} ${tone} ${isSelected ? 'ring-4 ring-brand ring-offset-2 ring-offset-card' : ''} ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
-                    <span className="max-w-full truncate text-lg font-black">{table.name}</span>
-                    {isHeld ? <span className="text-xs font-bold">{t('tableHeld')}</span>
-                      : order && Number(order.total) > 0 && <span className="max-w-full truncate text-sm font-bold">{fmt(Number(order.total))}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <FloorPlanCanvas floor={floor} tables={planTables} onPick={handleClick} isHeld={(id) => heldOrders.hasHeldOrder(id)}
+            selectedId={selectedTableId} heldLabel={t('tableHeld')} />
         )}
 
         <div className="grid grid-cols-3 gap-3">

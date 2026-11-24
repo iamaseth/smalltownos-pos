@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowLeftRight, Flame, Gift, NotebookPen, Percent, Plus, Replace, Search, Trash2, X } from 'lucide-react';
+import { ArrowLeftRight, Flame, Gift, List, MapPinned, NotebookPen, Percent, Plus, Replace, Search, Trash2, X } from 'lucide-react';
+import { FloorPlanCanvas, planTone } from '@/components/tables/FloorPlanCanvas';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import type { Order, OrderItem, Product, Table } from '@/lib/types';
@@ -28,7 +29,7 @@ function Shell({ title, subtitle, onClose, children, wide = false }: { title: st
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}
-        className={`dark max-h-[92vh] w-full ${wide ? 'max-w-3xl' : 'max-w-md'} overflow-y-auto rounded-2xl border-2 border-neutral-700 bg-neutral-950 p-5 text-white`}>
+        className={`dark max-h-[94vh] w-full ${wide ? 'max-w-5xl' : 'max-w-md'} overflow-y-auto rounded-2xl border-2 border-neutral-700 bg-neutral-950 p-5 text-white`}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="truncate text-2xl font-black">{title}</h2>
@@ -187,11 +188,6 @@ export function ChangeItemDialog({ item, onChange, onClose }: {
   );
 }
 
-const tableTone: Record<string, string> = {
-  available: 'border-emerald-500 bg-emerald-950 text-emerald-50',
-  occupied: 'border-orange-500 bg-orange-950 text-orange-50',
-};
-
 export function MoveItemsDialog({ order, items, currentTableId, tables, initialIds, onMove, onClose }: {
   order: Order; items: OrderItem[]; currentTableId: string; tables: Table[]; initialIds: number[];
   onMove: (itemIds: number[], target: Table) => Promise<void>; onClose: () => void;
@@ -202,6 +198,13 @@ export function MoveItemsDialog({ order, items, currentTableId, tables, initialI
   const toggle = (id: number) => setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   const all = selected.length === items.length;
   const targets = tables.filter((tb) => tb.id !== currentTableId && tb.is_active !== false && ['available', 'occupied'].includes(tb.status));
+  const placed = (tb: Table) => tb.position_x != null && tb.position_y != null;
+  const hasPlan = tables.some(placed);
+  const [view, setView] = useState<'plan' | 'list'>(hasPlan ? 'plan' : 'list');
+  const floors = [...new Set(tables.filter(placed).map((tb) => tb.floor || ''))];
+  const [floor, setFloor] = useState<string>(() => tables.find((tb) => tb.id === currentTableId)?.floor || floors[0] || '');
+  const planTables = tables.filter((tb) => placed(tb) && (tb.floor || '') === floor);
+  const canTarget = (tb: Table) => targets.some((x) => x.id === tb.id);
   const sections = [...new Set(targets.map((tb) => tb.section?.trim() || ''))].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)));
   const move = async (target: Table) => {
     if (selected.length === 0) return;
@@ -227,24 +230,48 @@ export function MoveItemsDialog({ order, items, currentTableId, tables, initialI
           );
         })}
       </div>
-      <p className="mt-5 mb-2 text-sm font-bold uppercase tracking-wide text-neutral-300">2. To which table?</p>
-      {selected.length === 0 && <p className="text-sm text-amber-300">Tick at least one item first.</p>}
-      <div className="space-y-3">
-        {sections.map((sec) => (
-          <div key={sec || '__none__'}>
-            {sec && <p className="mb-1 text-sm font-bold text-neutral-400">{sec}</p>}
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-              {targets.filter((tb) => (tb.section?.trim() || '') === sec).map((tb) => (
-                <button key={tb.id} type="button" disabled={busy || selected.length === 0} onClick={() => move(tb)}
-                  className={`flex h-16 flex-col items-center justify-center rounded-xl border-[3px] text-lg font-black disabled:opacity-40 ${tableTone[tb.status] || tableTone.available}`}>
-                  {tb.name}
-                  {tb.status === 'occupied' && <span className="text-xs font-bold">add to bill</span>}
-                </button>
+      <div className="mt-5 mb-2 flex items-center justify-between gap-2">
+        <p className="text-sm font-bold uppercase tracking-wide text-neutral-300">2. Tap the new table</p>
+        {hasPlan && (
+          <div className="flex rounded-xl border border-neutral-600 p-1">
+            <button type="button" aria-pressed={view === 'plan'} onClick={() => setView('plan')} className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-bold ${view === 'plan' ? 'bg-blue-600 text-white' : 'text-neutral-300'}`}><MapPinned size={16} />Floor plan</button>
+            <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')} className={`flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-bold ${view === 'list' ? 'bg-blue-600 text-white' : 'text-neutral-300'}`}><List size={16} />List</button>
+          </div>
+        )}
+      </div>
+      {selected.length === 0 && <p className="mb-2 text-sm text-amber-300">Tick at least one item first.</p>}
+      {view === 'plan' && hasPlan ? (
+        <>
+          {floors.length > 1 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {floors.map((f) => (
+                <button key={f || '__none__'} type="button" onClick={() => setFloor(f)}
+                  className={`h-10 rounded-full border-2 px-4 text-sm font-bold ${f === floor ? 'border-blue-500 bg-blue-600 text-white' : 'border-neutral-600'}`}>{f || 'Floor'}</button>
               ))}
             </div>
-          </div>
-        ))}
-      </div>
+          )}
+          <FloorPlanCanvas floor={floor} tables={planTables} testIdPrefix="move-table" reservedHeight="18rem"
+            isDisabled={(tb) => busy || selected.length === 0 || !canTarget(tb)} selectedId={currentTableId} onPick={(tb) => { void move(tb); }} />
+          <p className="text-center text-sm text-neutral-400">Green = free (new bill) · Orange = busy (added to its bill) · Ringed = this table</p>
+        </>
+      ) : (
+        <div className="space-y-3">
+          {sections.map((sec) => (
+            <div key={sec || '__none__'}>
+              {sec && <p className="mb-1 text-sm font-bold text-neutral-400">{sec}</p>}
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                {targets.filter((tb) => (tb.section?.trim() || '') === sec).map((tb) => (
+                  <button key={tb.id} type="button" disabled={busy || selected.length === 0} onClick={() => move(tb)}
+                    className={`flex h-16 flex-col items-center justify-center rounded-xl border-[3px] text-lg font-black disabled:opacity-40 ${planTone[tb.status] || planTone.available}`}>
+                    {tb.name}
+                    {tb.status === 'occupied' && <span className="text-xs font-bold">add to bill</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </Shell>
   );
 }
