@@ -172,6 +172,22 @@ async function main() {
   assertOrThrow(!zLines.some((l: string) => l.includes('Table list') || l.includes('Angkor Beer')), 'Z-report omits ticket and item detail');
   if (process.env.SHIFT_REPORT_PRINT) console.log(`${zLines.join('\n')}\n`);
 
+  console.log('Section 3b: cashier receipt layout');
+  const cashierReceipt = require('../shared/print/cashier-receipt');
+  const zRows = cashierReceipt.cashierShiftRows(z, 'Asia/Phnom_Penh', { printedBy: 'Thida' });
+  assertOrThrow(zRows.some((r: any) => r.kind === 'big' && r.left === 'SALES' && r.right === '$69.00'), 'cashier Z shows sales big');
+  assertOrThrow(zRows.some((r: any) => r.kind === 'result' && r.right === 'MATCHED'), 'cashier Z shows the cash result boxed as MATCHED');
+  assertOrThrow(zRows.some((r: any) => r.kind === 'section' && r.left === 'HOW CUSTOMERS PAID'), 'cashier Z groups how customers paid');
+  assertOrThrow(!zRows.some((r: any) => /Register|Duration|Tables served|Telegram/.test(r.left)), 'cashier Z drops register, duration, tables and Telegram lines');
+  assertOrThrow(zRows.some((r: any) => r.kind === 'footer' && r.left.includes('by Thida')), 'cashier Z says who printed it');
+  for (const width of [42, 32]) {
+    const cl: string[] = cashierReceipt.rowsToText(zRows, width);
+    assertOrThrow(Math.max(...cl.map((l: string) => displayCellWidth(l))) <= width, `cashier Z text fits ${width} columns`);
+  }
+  const zText = cashierReceipt.rowsToText(zRows, 42);
+  assertOrThrow(zText.length <= 45, `cashier Z is short (${zText.length} lines)`);
+  if (process.env.SHIFT_REPORT_PRINT) console.log(`${zText.join('\n')}\n`);
+
   console.log('Section 4: daily sales report');
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Phnom_Penh' }).format(new Date());
   const dayCashier = await request(app).get(`/api/reports/daily-report?date=${today}`).set('Authorization', C);
@@ -187,6 +203,10 @@ async function main() {
   assertOrThrow(Math.max(...dLines.map((l: string) => displayCellWidth(l))) <= 42, 'daily report fits 42 columns');
   assertOrThrow(dLines.length <= 65, `normal daily report stays compact (${dLines.length} lines)`);
   assertOrThrow(!dLines.some((l: string) => l.includes('CATEGORIES') || l.includes('TOP ITEMS') || l.includes('TABLES (day)')), 'daily receipt omits detail available in separate prints');
+  const dayRows = cashierReceipt.cashierDayRows(day.body, 'Asia/Phnom_Penh', {});
+  assertOrThrow(dayRows.some((r: any) => r.kind === 'section' && r.left === 'SHIFTS') && dayRows.some((r: any) => r.kind === 'note' && r.left.includes('matched')), 'cashier day print lists each shift with its cash result');
+  const listText: string[] = cashierReceipt.rowsToText(cashierReceipt.paymentsRows('BackStreet', 'Day · Thida · 25 Nov', day.body.payments, '25 Nov 16:20'), 32);
+  assertOrThrow(listText.some((l) => l.includes('PAYMENTS')) && Math.max(...listText.map((l) => displayCellWidth(l))) <= 32, 'payments tab print fits 58 mm');
   const bad = await request(app).get(`/api/reports/daily-report?date=nope`).set('Authorization', tok('owner-r', 'owner'));
   assertEqualOrThrow(bad.status, 400, 'bad date rejected');
   const missing = await request(app).get(`/api/reports/shift-report?session_id=99999`).set('Authorization', C);

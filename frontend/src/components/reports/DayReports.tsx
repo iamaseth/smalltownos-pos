@@ -48,7 +48,7 @@ export function DayReports({ view, canSendTelegram }: { view: DayView; canSendTe
             className="h-10 rounded-xl border-2 border-border bg-card px-2 text-foreground" />
         </label>
         <span className="flex-1" />
-        {view !== 'shifts' && <ReportOutputButtons target={{ kind: 'daily', date }} telegram={canSendTelegram} />}
+        {view !== 'shifts' && <ReportOutputButtons detailed target={{ kind: 'daily', date }} telegram={canSendTelegram} />}
       </div>
 
       {loading ? (
@@ -112,7 +112,7 @@ export function DayReports({ view, canSendTelegram }: { view: DayView; canSendTe
                       <td className="py-2 text-end">{s.orders}</td>
                       <td className="py-2 text-end font-semibold">{usd(s.netCents)}</td>
                       <td className="py-2 text-end">{s.varianceUsdCents == null ? '—' : `${usd(s.varianceUsdCents)} · ${khr(s.varianceKhrRiel ?? 0)}`}</td>
-                      <td className="py-2 ps-4"><ReportOutputButtons target={{ kind: 'shift', sessionId: s.id }} size="sm" telegram={canSendTelegram} /></td>
+                      <td className="py-2 ps-4"><ReportOutputButtons detailed target={{ kind: 'shift', sessionId: s.id }} size="sm" telegram={canSendTelegram} /></td>
                     </tr>
                   ))}</tbody>
                 </table></div>

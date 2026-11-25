@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { ArrowLeftRight, CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, Lock, LockOpen, Moon, Printer, Search, Send, Sun, TriangleAlert } from 'lucide-react';
 import api from '@/lib/api';
-import { usd, khr, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ReportSales } from '@print/shift-report-text';
-import { printReportReceipt, printSummaryReceipt, sendReportTelegram } from '@/lib/printer/shift-report-print';
+import { usd, khr, type ReportAdjustmentRow, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ReportSales } from '@print/shift-report-text';
+import { adjustmentRows, itemsSoldRows, paymentsRows, splitAdjustments, ticketsRows, type ReceiptRow } from '@print/cashier-receipt';
+import { printReceiptRows, printReportReceipt, sendReportTelegram } from '@/lib/printer/shift-report-print';
 import { OrderList } from './OrderList';
 import { CashCloseModal } from '@/components/dashboard/CashCloseModal';
 import { useCashClose } from '@/hooks/useCashClose';
@@ -16,7 +17,7 @@ import { useAuthStore } from '@/store/auth';
 import { clock } from './DayReports';
 
 type Period = 'today' | 'week' | 'month';
-type Tab = 'summary' | 'items' | 'tickets' | 'payments';
+type Tab = 'summary' | 'items' | 'tickets' | 'payments' | 'deleted' | 'free';
 
 interface Shift { id: number; cashier: string; openedAt: string; closedAt: string | null; open: boolean; part: 'day' | 'night'; varianceUsdCents?: number | null; varianceKhrRiel?: number | null }
 interface CashierReport {
@@ -28,6 +29,7 @@ interface CashierReport {
   items: ReportQtyRow[];
   tickets: ReportOrderRow[];
   unpaid: { count: number; totalCents: number; labels: string[] };
+  adjustments?: ReportAdjustmentRow[];
   cash: { openingUsdCents: number; expectedUsdCents: number; countedUsdCents: number | null; differenceUsdCents: number | null; openingKhrRiel: number; expectedKhrRiel: number; countedKhrRiel: number | null; differenceKhrRiel: number | null; shiftsCounted: number; shiftsTotal: number };
 }
 
@@ -72,15 +74,12 @@ const PART = {
 const ALL = { color: '#3B6D11', soft: '#EAF3DE', ink: '#27500A' };
 const TABS: { key: Tab; label: string }[] = [
   { key: 'summary', label: 'Summary' }, { key: 'items', label: 'Items sold' }, { key: 'tickets', label: 'Tickets' }, { key: 'payments', label: 'Payments' },
+  { key: 'deleted', label: 'Deleted' }, { key: 'free', label: 'Free' },
 ];
 
 const card = 'rounded-2xl bg-muted/60 p-4';
 const rowCls = 'flex items-baseline justify-between gap-3 border-b border-border py-2.5 text-base';
 
-function lr(w: number, left: string, right: string): string {
-  const gap = w - left.length - right.length;
-  return gap >= 1 ? left + ' '.repeat(gap) + right : `${left.slice(0, Math.max(0, w - right.length - 1))} ${right}`;
-}
 
 function CountNote({ shift }: { shift: Shift }) {
   if (shift.varianceUsdCents == null) return null;
@@ -139,20 +138,49 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
     ? (sessionId != null ? `Shift #${sessionId}` : `Day ${start}`)
     : `${period === 'week' ? 'Week' : 'Month'} ${start} to ${end}`;
 
+  const adjustments = splitAdjustments(data?.adjustments ?? []);
+  /** "Day · bobo · 25 Nov", "Wed 25 Nov (all day)" or "Week 16 – 22 Nov": what this print covers. */
+  const scope = (() => {
+    if (period !== 'today') return rangeLabel(period, start, end);
+    const s = sessionId != null ? data?.shifts.find((x) => x.id === sessionId) : null;
+    const day = parse(start).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    return s ? `${PART[s.part].label} · ${s.cashier} · ${day}` : `${day} · all day`;
+  })();
+
   const print = async () => {
     if (!data) return;
     setBusy('print');
     try {
-      if (period === 'today') await printReportReceipt(sessionId != null ? { kind: 'shift', sessionId } : { kind: 'daily', date: start });
+      const stamp = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+      const biz = currentTenant?.business_name || 'BackStreet';
+      let rows: ReceiptRow[] | null = null;
+      if (tab === 'items') rows = itemsSoldRows(biz, scope, items, stamp);
+      else if (tab === 'tickets') rows = ticketsRows(biz, scope, data.tickets, tz, stamp);
+      else if (tab === 'payments') rows = paymentsRows(biz, scope, data.payments, stamp);
+      else if (tab === 'deleted') rows = adjustmentRows(biz, scope, 'deleted', adjustments.deleted, tz, stamp);
+      else if (tab === 'free') rows = adjustmentRows(biz, scope, 'free', adjustments.free, tz, stamp);
+      if (rows) await printReceiptRows(`${TABS.find((t) => t.key === tab)?.label ?? 'Report'} ${scope}`, rows);
+      else if (period === 'today') await printReportReceipt(sessionId != null ? { kind: 'shift', sessionId } : { kind: 'daily', date: start });
       else {
-        await printSummaryReceipt(title, (w) => [
-          'SALES SUMMARY', title, '-'.repeat(w),
-          lr(w, 'Total sales', usd(data.sales.netCents)), lr(w, 'Orders', String(data.sales.orders)),
-          lr(w, 'Discounts', usd(-data.sales.discountCents)), lr(w, 'Refunds', usd(-data.sales.refundCents)), lr(w, 'Voids', String(data.sales.voidCount)),
-          '-'.repeat(w), 'PAYMENTS',
-          ...data.payments.map((p) => lr(w, `${p.label} (${p.count})`, p.khrRiel ? `${usd(p.usdCents)} + ${khr(p.khrRiel)}` : usd(p.usdCents))),
-          '-'.repeat(w), 'DAYS',
-          ...data.days.filter((d) => d.orders > 0).map((d) => lr(w, `${parse(d.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} (${d.orders})`, usd(d.netCents))),
+        await printReceiptRows(title, [
+          { kind: 'title', left: biz.toUpperCase() },
+          { kind: 'heading', left: period === 'week' ? 'WEEK REPORT' : 'MONTH REPORT' },
+          { kind: 'sub', left: scope },
+          { kind: 'rule', left: '' },
+          { kind: 'big', left: 'SALES', right: usd(data.sales.netCents) },
+          { kind: 'line', left: 'Orders', right: String(data.sales.orders) },
+          ...(data.sales.discountCents ? [{ kind: 'line' as const, left: 'Discounts', right: usd(-data.sales.discountCents) }] : []),
+          ...(data.sales.refundCents ? [{ kind: 'line' as const, left: 'Refunds', right: usd(-data.sales.refundCents) }] : []),
+          { kind: 'rule', left: '' },
+          { kind: 'section', left: 'HOW CUSTOMERS PAID' },
+          ...data.payments.map((p) => ({ kind: 'line' as const, left: `${p.label} (${p.count})`, right: p.khrRiel ? `${usd(p.usdCents)} + ${khr(p.khrRiel)}` : usd(p.usdCents) })),
+          { kind: 'rule', left: '' },
+          { kind: 'section', left: 'DAYS' },
+          ...data.days.filter((d) => d.orders > 0).map((d) => ({ kind: 'line' as const, left: `${parse(d.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} (${d.orders})`, right: usd(d.netCents) })),
+          { kind: 'rule', left: '' },
+          { kind: 'line', left: `Deleted (${data.sales.voidCount})`, right: usd(data.sales.voidCents) },
+          { kind: 'line', left: `Free (${data.sales.compCount})`, right: usd(data.sales.compCents) },
+          { kind: 'footer', left: `Printed ${stamp}` },
         ]);
       }
       toast.success('Sent to the receipt printer');
@@ -377,10 +405,35 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
             </div>
           )}
 
+          {(tab === 'deleted' || tab === 'free') && (
+            <div className="max-w-2xl">
+              {(tab === 'deleted' ? adjustments.deleted : adjustments.free).map((a, i) => (
+                <div key={`${a.at}-${i}`} className="border-b border-border py-2.5">
+                  <div className="flex justify-between gap-3 text-base">
+                    <span><span className="tabular-nums text-muted-foreground">{clock(a.at, tz)}</span> · <b>{a.label}</b> · {a.qty > 1 ? `${a.qty}× ` : ''}{a.product}</span>
+                    <span className="font-bold tabular-nums">{usd(a.amountCents)}</span>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {tab === 'free' && a.reasonLabel ? `${a.reasonLabel} · ` : ''}asked by {a.requestedBy || '—'}{a.approvedBy ? ` · approved by ${a.approvedBy}` : ''}{a.note ? ` · ${a.note}` : ''}
+                  </div>
+                </div>
+              ))}
+              {(tab === 'deleted' ? adjustments.deleted : adjustments.free).length === 0 && (
+                <p className="py-6 text-center text-muted-foreground">{tab === 'deleted' ? 'Nothing deleted' : 'Nothing given free'}</p>
+              )}
+              {(tab === 'deleted' ? adjustments.deleted : adjustments.free).length > 0 && (
+                <div className={`${rowCls} text-lg font-black`}>
+                  <span>Total</span>
+                  <span className="tabular-nums">{usd((tab === 'deleted' ? adjustments.deleted : adjustments.free).reduce((n, a) => n + a.amountCents, 0))}</span>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3 pt-2">
             <button type="button" disabled={busy !== null} onClick={print}
               style={{ backgroundColor: '#185FA5', color: '#ffffff' }}
-              className="flex h-14 items-center gap-2 rounded-xl px-7 text-lg font-black disabled:opacity-50"><Printer size={22} />{busy === 'print' ? 'Printing…' : 'PRINT'}</button>
+              className="flex h-14 items-center gap-2 rounded-xl px-7 text-lg font-black disabled:opacity-50"><Printer size={22} />{busy === 'print' ? 'Printing…' : tab === 'summary' ? 'PRINT' : `PRINT ${TABS.find((t) => t.key === tab)?.label.toUpperCase()}`}</button>
             {canTelegram && period === 'today' && (
               <button type="button" disabled={busy !== null} onClick={telegram}
                 style={{ backgroundColor: '#3B6D11', color: '#ffffff' }}
