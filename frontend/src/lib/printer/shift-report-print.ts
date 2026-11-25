@@ -118,7 +118,9 @@ export function receiptRowsHtml(rows: ReceiptRow[], label: string): string {
 <style>
 html,body{margin:0;padding:0;display:block;color:#000}
 body{font-family:Arial,Helvetica,sans-serif;font-weight:700;font-size:15px;line-height:1.35}
-.receipt-report{margin:0;padding:0 1.5mm}
+.receipt-report{margin:0;padding:0 3mm;box-sizing:border-box;width:100%}
+.receipt-line{min-width:0}
+.receipt-line span:first-child{overflow-wrap:anywhere}
 .receipt-line{display:flex;justify-content:space-between;gap:6px;min-height:1.35em}
 .receipt-line span:last-child{text-align:right;white-space:nowrap}
 .r-title{justify-content:center;font-size:20px;font-weight:900;letter-spacing:.04em}

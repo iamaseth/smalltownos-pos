@@ -147,7 +147,7 @@ function paginateReceiptReport(doc: Document, options: FramePrintOptions): void 
       .receipt-page:last-child { break-after: auto; page-break-after: auto; }
       .receipt-page-header, .receipt-page-footer { font: 10px/1.25 'Courier New', monospace; white-space: nowrap; }
       .receipt-page-content { margin: 0; padding: 0; font: 12px/1.25 'Courier New', monospace; white-space: pre; }
-      .receipt-report[data-rich="1"] .receipt-page-content { font: inherit; white-space: normal; }
+      .receipt-report[data-rich="1"] .receipt-page-content { font: inherit; white-space: normal; padding: 0 3mm; }
       .receipt-page-footer { text-align: right; }
     }
   `;
