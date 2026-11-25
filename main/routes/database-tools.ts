@@ -67,6 +67,23 @@ router.post('/backups/:fileName/delete', requirePermission('database.manage'), r
   }
 });
 
+// Downloads one backup file from the managed backups directory to the owner's computer, so a
+// copy can be kept off the server. Protected by Master PIN like delete.
+router.post('/backups/:fileName/download', requirePermission('database.manage'), requireMasterPin, (req: Request, res: Response) => {
+  try {
+    const fileName = String(req.params.fileName || '');
+    if (!/^flo-backup-[\w.-]+\.db$/.test(fileName)) return res.status(400).json({ error: 'Invalid backup file name' });
+    const backup = listBackups().find((b) => b.fileName === fileName);
+    if (!backup) return res.status(404).json({ error: 'Backup not found' });
+    res.download(backup.path, fileName, (error) => {
+      if (error && !res.headersSent) res.status(500).json({ error: 'Download failed' });
+    });
+  } catch (error: unknown) {
+    console.error('[DB Tools] download backup error:', error);
+    res.status(500).json({ error: 'Download failed' });
+  }
+});
+
 router.get('/master-pin/status', requirePermission('database.manage'), (_req: Request, res: Response) => {
   res.json({ available: isMasterPinAvailable(), isSet: isMasterPinSet(), schemaVersion: getCurrentSchemaVersion() });
 });

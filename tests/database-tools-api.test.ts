@@ -799,6 +799,18 @@ async function runTests() {
     const list = await request(app).get('/api/db-tools/backups').set('Authorization', `Bearer ${ownerToken}`);
     const fileName = list.body.backups[0]?.fileName;
     assert(typeof fileName === 'string', 'a backup exists to delete');
+    const badDownload = await request(app).post('/api/db-tools/backups/not-a-backup.txt/download')
+      .set('Authorization', `Bearer ${ownerToken}`).send({ master_pin: '1234' });
+    assert(badDownload.status === 400, `download with an invalid backup name returns 400 (got ${badDownload.status})`);
+    const wrongPinDownload = await request(app).post(`/api/db-tools/backups/${encodeURIComponent(fileName)}/download`)
+      .set('Authorization', `Bearer ${ownerToken}`).send({ master_pin: '0000' });
+    assert(wrongPinDownload.status >= 400 && wrongPinDownload.status < 500, `download with a wrong Master PIN is refused (got ${wrongPinDownload.status})`);
+    const okDownload = await request(app).post(`/api/db-tools/backups/${encodeURIComponent(fileName)}/download`)
+      .set('Authorization', `Bearer ${ownerToken}`).send({ master_pin: '1234' }).buffer(true)
+      .parse((r: any, cb: any) => { const parts: Buffer[] = []; r.on('data', (c: Buffer) => parts.push(c)); r.on('end', () => cb(null, Buffer.concat(parts))); });
+    assert(okDownload.status === 200 && Buffer.isBuffer(okDownload.body) && okDownload.body.subarray(0, 15).toString() === 'SQLite format 3',
+      `downloading a backup returns the database file (got ${okDownload.status})`);
+    assert(String(okDownload.headers['content-disposition'] || '').includes(fileName), 'the download keeps the backup file name');
     const okDelete = await request(app).post(`/api/db-tools/backups/${encodeURIComponent(fileName)}/delete`)
       .set('Authorization', `Bearer ${ownerToken}`).send({ master_pin: '1234' });
     assert(okDelete.status === 200, `deleting an existing backup returns 200 (got ${okDelete.status})`);
