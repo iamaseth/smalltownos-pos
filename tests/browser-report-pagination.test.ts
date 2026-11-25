@@ -19,6 +19,7 @@ assert.deepEqual(short, [lines.slice(0, 4)], 'short reports remain one page');
 const source = fs.readFileSync(path.resolve('frontend/src/lib/printer/frame-print.ts'), 'utf8');
 assert.match(source, /getBoundingClientRect\(\)\.height/, 'page capacity uses rendered measurements');
 assert.match(source, /pageLength - 8/, 'fixed pages reserve eight millimetres for page furniture');
+assert.match(source, /padding: 1mm 0/, 'each fixed page keeps its header and footer clear of the cutter edge');
 assert.ok(source.includes('margin: 0 !important; padding: 0 !important; display: block !important;'), 'fixed pages remove margin, padding, and flex centering');
 assert.match(source, /break-after: page/, 'receipt report pages force physical page breaks');
 

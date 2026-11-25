@@ -100,7 +100,7 @@ function paginateReceiptReport(doc: Document, options: FramePrintOptions): void 
     @media print {
       html, body { width: ${paperWidth}mm !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; display: block !important; }
       .receipt-report { margin: 0 !important; padding: 0 !important; }
-      .receipt-page { box-sizing: border-box; width: ${paperWidth}mm; height: ${pageLength}mm; margin: 0; padding: 0; break-after: page; page-break-after: always; overflow: hidden; }
+      .receipt-page { box-sizing: border-box; width: ${paperWidth}mm; height: ${pageLength}mm; margin: 0; padding: 1mm 0; break-after: page; page-break-after: always; overflow: hidden; }
       .receipt-page:last-child { break-after: auto; page-break-after: auto; }
       .receipt-page-header, .receipt-page-footer { font: 10px/1.25 'Courier New', monospace; white-space: nowrap; }
       .receipt-page-content { margin: 0; padding: 0; font: 12px/1.25 'Courier New', monospace; white-space: pre; }
