@@ -70,6 +70,15 @@ const SUB_PALETTE = [
   { edge: '#5F5E5A', soft: '#F1EFE8', ink: '#2C2C2A' },
   { edge: '#0C447C', soft: '#B5D4F4', ink: '#042C53' },
 ] as const;
+// Pastel version of a category's own colour: light fill, colour border, dark text.
+function mixHex(hex: string, target: number, amount: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(c => Math.round(c + (target - c) * amount));
+  return `#${ch.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+}
+function pastelTone(hex: string) {
+  return { edge: hex, soft: mixHex(hex, 255, 0.84), ink: mixHex(hex, 0, 0.55) };
+}
 function spiritGroup(name: string): typeof SPIRIT_GROUPS[number] {
   const n = name.toLowerCase();
   if (/whisk(e)?y|bourbon|scotch|jack daniel|chivas|ballantine|glenfiddich|jameson|jim beam|johnnie walker|fireball/.test(n)) return 'Whiskey';
@@ -342,7 +351,7 @@ export default function ProductGrid({
   });
 
   const searchPill = searchOpen && (
-    <div data-testid="pos-search-pill" className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border-2 border-blue-500 bg-card ps-2.5 pe-1 text-foreground">
+    <div data-testid="pos-search-pill" className="flex h-12 shrink-0 items-center gap-1.5 rounded-xl border-2 border-blue-500 bg-card ps-2.5 pe-1 text-foreground">
       <Search size={16} className="shrink-0 text-muted-foreground" />
       <input
         ref={searchInputRef}
@@ -377,14 +386,15 @@ export default function ProductGrid({
             {showMenuPhotos ? 'Compact cards' : 'Show photos'}
           </button>}
         </div>
-        <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto py-1 mb-1">
+        <nav aria-label="Menu categories" className="flex flex-wrap gap-1.5 py-0.5 mb-1">
           {searchPill}
           <button type="button" aria-pressed={favoritesOnly}
             onClick={() => { closeSearch(); setFavoritesOnly(!favoritesOnly); setSelectedCategory(null); setSelectedSubcategory(null); setArranging(false); }}
-            className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white ${favoritesOnly ? 'ring-2 ring-white' : ''}`}
-            style={{ backgroundColor: '#CA8A04' }}><Star size={16} className="inline me-1" />FAV</button>
+            className="inline-flex h-12 flex-auto items-center justify-center gap-1.5 rounded-xl border-2 px-3 text-base font-extrabold uppercase transition-transform active:scale-95"
+            style={(() => { const t = pastelTone('#CA8A04'); return { borderColor: t.edge, backgroundColor: favoritesOnly ? t.edge : t.soft, color: favoritesOnly ? '#ffffff' : t.ink }; })()}><Star size={18} />FAV</button>
           {visibleCategories.map(cat => {
             const selected = !favoritesOnly && selectedCategory === cat.id && scoped;
+            const tone = pastelTone(categoryColor(cat.color));
             return <button key={cat.id} type="button" aria-pressed={selected}
               onClick={() => {
                 setFavoritesOnly(false);
@@ -393,8 +403,8 @@ export default function ProductGrid({
                 if (searching) setSearchScoped(!selected);
                 setArranging(false);
               }}
-              className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white transition-[filter,transform] active:scale-95 ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17]' : 'hover:brightness-110'}`}
-              style={{ backgroundColor: categoryColor(cat.color) }}><span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="text-base leading-none">{cat.icon || '▦'}</span>{cat.name}</span></button>;
+              className={`inline-flex h-12 flex-auto items-center justify-center gap-1.5 rounded-xl border-2 px-3 text-base font-extrabold uppercase transition-[filter,transform] active:scale-95 ${selected ? 'shadow-md' : 'hover:brightness-95'}`}
+              style={{ borderColor: tone.edge, backgroundColor: selected ? tone.edge : tone.soft, color: selected ? '#ffffff' : tone.ink }}><span aria-hidden="true" className="text-xl leading-none">{cat.icon || '▦'}</span>{cat.name}</button>;
           })}
         </nav>
         {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && scoped && (
