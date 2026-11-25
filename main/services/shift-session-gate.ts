@@ -73,3 +73,24 @@ export function requireOpenSessionForCashTender(db: ReturnType<typeof getDatabas
     throw httpError('No open shift: open a shift before taking cash', 409);
   }
 }
+
+/** Error code returned with 409 when the owner requires an open shift and none is open. */
+export const NO_OPEN_SHIFT_CODE = 'no_open_shift';
+
+/** True when the owner turned on "Require an open shift" (Settings → Payment methods). */
+export function isShiftRequired(): boolean {
+  return getSettingValue('require_open_shift') === 'true';
+}
+
+/**
+ * No floating tickets: when the owner requires an open shift, every new order,
+ * added item and payment (any tender, not only cash) needs an open shift, so each
+ * ticket belongs to a logged-in staff member and a shift. Refunds and drawer
+ * movements keep the cash-only gate above.
+ */
+export function requireOpenSessionForSale(db: ReturnType<typeof getDatabase>, action: 'orders' | 'payments'): void {
+  if (!isShiftRequired()) return;
+  if (!getOpenSession(db)) {
+    throw Object.assign(new Error(`No open shift: open a shift before taking ${action}`), { statusCode: 409, code: NO_OPEN_SHIFT_CODE });
+  }
+}

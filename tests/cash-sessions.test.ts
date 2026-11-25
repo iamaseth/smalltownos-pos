@@ -227,12 +227,12 @@ async function main() {
   const billBatchCard = seedUnpaidBill('batch-card');
   const batchCard = await request(app).post(`/api/bills/${billBatchCard}/payments`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 50 }] });
-  assert(batchCard.status === 200, 'enforcement on: card batch payment without a session works (200)');
+  assert(batchCard.status === 409, 'enforcement on: card batch payment without a session is 409 (no floating tickets)');
 
   const billCard = seedUnpaidBill('card');
   const cardOn = await request(app).post(`/api/bills/${billCard}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'card', amount: 50 });
-  assert(cardOn.status === 200, 'enforcement on: non-cash payment without a session works (200)');
+  assert(cardOn.status === 409, 'enforcement on: non-cash payment without a session is 409 (no floating tickets)');
 
   const movBlocked = await request(app).post('/api/cash-closures/movements')
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -245,6 +245,12 @@ async function main() {
   const batchPaidLate = await request(app).post(`/api/bills/${billBatch}/payments`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 25 }, { method: 'cash', amount: 25 }] });
   assert(batchPaidLate.status === 200, 'blocked cash batch pays once enforcement is off (200)');
+  const batchCardLate = await request(app).post(`/api/bills/${billBatchCard}/payments`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 50 }] });
+  assert(batchCardLate.status === 200, 'blocked card batch pays once enforcement is off (200)');
+  const cardLate = await request(app).post(`/api/bills/${billCard}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'card', amount: 50 });
+  assert(cardLate.status === 200, 'blocked card payment pays once enforcement is off (200)');
 
   const replaySession = await request(app).post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
@@ -633,8 +639,11 @@ async function main() {
 
   // Cash refunds leave the drawer: gated like cash payments. The gate fires
   // before PIN verification, so no PIN fixture is needed for the 409 path.
+  // Every tender is gated now (no floating tickets), so pay the fixture with enforcement briefly off.
+  db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();
   const rfPay = await request(app).post(`/api/bills/${ciBill}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'card', amount: 50 });
+  db.prepare(`UPDATE settings SET value = 'true' WHERE key = 'require_open_shift'`).run();
   assert(rfPay.status === 200, 'card payment for refund fixture (200)');
   const rfBillId = ciBill;
   const rfBlocked = await request(app).post('/api/refunds')

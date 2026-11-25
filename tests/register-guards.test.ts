@@ -1,6 +1,7 @@
 /**
  * Register guards: orders refuse products that are switched off or deleted, and
- * the owner can turn on the open-shift requirement for cash from settings.
+ * the owner can turn on the open-shift requirement: no orders or payments of any
+ * kind without an open shift (no floating tickets).
  *
  * Usage: node tests/run-electron-node-test.cjs tests/register-guards.test.ts
  */
@@ -22,6 +23,7 @@ const {
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { settingsRoutes } = require('../main/routes/settings');
+const { cashSessionRoutes } = require('../main/routes/cash-sessions');
 
 async function main() {
   const db = initTestDb();
@@ -33,7 +35,7 @@ async function main() {
   db.prepare('UPDATE products SET is_active = 0 WHERE id = ?').run('prod-off');
   db.prepare('UPDATE products SET deleted_at = ? WHERE id = ?').run(now(), 'prod-gone');
 
-  const app = createApp({ '/api/orders': orderRoutes, '/api/bills': billRoutes, '/api/settings': settingsRoutes });
+  const app = createApp({ '/api/orders': orderRoutes, '/api/bills': billRoutes, '/api/settings': settingsRoutes, '/api/cash-sessions': cashSessionRoutes });
   const { baseUrl, server } = await startServer(app);
   const orderCount = () => (db.prepare('SELECT COUNT(*) AS n FROM orders').get() as { n: number }).n;
   try {
@@ -66,8 +68,33 @@ async function main() {
     const total = Number(bill.data.bill.total);
     const cash = await api(baseUrl, `/api/bills/${billId}/payments`, { method: 'POST', headers: authHeader, body: { payments: [{ method: 'cash', amount: total }] } });
     assertEqualOrThrow(cash.status, 409, 'cash is refused with no open shift once the setting is on');
+    assertEqualOrThrow(cash.data.code, 'no_open_shift', 'refusal carries the no_open_shift code');
     const card = await api(baseUrl, `/api/bills/${billId}/payments`, { method: 'POST', headers: authHeader, body: { payments: [{ method: 'card', amount: total }] } });
-    assertEqualOrThrow(card.status, 200, 'card payments are not affected');
+    assertEqualOrThrow(card.status, 409, 'card payments are refused too with no open shift');
+    const unpaid = db.prepare('SELECT paid_amount FROM bills WHERE id = ?').get(billId) as { paid_amount: number };
+    assertEqualOrThrow(Number(unpaid.paid_amount), 0, 'refused payments leave the bill unpaid');
+
+    const gateClosed = await api(baseUrl, '/api/cash-sessions/gate', { headers: authHeader });
+    assertEqualOrThrow(gateClosed.status, 200, 'shift gate status is readable');
+    assertOrThrow(gateClosed.data.required === true && gateClosed.data.open === false, 'gate reports required and no open shift');
+
+    const ordersBefore = orderCount();
+    const blockedOrder = await api(baseUrl, '/api/orders', { method: 'POST', headers: authHeader, body: { type: 'takeaway', items: [{ product_id: 'prod-live', quantity: 1 }] } });
+    assertEqualOrThrow(blockedOrder.status, 409, 'no new ticket without an open shift');
+    assertEqualOrThrow(blockedOrder.data.code, 'no_open_shift', 'order refusal carries the no_open_shift code');
+    assertEqualOrThrow(orderCount(), ordersBefore, 'refused ticket leaves nothing behind');
+    const blockedAdd = await api(baseUrl, `/api/orders/${orderId}/items`, { method: 'POST', headers: authHeader, body: { items: [{ product_id: 'prod-live', quantity: 1 }] } });
+    assertEqualOrThrow(blockedAdd.status, 409, 'no items added to a ticket without an open shift');
+
+    const openedAt = now();
+    db.prepare(`INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status) VALUES (?, 'Owner', ?, 0, 'open')`)
+      .run((db.prepare(`SELECT id FROM users LIMIT 1`).get() as { id: string }).id, openedAt);
+    const gateOpen = await api(baseUrl, '/api/cash-sessions/gate', { headers: authHeader });
+    assertOrThrow(gateOpen.data.open === true && gateOpen.data.session?.opened_by_name === 'Owner', 'gate reports the open shift');
+    const allowedOrder = await api(baseUrl, '/api/orders', { method: 'POST', headers: authHeader, body: { type: 'takeaway', items: [{ product_id: 'prod-live', quantity: 1 }] } });
+    assertEqualOrThrow(allowedOrder.status, 201, 'tickets work once a shift is open');
+    const allowedCard = await api(baseUrl, `/api/bills/${billId}/payments`, { method: 'POST', headers: authHeader, body: { payments: [{ method: 'card', amount: total }] } });
+    assertEqualOrThrow(allowedCard.status, 200, 'card payments work once a shift is open');
 
     const turnOff = await api(baseUrl, '/api/settings/require_open_shift', { method: 'PUT', headers: authHeader, body: { value: 'false' } });
     assertEqualOrThrow(turnOff.status, 200, 'owner can turn the requirement off again');

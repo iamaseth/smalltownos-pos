@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { requireOpenSessionForSale } from '../services/shift-session-gate';
 import { Router, Request, Response } from 'express';
 import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate, recordOrderAudit, dayBoundsInTimezone, localDateInTimezone, tenantBusinessDayStartTime } from '../db';
 import { resolveRegionalSnapshot } from '../countries';
@@ -541,10 +542,24 @@ router.get('/:id', orderReadRateLimit, requirePermission('orders.read'), (req: R
   }
 });
 
+/** No floating tickets: 409 with code no_open_shift when a shift is required and none is open. */
+function blockedWithoutShift(res: Response): boolean {
+  try {
+    requireOpenSessionForSale(getDatabase(), 'orders');
+    return false;
+  } catch (error: unknown) {
+    const gateError = error as { statusCode?: number; message?: string; code?: string };
+    res.status(gateError.statusCode || 409).json({ error: gateError.message, code: gateError.code });
+    return true;
+  }
+}
+
 router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id, tab_name } = body;
+    // Orders from an online platform come from the integration, not a staff till.
+    if (!online_platform && blockedWithoutShift(res)) return;
     // Carries optional service charge without automatic calculation policy.
     const idempotencyKey = orderIdempotencyKey(req);
     const idempotencyUserId = String((req as any).user.userId);
@@ -842,6 +857,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
 });
 
 router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
+  if (blockedWithoutShift(res)) return;
   try {
     const db = getDatabase();
     const body = req.body || {};

@@ -20,7 +20,7 @@ import {
 import { requirePermission } from '../services/authorization';
 import { notifyTelegram } from '../services/telegram';
 import {
-  getOpenSession, type CashSessionRow,
+  getOpenSession, isShiftRequired, type CashSessionRow,
 } from '../services/shift-session-gate';
 import {
   computePeriodAggregates, sessionExpectedCash, sessionFinancialTotals,
@@ -237,6 +237,26 @@ export function openSessionTxn(db: ReturnType<typeof getDatabase>, openedBy: str
   }
   return db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId) as CashSessionRow;
 }
+
+/**
+ * Lightweight shift gate for every till and waiter device: is a shift required,
+ * and is one open? Only needs orders.create so waiters without cash permissions
+ * can show "Ask the cashier to open the shift" instead of failing on send.
+ */
+router.get('/gate', requirePermission('orders.create'), (_req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const session = getOpenSession(db);
+    res.json({
+      required: isShiftRequired(),
+      open: !!session,
+      session: session ? { id: session.id, opened_by_name: session.opened_by_name, opened_at: session.opened_at } : null,
+    });
+  } catch (error: unknown) {
+    const status = errorStatus(error);
+    res.status(status).json({ error: status >= 500 ? 'Failed to read shift status' : errorMessage(error, 'Failed to read shift status') });
+  }
+});
 
 router.get('/current', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
   try {
