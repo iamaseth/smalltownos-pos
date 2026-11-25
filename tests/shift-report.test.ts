@@ -169,6 +169,7 @@ async function main() {
   assertOrThrow(zLines.length <= 65, `normal Z-report stays compact (${zLines.length} lines)`);
   assertOrThrow(!zLines.some((l: string) => l.startsWith('Refunds (0)')), 'zero refunds are hidden');
   assertOrThrow(!zLines.some((l: string) => l.startsWith('Voided items (0)')), 'zero voids are hidden');
+  assertOrThrow(!zLines.some((l: string) => l.includes('Table list') || l.includes('Angkor Beer')), 'Z-report omits ticket and item detail');
   if (process.env.SHIFT_REPORT_PRINT) console.log(`${zLines.join('\n')}\n`);
 
   console.log('Section 4: daily sales report');
@@ -185,6 +186,7 @@ async function main() {
   const dLines = text.renderDailyReport(day.body, 42, 'Asia/Phnom_Penh');
   assertOrThrow(Math.max(...dLines.map((l: string) => displayCellWidth(l))) <= 42, 'daily report fits 42 columns');
   assertOrThrow(dLines.length <= 65, `normal daily report stays compact (${dLines.length} lines)`);
+  assertOrThrow(!dLines.some((l: string) => l.includes('CATEGORIES') || l.includes('TOP ITEMS') || l.includes('TABLES (day)')), 'daily receipt omits detail available in separate prints');
   const bad = await request(app).get(`/api/reports/daily-report?date=nope`).set('Authorization', tok('owner-r', 'owner'));
   assertEqualOrThrow(bad.status, 400, 'bad date rejected');
   const missing = await request(app).get(`/api/reports/shift-report?session_id=99999`).set('Authorization', C);
