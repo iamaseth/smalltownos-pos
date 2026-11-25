@@ -170,8 +170,8 @@ async function main() {
 
   console.log('Section 4: daily sales report');
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Phnom_Penh' }).format(new Date());
-  const dayDenied = await request(app).get(`/api/reports/daily-report?date=${today}`).set('Authorization', C);
-  assertEqualOrThrow(dayDenied.status, 403, 'cashier cannot open the daily report');
+  const dayCashier = await request(app).get(`/api/reports/daily-report?date=${today}`).set('Authorization', C);
+  assertEqualOrThrow(dayCashier.status, 200, 'cashier can open the daily report for printing');
   const day = await request(app).get(`/api/reports/daily-report?date=${today}`).set('Authorization', tok('owner-r', 'owner'));
   assertEqualOrThrow(day.status, 200, `owner reads the daily report (${day.body.error || ''})`);
   assertEqualOrThrow(day.body.shifts.length, 1, 'shift listed in the day');
@@ -185,6 +185,28 @@ async function main() {
   assertEqualOrThrow(bad.status, 400, 'bad date rejected');
   const missing = await request(app).get(`/api/reports/shift-report?session_id=99999`).set('Authorization', C);
   assertEqualOrThrow(missing.status, 404, 'unknown shift is 404');
+
+  console.log('Section 5: cashier reports page data');
+  const cDay = await request(app).get(`/api/reports/cashier?start_date=${today}&end_date=${today}`).set('Authorization', C);
+  assertEqualOrThrow(cDay.status, 200, `cashier reads the day (${cDay.body.error || ''})`);
+  assertEqualOrThrow(cDay.body.sales.netCents, day.body.sales.netCents, 'cashier day total matches the daily report');
+  assertEqualOrThrow(cDay.body.shifts.length, 1, 'the day lists its shift');
+  assertOrThrow(['day', 'night'].includes(cDay.body.shifts[0].part) && cDay.body.shifts[0].cashier === 'Thida', 'shift has a day/night label and cashier');
+  assertEqualOrThrow(cDay.body.tickets.length, 6, 'all tickets listed');
+  assertOrThrow(cDay.body.items.some((i: any) => i.label === 'Angkor Beer' && i.qty > 0), 'items sold listed with quantities');
+  assertEqualOrThrow(cDay.body.cash.openingUsdCents, 5000, 'opening float from the shift');
+  assertEqualOrThrow(cDay.body.cash.differenceUsdCents, 0, 'cash difference from the count');
+  assertOrThrow(!('canViewFinancials' in cDay.body) && JSON.stringify(cDay.body).indexOf('profit') === -1, 'no profit or cost in the cashier data');
+  const cShift = await request(app).get(`/api/reports/cashier?start_date=${today}&end_date=${today}&session_id=${sid}`).set('Authorization', C);
+  assertEqualOrThrow(cShift.body.sales.netCents, z.sales.netCents, 'one shift matches its Z-report');
+  assertEqualOrThrow(cShift.body.cash.countedUsdCents, z.cash.countedUsdCents, 'shift counted cash matches the Z-report');
+  const weekStart = new Date(`${today}T12:00:00Z`); weekStart.setUTCDate(weekStart.getUTCDate() - 6);
+  const cWeek = await request(app).get(`/api/reports/cashier?start_date=${weekStart.toISOString().slice(0, 10)}&end_date=${today}`).set('Authorization', C);
+  assertEqualOrThrow(cWeek.body.days.length, 7, 'a week lists 7 days');
+  assertEqualOrThrow(cWeek.body.sales.netCents, day.body.sales.netCents, 'week total equals the only trading day (no double counting)');
+  assertEqualOrThrow(cWeek.body.days.reduce((n: number, d: any) => n + d.netCents, 0), cWeek.body.sales.netCents, 'day rows add up to the week total');
+  const cBad = await request(app).get(`/api/reports/cashier?start_date=${today}&end_date=2000-01-01`).set('Authorization', C);
+  assertEqualOrThrow(cBad.status, 400, 'end before start rejected');
 
   console.log('='.repeat(50));
   console.log('All shift report checks passed');

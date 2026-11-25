@@ -42,11 +42,10 @@ function testSlipBytes(): Uint8Array {
   return Uint8Array.from(parts);
 }
 
-export default function PrintCenter() {
+export default function PrintCenter({ open, onOpenChange: setOpen }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { status, printMethod, setPrintMethod, connect, runtime, refreshHardwarePrinter, deviceInfo, lastError, printBill, printKot, currentTransport } = usePrinterStore();
   const tenant = useAuthStore((s) => s.currentTenant);
   const { failedCount, version, setFailed } = usePrintAlerts();
-  const [open, setOpen] = useState(false);
   const [failed, setFailedJobs] = useState<Job[]>([]);
   const [recent, setRecent] = useState<Job[]>([]);
   const [busy, setBusy] = useState(false);
@@ -59,6 +58,12 @@ export default function PrintCenter() {
       if (withRecent) setRecent((await api.get('/print-jobs/recent')).data.jobs || []);
     } catch { /* older server or no permission */ }
   }, [setFailed]);
+
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => { void loadJobs(true); }, 0);
+    return () => clearTimeout(timer);
+  }, [open, loadJobs]);
 
   useEffect(() => {
     void refreshHardwarePrinter();
@@ -143,11 +148,11 @@ export default function PrintCenter() {
 
   return (
     <div className="relative">
-      <button type="button" onClick={() => { setOpen((v) => !v); if (!open) void loadJobs(true); }}
+      {(failedCount > 0 || !(printMethod === 'browser' || usbConnected || transport === 'native')) && <button type="button" onClick={() => setOpen(!open)}
         className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 text-[11px] font-semibold ${tone}`} aria-expanded={open}>
         {failedCount > 0 ? <AlertTriangle size={15} /> : <Printer size={15} />}
         <span>{failedCount > 0 ? `${failedCount} not printed` : label}</span>
-      </button>
+      </button>}
       {open && (
         <>
           <button type="button" className="fixed inset-0 z-40 cursor-default" aria-label="Close printer panel" onClick={() => setOpen(false)} />

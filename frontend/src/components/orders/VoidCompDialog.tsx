@@ -49,7 +49,7 @@ export function VoidCompDialog({ order, itemId, action: initialAction, onClose, 
     try {
       const path = action === 'comp' ? `/orders/${order.id}/items/${item.id}/comp` : `/orders/${order.id}/items/${item.id}/cancel`;
       await api.patch(path, { reason, note: note.trim() || undefined, ...approval });
-      toast.success(action === 'comp' ? `${item.product_name} comped` : `${item.product_name} taken off the bill`);
+      toast.success(action === 'comp' ? `${item.product_name} is free` : `${item.product_name} deleted from the bill`);
       onDone();
     } catch (error) {
       toast.error(errorText(error, action === 'comp' ? 'Could not comp the item' : 'Could not remove the item'));
@@ -63,7 +63,6 @@ export function VoidCompDialog({ order, itemId, action: initialAction, onClose, 
   const allowanceLeft = config ? config.entertainerAllowance - config.entertainerUsedToday : 0;
   const withinAllowance = action === 'comp' && reason === 'entertainer' && config != null && config.entertainerAllowance > 0 && allowanceLeft >= Number(item?.quantity ?? 1);
   const ready = !!item && !!reason;
-  const notMade = item?.status === 'pending';
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -82,7 +81,7 @@ export function VoidCompDialog({ order, itemId, action: initialAction, onClose, 
             {choices.map((i) => (
               <button key={i.id} type="button" onClick={() => setSelectedId(i.id)} aria-pressed={selectedId === i.id}
                 className={`flex w-full justify-between rounded-lg border px-3 py-2 text-sm ${selectedId === i.id ? 'border-blue-600 bg-blue-50 dark:bg-blue-950' : 'border-border hover:bg-muted'}`}>
-                <span>{i.quantity} × {i.product_name}{i.comped_at ? ' (comped)' : ''}</span><span className="font-semibold">${Number(i.total).toFixed(2)}</span>
+                <span>{i.quantity} × {i.product_name}{i.comped_at ? ' (free)' : ''}</span><span className="font-semibold">${Number(i.total).toFixed(2)}</span>
               </button>
             ))}
             {choices.length === 0 && <p className="text-sm text-muted-foreground">No items can be changed on this order.</p>}
@@ -92,9 +91,12 @@ export function VoidCompDialog({ order, itemId, action: initialAction, onClose, 
         <div className="mt-4 grid grid-cols-2 gap-2">
           {(['void', 'comp'] as const).map((a) => (
             <button key={a} type="button" onClick={() => { setAction(a); setReason(''); }} aria-pressed={action === a}
-              className={`rounded-xl border-2 p-3 text-start ${action === a ? 'border-blue-600 bg-blue-50 dark:bg-blue-950' : 'border-border'}`}>
-              <b className="block">{a === 'void' ? 'Void' : '🎁 Comp'}</b>
-              <small className="text-muted-foreground">{a === 'void' ? (notMade ? 'Take it off the bill (not made yet)' : 'Take it off the bill') : 'Made — given away free'}</small>
+              style={a === 'void'
+                ? (action === a ? { backgroundColor: '#E24B4A', borderColor: '#A32D2D', color: '#ffffff' } : { backgroundColor: '#FCEBEB', borderColor: '#F09595', color: '#791F1F' })
+                : (action === a ? { backgroundColor: '#D4537E', borderColor: '#993556', color: '#ffffff' } : { backgroundColor: '#FBEAF0', borderColor: '#ED93B1', color: '#72243E' })}
+              className={`rounded-xl border-2 p-3 text-start ${action === a ? 'ring-2 ring-offset-2 ring-foreground/30' : ''}`}>
+              <b className="block text-lg tracking-wide">{a === 'void' ? '🗑 DELETE' : '🎁 FREE'}</b>
+              <small className="opacity-90">{a === 'void' ? 'Take it off the bill' : 'Made — no charge'}</small>
             </button>
           ))}
         </div>
@@ -131,7 +133,7 @@ export function VoidCompDialog({ order, itemId, action: initialAction, onClose, 
         ) : (
           <button type="button" disabled={!ready || busy} onClick={() => execute({})}
             className="mt-4 w-full rounded-xl bg-red-600 px-4 py-3 font-bold text-white disabled:opacity-50">
-            Take it off the bill
+            DELETE from the bill
           </button>
         )}
       </div>
