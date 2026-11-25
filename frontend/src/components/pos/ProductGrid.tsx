@@ -133,6 +133,7 @@ export default function ProductGrid({
 
   const [favorites, setFavorites] = useState<string[]>([]);
   const pressTimer = useRef<number | null>(null);
+  const [searchScoped, setSearchScoped] = useState(false);
   const longPressed = useRef(false);
   const pressStart = useRef<{ x: number; y: number } | null>(null);
   const movedDuringPress = useRef(false);
@@ -141,7 +142,7 @@ export default function ProductGrid({
     movedDuringPress.current = false;
     pressStart.current = point;
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
-    pressTimer.current = window.setTimeout(() => { longPressed.current = true; onProductClick(product); }, LONG_PRESS_MS);
+    pressTimer.current = window.setTimeout(() => { longPressed.current = true; finishSearch(); onProductClick(product); }, LONG_PRESS_MS);
   };
   const cancelPress = () => {
     if (pressTimer.current) window.clearTimeout(pressTimer.current);
@@ -155,12 +156,17 @@ export default function ProductGrid({
       cancelPress();
     }
   };
+  const finishSearch = () => {
+    if (!searchOpen && !search) return;
+    setSearchOpen(false); setSearch(''); setSearchScoped(false); setKeyboardOpen(false);
+  };
   const tapProduct = (product: Product) => {
     cancelPress();
     pressStart.current = null;
     if (longPressed.current) { longPressed.current = false; return; }
     if (movedDuringPress.current) { movedDuringPress.current = false; return; }
     if (editingFavorites) { toggleFavorite(String(product.id)); return; }
+    finishSearch();
     onQuickAdd(product);
   };
   const toggleFavorite = (id: string) => setFavorites(prev => {
@@ -240,8 +246,20 @@ export default function ProductGrid({
 
   const selectedCategoryTree = selectedCategory ? categoryTreeIds(selectedCategory) : null;
   const selectedSubcategoryTree = subcategoryId ? categoryTreeIds(subcategoryId) : null;
+  const query = search.trim();
+  const searching = query.length > 0;
+  const scoped = !searching || searchScoped;
   const filtered = products.filter((p) => {
     if (!hasActiveCategoryPath(p.category_id)) return false;
+    if (searching) {
+      if (menuSearchScore(p.name, query) <= 0) return false;
+      if (!searchScoped || !selectedCategory) return true;
+      const inCat = selectedCategoryTree?.has(String(p.category_id)) === true;
+      const inSub = !selectedSubcategory ? true
+        : spiritVirtualGroups ? spiritGroup(p.name) === selectedSubcategory
+        : selectedSubcategoryTree?.has(String(p.category_id)) === true;
+      return inCat && inSub;
+    }
     const matchCat = favoritesOnly ? favorites.includes(String(p.id))
       : selectedCategory ? selectedCategoryTree?.has(String(p.category_id)) === true : true;
     const matchSub = !selectedSubcategory ? true
@@ -250,6 +268,7 @@ export default function ProductGrid({
     return matchCat && matchSub;
   });
   const ordered = [...filtered].sort((a,b) => {
+    if (searching) return menuSearchScore(b.name, query) - menuSearchScore(a.name, query) || a.name.localeCompare(b.name);
     return (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name);
   });
   const displayed = arranging && ids.length > 0 ? [...ordered].sort((a,b) => ids.indexOf(String(a.id))-ids.indexOf(String(b.id))) : ordered;
@@ -284,6 +303,18 @@ export default function ProductGrid({
     return () => clearTimeout(timer);
   }, []);
 
+
+  const closeSearch = () => { setSearchOpen(false); setSearch(''); setSearchScoped(false); setKeyboardOpen(false); };
+  const submitSearch = () => {
+    if (!query) return;
+    const match = resolveScannedProduct(query, products);
+    if (match) {
+      closeSearch();
+      if (match.scaleBarcode) cart.addItem(match.product, match.quantity);
+      else onProductClick(match.product);
+    } else if (displayed[0]) { closeSearch(); onQuickAdd(displayed[0]); }
+  };
+
   useEffect(() => {
     const handleTyping = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
@@ -295,6 +326,11 @@ export default function ProductGrid({
       // Do not steal keystrokes from other app screens or modal dialogs.
       if (!document.querySelector('[data-testid="pos-product-grid"]')) return;
       if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      if (search && (event.key === 'Enter' || event.key === 'Escape')) {
+        event.preventDefault();
+        if (event.key === 'Escape') closeSearch(); else submitSearch();
+        return;
+      }
       if (event.key.length !== 1 || !/^[\p{L}\p{N} ]$/u.test(event.key)) return;
       if (event.key === ' ' && !search) return;
       event.preventDefault();
@@ -303,66 +339,31 @@ export default function ProductGrid({
     };
     document.addEventListener('keydown', handleTyping);
     return () => document.removeEventListener('keydown', handleTyping);
-  }, [search, setSearch, setSearchOpen]);
+  });
 
-  const query = search.trim();
-  const searchResults = query
-    ? products
-      .filter(p => hasActiveCategoryPath(p.category_id) && menuSearchScore(p.name, query) > 0)
-      .sort((a, b) => menuSearchScore(b.name, query) - menuSearchScore(a.name, query) || a.name.localeCompare(b.name))
-      .slice(0, 40)
-    : [];
-  const closeSearch = () => { setSearchOpen(false); setSearch(''); setKeyboardOpen(false); };
-  const pickResult = (product: Product) => { closeSearch(); onProductClick(product); };
-
-  const searchOverlay = searchOpen && (
-    <div role="dialog" aria-modal="true" aria-label="Search menu" data-testid="pos-search-overlay"
-      className="fixed inset-0 z-[45] flex items-start justify-center bg-black/50 p-4 pt-[8vh]"
-      onClick={(e) => { if (e.target === e.currentTarget) closeSearch(); }}>
-      <div className="flex max-h-[80vh] w-full max-w-xl flex-col rounded-2xl border border-border bg-card p-4 text-foreground shadow-2xl">
-        <div className="flex items-center gap-3 rounded-xl border-2 border-blue-500 px-3 py-2">
-          <Search size={26} className="shrink-0 text-muted-foreground" />
-          <input
-            ref={searchInputRef}
-            autoFocus
-            type="text"
-            inputMode={isTouch ? 'none' : undefined}
-            onFocus={() => { if (isTouch) setKeyboardOpen(true); }}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') { e.preventDefault(); closeSearch(); return; }
-              if (e.key !== 'Enter') return;
-              e.preventDefault();
-              if (!query) return;
-              const match = resolveScannedProduct(query, products);
-              if (match) {
-                closeSearch();
-                if (match.scaleBarcode) cart.addItem(match.product, match.quantity);
-                else onProductClick(match.product);
-              } else if (searchResults[0]) pickResult(searchResults[0]);
-            }}
-            aria-label="Search the whole menu"
-            placeholder="Type to search"
-            className="min-w-0 flex-1 bg-transparent text-4xl font-bold uppercase tracking-[0.2em] outline-none placeholder:text-xl placeholder:font-normal placeholder:normal-case placeholder:tracking-normal"
-          />
-          <button type="button" aria-label="Close search" onClick={closeSearch} className="flex size-11 shrink-0 items-center justify-center rounded-lg hover:bg-muted"><X size={26} /></button>
-        </div>
-        <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
-          <span>{query ? `${searchResults.length}${searchResults.length === 40 ? '+' : ''} items · tap to add · Esc to close` : 'Whole menu · Esc to close'}</span>
-          {isTouch && <button type="button" aria-label={keyboardOpen ? 'Hide on-screen keyboard' : 'Show on-screen keyboard'} onClick={() => setKeyboardOpen(v => !v)} className="flex size-9 items-center justify-center rounded-lg border border-border"><Keyboard size={18} /></button>}
-        </div>
-        <div className="mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain">
-          {query && searchResults.length === 0 && <p className="py-8 text-center text-base text-muted-foreground">No items found</p>}
-          {searchResults.map(product => (
-            <button key={product.id} type="button" data-testid="pos-search-result" onClick={() => pickResult(product)}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-start text-lg font-semibold hover:bg-muted active:scale-[0.99]">
-              <span className="min-w-0 truncate">{product.name}</span>
-              <span className="shrink-0 tabular-nums">{fmt(Number(product.price))}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+  const searchPill = searchOpen && (
+    <div data-testid="pos-search-pill" className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border-2 border-blue-500 bg-card ps-2.5 pe-1 text-foreground">
+      <Search size={16} className="shrink-0 text-muted-foreground" />
+      <input
+        ref={searchInputRef}
+        autoFocus
+        type="text"
+        inputMode={isTouch ? 'none' : undefined}
+        onFocus={() => { if (isTouch) setKeyboardOpen(true); }}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); closeSearch(); return; }
+          if (e.key === 'Enter') { e.preventDefault(); submitSearch(); }
+        }}
+        aria-label="Search the whole menu"
+        placeholder="Search"
+        style={{ width: `${Math.min(18, Math.max(6, search.length + 1)) * 1.25}ch` }}
+        className="min-w-0 bg-transparent text-lg font-bold uppercase tracking-[0.15em] outline-none placeholder:text-sm placeholder:font-normal placeholder:normal-case placeholder:tracking-normal"
+      />
+      {searching && <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{displayed.length} found</span>}
+      {isTouch && <button type="button" aria-label={keyboardOpen ? 'Hide on-screen keyboard' : 'Show on-screen keyboard'} onClick={() => setKeyboardOpen(v => !v)} className="flex size-8 items-center justify-center rounded-lg hover:bg-muted"><Keyboard size={16} /></button>}
+      <button type="button" aria-label="Close search" onClick={closeSearch} className="flex size-8 items-center justify-center rounded-lg hover:bg-muted"><X size={18} /></button>
     </div>
   );
 
@@ -377,25 +378,26 @@ export default function ProductGrid({
           </button>}
         </div>
         <nav aria-label="Menu categories" className="flex gap-2 overflow-x-auto py-1 mb-1">
+          {searchPill}
           <button type="button" aria-pressed={favoritesOnly}
-            onClick={() => { setFavoritesOnly(!favoritesOnly); setSelectedCategory(null); setSelectedSubcategory(null); setSearch(''); setArranging(false); }}
+            onClick={() => { closeSearch(); setFavoritesOnly(!favoritesOnly); setSelectedCategory(null); setSelectedSubcategory(null); setArranging(false); }}
             className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white ${favoritesOnly ? 'ring-2 ring-white' : ''}`}
             style={{ backgroundColor: '#CA8A04' }}><Star size={16} className="inline me-1" />FAV</button>
           {visibleCategories.map(cat => {
-            const selected = !favoritesOnly && selectedCategory === cat.id;
+            const selected = !favoritesOnly && selectedCategory === cat.id && scoped;
             return <button key={cat.id} type="button" aria-pressed={selected}
               onClick={() => {
                 setFavoritesOnly(false);
                 setSelectedCategory(selected ? null : cat.id);
                 setSelectedSubcategory(null);
-                setSearch('');
+                if (searching) setSearchScoped(!selected);
                 setArranging(false);
               }}
               className={`h-10 shrink-0 rounded-xl border border-white/10 px-3.5 text-xs font-bold text-white transition-[filter,transform] active:scale-95 ${selected ? 'ring-2 ring-white/80 ring-offset-2 ring-offset-[#0b0f17]' : 'hover:brightness-110'}`}
               style={{ backgroundColor: categoryColor(cat.color) }}><span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="text-base leading-none">{cat.icon || '▦'}</span>{cat.name}</span></button>;
           })}
         </nav>
-        {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && (
+        {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && scoped && (
           <nav aria-label="Subcategory buttons" className="flex gap-2 overflow-x-auto py-1">
             {['All', ...subcategoryNames].map(name => {
               const active = name === 'All' ? !selectedSubcategory : selectedSubcategory === name;
@@ -413,7 +415,10 @@ export default function ProductGrid({
 
       <div className="flex min-h-0 flex-1">
       <div ref={gridScrollRef} onScroll={() => { if (pressTimer.current) { movedDuringPress.current = true; cancelPress(); } }} className="min-w-0 flex-1 overflow-y-auto overscroll-contain pb-20 md:pb-0 px-3">
-        {favoritesOnly && displayed.length === 0 && (
+        {searching && displayed.length === 0 && (
+          <p className="py-10 text-center text-base text-muted-foreground">No items match “{query}”</p>
+        )}
+        {favoritesOnly && !searching && displayed.length === 0 && (
           <p className="py-10 text-center text-sm text-slate-400">No favorites yet. Tap ★ Favorites, then tap products to pin them here.</p>
         )}
         
@@ -537,7 +542,7 @@ export default function ProductGrid({
           })}
           </div></>}
       </div>
-      {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && !search.trim() && (
+      {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && scoped && (
         <div className="relative flex shrink-0">
           <button type="button" aria-label={subcategoriesOpen ? 'Hide subcategories' : 'Show subcategories'} aria-expanded={subcategoriesOpen}
             onClick={() => setSubcategoriesOpen(!subcategoriesOpen)}
@@ -576,7 +581,6 @@ export default function ProductGrid({
         </div>
       )}
       </div>
-      {searchOverlay}
       {keyboardOpen && <OnScreenKeyboard value={search} onChange={setSearch} onClose={() => setKeyboardOpen(false)} />}
     </div>
   );
