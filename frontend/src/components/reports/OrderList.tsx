@@ -40,9 +40,9 @@ export function OrderList({ orders, shifts, tz, date }: { orders: ReportOrderRow
   const unshifted = orders.filter((o) => o.shiftId == null).length;
   const chips: [Filter, string][] = [
     ['all', `All (${orders.length})`],
+    ...(shifts && unshifted ? [['noshift', `No shift (${unshifted})`] as [Filter, string]] : []),
     ['open', `Open (${orders.filter((o) => o.status === 'unpaid').length})`],
     ...(shifts ?? []).map((sh) => [`shift:${sh.id}`, `Shift #${sh.id} · ${sh.cashier}`] as [Filter, string]),
-    ...(shifts && unshifted ? [['noshift', `No shift (${unshifted})`] as [Filter, string]] : []),
     ['tables', 'Tables'], ['togo', 'To Go'],
   ];
   const groups = shifts
@@ -55,7 +55,7 @@ export function OrderList({ orders, shifts, tz, date }: { orders: ReportOrderRow
       <div className="flex flex-wrap gap-2" role="group" aria-label="Filter orders">
         {chips.map(([key, label]) => (
           <button key={key} type="button" aria-pressed={filter === key} onClick={() => setFilter(key)}
-            className={`rounded-full border px-3 py-1 text-sm font-semibold ${filter === key ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:bg-muted'}`}>
+            className={`rounded-full border px-3 py-1 text-sm font-semibold ${key === 'noshift' ? (filter === key ? 'border-red-700 bg-red-700 text-white' : 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950') : filter === key ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:bg-muted'}`}>
             {label}
           </button>
         ))}
@@ -70,7 +70,7 @@ export function OrderList({ orders, shifts, tz, date }: { orders: ReportOrderRow
             {groups.map((g) => (
               <tbody key={g.key}>
                 {g.title && (
-                  <tr><td colSpan={7} className="pt-4 pb-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                  <tr><td colSpan={7} className={`pt-4 pb-1 text-xs font-bold uppercase tracking-wide ${g.key === 'none' ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground'}`}>
                     {g.title} · {g.rows.length} {g.rows.length === 1 ? 'order' : 'orders'} · {usd(g.rows.reduce((sum, o) => sum + o.totalCents, 0))}
                   </td></tr>
                 )}

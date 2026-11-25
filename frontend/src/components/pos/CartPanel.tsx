@@ -32,6 +32,7 @@ interface Props {
   onShowTabs?: () => void;
   openTabCount?: number;
   onPayNow: () => void;
+  paymentLocked?: boolean;
   /** Prints the open order's bill for the customer before payment. */
   onPrintBill?: () => void;
   /** Sends the unsent cart items, then prints the bill. */
@@ -135,7 +136,7 @@ function ItemQuantityControl({
   );
 }
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, destination, showTableOption = true, onSelectTable, onSelectTab, onSelectToGo, onClearCart, onPayExisting, onShowTabs, openTabCount = 0, onPayNow, onEditItem, variant = 'sidebar', existingOrder, onPrintBill, onSendAndPrintBill }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, destination, showTableOption = true, onSelectTable, onSelectTab, onSelectToGo, onClearCart, onPayExisting, onShowTabs, openTabCount = 0, onPayNow, paymentLocked = false, onEditItem, variant = 'sidebar', existingOrder, onPrintBill, onSendAndPrintBill }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -292,7 +293,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
           const moreButton = <button type="button" onClick={() => { setMoreOpen(!moreOpen); setEditingNote(false); }} aria-label="More actions" aria-expanded={moreOpen} className={side}><MoreHorizontal size={22}/></button>;
           let actions: ReactNode;
           if (billingType === 'prepaid') {
-            actions = <button type="button" onClick={onPlaceOrder} disabled={empty} aria-label={`Pay ${fmt(total)}`} className={payButton}><CreditCard size={18}/>{submitting ? t('placing') : 'Pay'}</button>;
+            actions = <button type="button" onClick={onPlaceOrder} disabled={empty || paymentLocked} aria-label={`Pay ${fmt(total)}`} className={payButton}><CreditCard size={18}/>{submitting ? t('placing') : 'Pay'}</button>;
           } else if (existingOrder) {
             actions = <>
               {onPayExisting && (
@@ -305,7 +306,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, destinatio
             actions = <>
               <button type="button" onClick={onPlaceOrder} disabled={empty} className={secondary}
                 title={destination === 'togo' ? 'Send now, pay later' : cart.tableId ? 'Send order' : 'Add to tab'}>{submitting ? t('placing') : 'Send'}</button>
-              <button type="button" onClick={onPayNow} disabled={empty} aria-label={`Pay ${fmt(total)}`} className={payButton}><CreditCard size={18}/>Pay</button>
+              <button type="button" onClick={onPayNow} disabled={empty || paymentLocked} aria-label={`Pay ${fmt(total)}`} className={payButton}><CreditCard size={18}/>Pay</button>
             </>;
           }
           return <div className="flex gap-[6px]">{printButton}{actions}{moreButton}</div>;

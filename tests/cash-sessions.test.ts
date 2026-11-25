@@ -227,12 +227,21 @@ async function main() {
   const billBatchCard = seedUnpaidBill('batch-card');
   const batchCard = await request(app).post(`/api/bills/${billBatchCard}/payments`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 50 }] });
-  assert(batchCard.status === 200, 'enforcement on: card batch payment without a session works (200)');
+  assert(batchCard.status === 409, 'enforcement on: card batch payment without a session is blocked (409)');
 
   const billCard = seedUnpaidBill('card');
   const cardOn = await request(app).post(`/api/bills/${billCard}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'card', amount: 50 });
-  assert(cardOn.status === 200, 'enforcement on: non-cash payment without a session works (200)');
+  assert(cardOn.status === 409, 'enforcement on: non-cash payment without a session is blocked (409)');
+
+  for (const method of ['ABA', 'ACLEDA']) {
+    db.prepare(`INSERT INTO payment_methods (name, is_active, sort_order, created_at, updated_at) VALUES (?, 1, 20, ?, ?)`)
+      .run(method, now(), now());
+    const bill = seedUnpaidBill(`custom-${method.toLowerCase()}`);
+    const payment = await request(app).post(`/api/bills/${bill}/payment`)
+      .set('Authorization', `Bearer ${cashierToken}`).send({ method, amount: 50 });
+    assert(payment.status === 409, `enforcement on: ${method} payment without a session is blocked (409)`);
+  }
 
   const movBlocked = await request(app).post('/api/cash-closures/movements')
     .set('Authorization', `Bearer ${cashierToken}`)
@@ -245,6 +254,18 @@ async function main() {
   const batchPaidLate = await request(app).post(`/api/bills/${billBatch}/payments`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 25 }, { method: 'cash', amount: 25 }] });
   assert(batchPaidLate.status === 200, 'blocked cash batch pays once enforcement is off (200)');
+  const batchCardPaidLate = await request(app).post(`/api/bills/${billBatchCard}/payments`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 50 }] });
+  assert(batchCardPaidLate.status === 200, 'blocked card batch pays once enforcement is off (200)');
+  const cardPaidLate = await request(app).post(`/api/bills/${billCard}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'card', amount: 50 });
+  assert(cardPaidLate.status === 200, 'blocked card payment pays once enforcement is off (200)');
+  for (const method of ['ABA', 'ACLEDA']) {
+    const bill = Number((db.prepare('SELECT id FROM bills WHERE bill_number = ?').get(`ENF-custom-${method.toLowerCase()}`) as any).id);
+    const payment = await request(app).post(`/api/bills/${bill}/payment`)
+      .set('Authorization', `Bearer ${cashierToken}`).send({ method, amount: 50 });
+    assert(payment.status === 200, `blocked ${method} payment pays once enforcement is off (200)`);
+  }
 
   const replaySession = await request(app).post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
@@ -631,11 +652,13 @@ async function main() {
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'Cash', amount: 50 });
   assert(ciPay.status === 409, 'enforcement on: "Cash" (capitalized) without a session is 409');
 
-  // Cash refunds leave the drawer: gated like cash payments. The gate fires
-  // before PIN verification, so no PIN fixture is needed for the 409 path.
+  // Seed the paid refund fixture while enforcement is off, then verify the
+  // refund itself is gated after enforcement is restored.
+  db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();
   const rfPay = await request(app).post(`/api/bills/${ciBill}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'card', amount: 50 });
   assert(rfPay.status === 200, 'card payment for refund fixture (200)');
+  db.prepare(`UPDATE settings SET value = 'true' WHERE key = 'require_open_shift'`).run();
   const rfBillId = ciBill;
   const rfBlocked = await request(app).post('/api/refunds')
     .set('Authorization', `Bearer ${managerToken}`)
