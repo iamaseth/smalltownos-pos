@@ -442,7 +442,11 @@ export function buildDailyReport(businessDate: string): DailyReportData {
   };
 }
 
-export interface CashierReportShift { id: number; cashier: string; openedAt: string; closedAt: string | null; open: boolean; part: 'day' | 'night' }
+export interface CashierReportShift {
+  id: number; cashier: string; openedAt: string; closedAt: string | null; open: boolean; part: 'day' | 'night';
+  /** Closing count difference; null until the shift's cash is counted. */
+  varianceUsdCents: number | null; varianceKhrRiel: number | null;
+}
 export interface CashierReportData {
   timezone: string;
   startDate: string; endDate: string; sessionId: number | null;
@@ -493,9 +497,16 @@ export function buildCashierReport(input: { startDate: string; endDate: string; 
   const [, end] = dayBoundsInTimezone(input.endDate, tz, dayStart);
   const sessions = db.prepare(`SELECT * FROM cash_sessions WHERE datetime(opened_at) >= datetime(?) AND datetime(opened_at) < datetime(?) ORDER BY opened_at`)
     .all(start, end) as SessionRow[];
-  const shifts: CashierReportShift[] = sessions.map((s) => ({
-    id: s.id, cashier: s.opened_by_name || '—', openedAt: s.opened_at, closedAt: s.closed_at, open: s.status !== 'closed', part: shiftPart(s.opened_at, tz),
-  }));
+  const varianceOf = db.prepare(`SELECT variance_usd_cents, variance_khr_riel, actual_usd_cents FROM cash_reconciliations WHERE session_id = ? ORDER BY id DESC LIMIT 1`);
+  const shifts: CashierReportShift[] = sessions.map((s) => {
+    const r = varianceOf.get(s.id) as { variance_usd_cents: number | null; variance_khr_riel: number | null; actual_usd_cents: number | null } | undefined;
+    const counted = r != null && r.actual_usd_cents != null;
+    return {
+      id: s.id, cashier: s.opened_by_name || '—', openedAt: s.opened_at, closedAt: s.closed_at, open: s.status !== 'closed', part: shiftPart(s.opened_at, tz),
+      varianceUsdCents: counted ? Number(r.variance_usd_cents || 0) : null,
+      varianceKhrRiel: counted ? Number(r.variance_khr_riel || 0) : null,
+    };
+  });
 
   let w: Window = { start, end, sessionId: null };
   let picked = sessions;

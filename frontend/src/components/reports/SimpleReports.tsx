@@ -1,18 +1,24 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { CalendarDays, ChevronLeft, ChevronRight, Moon, Printer, Search, Send, Sun } from 'lucide-react';
+import { ArrowLeftRight, CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, Lock, LockOpen, Moon, Printer, Search, Send, Sun, TriangleAlert } from 'lucide-react';
 import api from '@/lib/api';
 import { usd, khr, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ReportSales } from '@print/shift-report-text';
 import { printReportReceipt, printSummaryReceipt, sendReportTelegram } from '@/lib/printer/shift-report-print';
 import { OrderList } from './OrderList';
+import { CashCloseModal } from '@/components/dashboard/CashCloseModal';
+import { useCashClose } from '@/hooks/useCashClose';
+import { useCashSession } from '@/hooks/useCashSession';
+import { tenantCan } from '@/lib/permissions';
+import { useAuthStore } from '@/store/auth';
 import { clock } from './DayReports';
 
 type Period = 'today' | 'week' | 'month';
 type Tab = 'summary' | 'items' | 'tickets' | 'payments';
 
-interface Shift { id: number; cashier: string; openedAt: string; closedAt: string | null; open: boolean; part: 'day' | 'night' }
+interface Shift { id: number; cashier: string; openedAt: string; closedAt: string | null; open: boolean; part: 'day' | 'night'; varianceUsdCents?: number | null; varianceKhrRiel?: number | null }
 interface CashierReport {
   timezone: string; startDate: string; endDate: string; sessionId: number | null;
   shifts: Shift[];
@@ -76,6 +82,13 @@ function lr(w: number, left: string, right: string): string {
   return gap >= 1 ? left + ' '.repeat(gap) + right : `${left.slice(0, Math.max(0, w - right.length - 1))} ${right}`;
 }
 
+function CountNote({ shift }: { shift: Shift }) {
+  if (shift.varianceUsdCents == null) return null;
+  const off = shift.varianceUsdCents !== 0 || (shift.varianceKhrRiel ?? 0) !== 0;
+  if (!off) return <span className="text-green-800 dark:text-green-300"> · matched</span>;
+  return <span className="text-red-700 dark:text-red-300"> · {shift.varianceUsdCents < 0 ? 'short' : 'over'} {usd(Math.abs(shift.varianceUsdCents))}</span>;
+}
+
 /** Simple reports for cashiers: one day, week or month, by shift, with print and Telegram. */
 export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
   const [period, setPeriod] = useState<Period>('today');
@@ -86,6 +99,12 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
   const [busy, setBusy] = useState<'print' | 'tg' | null>(null);
   const [state, setState] = useState<{ key: string; data: CashierReport | null; error: string | null } | null>(null);
   const dateInput = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+  const currentTenant = useAuthStore((st) => st.currentTenant);
+  const canOpen = tenantCan(currentTenant, 'cash.shifts.open');
+  const canClose = tenantCan(currentTenant, 'cash.shifts.close');
+  const register = useCashSession();
+  const dayClose = useCashClose();
   const [start, end] = rangeFor(period, anchor);
   const shiftForQuery = period === 'today' ? sessionId : null;
   const key = `${start}|${end}|${shiftForQuery ?? 'all'}`;
@@ -153,6 +172,16 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
     } finally { setBusy(null); }
   };
 
+  /** Re-check the live shift, then go straight to the open / hand-over / close screen and come back here. */
+  const goCash = async (entry: 'open' | 'close' | 'handover') => {
+    const result = await register.refresh();
+    if (result.status !== 'ok') return;
+    if (result.error) { toast.error(result.error); return; }
+    if (entry === 'open' && result.session) { toast('A shift is already open'); return; }
+    if (entry !== 'open' && !result.session) { toast('No shift is open any more'); return; }
+    router.push(`/cash?go=${entry}&from=reports`);
+  };
+
   const bigBox = (label: string, v: { usd: number; khr: number; n: number }) => (
     <div className={card}>
       <p className="text-sm font-semibold text-muted-foreground">{label}</p>
@@ -161,8 +190,78 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
     </div>
   );
 
+  const isToday = period === 'today' && anchor === todayIso();
+  const shifts = period === 'today' ? (data?.shifts ?? []) : [];
+  const showShiftRow = period === 'today' && (shifts.length > 0 || isToday);
+  const noShiftTickets = shifts.length > 0 ? (data?.tickets ?? []).filter((t) => t.shiftId == null) : [];
+
   return (
     <div className="space-y-4" data-testid="simple-reports">
+      {showShiftRow && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-stretch gap-2" role="group" aria-label="Shifts">
+            {shifts.map((s) => {
+              const tone = PART[s.part];
+              const on = sessionId === s.id;
+              const live = isToday && register.session?.id === s.id;
+              return (
+                <div key={s.id} style={{ borderColor: tone.color, backgroundColor: on || live ? tone.soft : undefined }}
+                  className={`flex items-center gap-1.5 rounded-xl border-2 p-1 ${on || live ? '' : 'bg-card'} ${on ? 'ring-2 ring-foreground ring-offset-2 ring-offset-background' : ''}`}>
+                  <button type="button" aria-pressed={on} onClick={() => setSessionId(s.id)} style={{ color: tone.ink }}
+                    className="flex min-w-32 flex-col items-start rounded-lg px-2 py-1 text-start">
+                    <span className="flex items-center gap-1.5 text-base font-black"><tone.Icon size={16} />{tone.label} · {s.cashier}</span>
+                    <span className="text-xs font-semibold">
+                      {clock(s.openedAt, tz)} – {s.open ? 'open now' : clock(s.closedAt, tz)}
+                      {!s.open && <CountNote shift={s} />}
+                    </span>
+                  </button>
+                  {live && canClose && (
+                    <>
+                      <button type="button" onClick={() => { void goCash('handover'); }}
+                        className="inline-flex h-10 items-center gap-1.5 rounded-lg border-2 border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted">
+                        <ArrowLeftRight className="size-4" aria-hidden /> Hand over
+                      </button>
+                      <button type="button" onClick={() => { void goCash('close'); }}
+                        className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-sm font-bold text-white hover:bg-amber-800">
+                        <Lock className="size-4" aria-hidden /> Close shift
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            {isToday && !register.loading && !register.session && canOpen && (
+              <button type="button" onClick={() => { void goCash('open'); }}
+                className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-green-700 bg-card px-4 text-base font-black text-green-800 hover:bg-green-50 dark:text-green-300 dark:hover:bg-green-950">
+                <LockOpen className="size-5" aria-hidden /> Open shift
+              </button>
+            )}
+            {shifts.length > 0 && (
+              <div style={{ borderColor: ALL.color, backgroundColor: sessionId === null ? ALL.soft : undefined }}
+                className={`flex items-center gap-1.5 rounded-xl border-2 p-1 ${sessionId === null ? 'ring-2 ring-foreground ring-offset-2 ring-offset-background' : 'bg-card'}`}>
+                <button type="button" aria-pressed={sessionId === null} onClick={() => setSessionId(null)} style={{ color: ALL.ink }}
+                  className="flex min-w-24 flex-col items-start rounded-lg px-2 py-1 text-start">
+                  <span className="text-base font-black">All day</span>
+                  <span className="text-xs font-semibold">{shifts.length} shift{shifts.length === 1 ? '' : 's'}</span>
+                </button>
+                {isToday && !register.loading && !register.session && (
+                  <button type="button" onClick={dayClose.openCloseModal}
+                    className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-blue-700 px-3 text-sm font-bold text-white hover:bg-blue-800">
+                    <CalendarCheck className="size-4" aria-hidden /> Close day
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          {sessionId === null && noShiftTickets.length > 0 && (
+            <p className="flex items-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-800 dark:bg-red-950 dark:text-red-200">
+              <TriangleAlert className="size-4 shrink-0" aria-hidden />
+              {noShiftTickets.length} order{noShiftTickets.length === 1 ? '' : 's'} taken without a shift ({usd(noShiftTickets.reduce((a, t) => a + t.totalCents, 0))})
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2" role="group" aria-label="Period">
           {PERIODS.map((p) => (
@@ -183,29 +282,6 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
           </span>
         </div>
       </div>
-
-      {period === 'today' && (data?.shifts.length ?? 0) > 0 && (
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Shifts">
-          {data!.shifts.map((s) => {
-            const tone = PART[s.part];
-            const on = sessionId === s.id;
-            return (
-              <button key={s.id} type="button" aria-pressed={on} onClick={() => setSessionId(s.id)}
-                style={{ borderColor: tone.color, backgroundColor: on ? tone.soft : undefined, color: tone.ink }}
-                className={`flex min-w-36 flex-col items-start rounded-xl border-2 px-3 py-2 text-start ${on ? '' : 'bg-card'}`}>
-                <span className="flex items-center gap-1.5 text-base font-black"><tone.Icon size={16} />{tone.label} · {s.cashier}</span>
-                <span className="text-xs font-semibold">{clock(s.openedAt, tz)} – {s.open ? 'open now' : clock(s.closedAt, tz)}</span>
-              </button>
-            );
-          })}
-          <button type="button" aria-pressed={sessionId === null} onClick={() => setSessionId(null)}
-            style={{ borderColor: ALL.color, backgroundColor: sessionId === null ? ALL.soft : undefined, color: ALL.ink }}
-            className={`flex min-w-28 flex-col items-start rounded-xl border-2 px-3 py-2 text-start ${sessionId === null ? '' : 'bg-card'}`}>
-            <span className="text-base font-black">All day</span>
-            <span className="text-xs font-semibold">{data!.shifts.length} shift{data!.shifts.length === 1 ? '' : 's'}</span>
-          </button>
-        </div>
-      )}
 
       {loading ? (
         <div className={`${card} h-40 animate-pulse`} role="status" aria-live="polite"><span className="sr-only">Loading</span></div>
@@ -313,6 +389,7 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
           </div>
         </>
       )}
+      <CashCloseModal model={dayClose} />
     </div>
   );
 }
