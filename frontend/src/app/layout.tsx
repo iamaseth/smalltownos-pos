@@ -6,6 +6,7 @@ import AuthGuard from "@/components/layout/AuthGuard";
 import { HtmlLangSync } from "@/components/layout/HtmlLangSync";
 import { ThemeSync } from "@/components/layout/ThemeSync";
 import { NumberInputWheelGuard } from "@/components/layout/NumberInputWheelGuard";
+import { ChunkErrorReloader } from "@/components/layout/ChunkErrorReloader";
 import { DirectionalToaster } from "@/components/layout/DirectionalToaster";
 import DesktopDragSurface from "@/components/layout/DesktopDragSurface";
 import { I18nProvider } from "@/components/providers/I18nProvider";
@@ -86,6 +87,7 @@ export default function RootLayout({
           <HtmlLangSync />
           <ThemeSync />
           <NumberInputWheelGuard />
+          <ChunkErrorReloader />
           <AuthGuard>{children}</AuthGuard>
           <DirectionalToaster />
         </I18nProvider>

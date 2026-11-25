@@ -1,3 +1,4 @@
+import { pinClientKey } from '../middleware/security';
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, withTxn } from '../db';
@@ -91,7 +92,7 @@ router.post('/', requirePermission('refunds.initiate'), (req: Request, res: Resp
     const requestHash = idempotencyKey ? refundRequestHash(String(billId), body, selectedApproverId) : undefined;
 
     const userId = String((req as any).user.userId);
-    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const clientIp = pinClientKey(req);
 
     const refundRequest: RefundRequest = {
       billId,

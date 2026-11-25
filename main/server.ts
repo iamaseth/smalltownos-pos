@@ -15,6 +15,7 @@ import expressRateLimit from 'express-rate-limit';
 import { staticRouteRateLimit, corsOptions, getUserAuthStatus, isAllowedPrivateIp, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 import { startTelegram, stopTelegram } from './services/telegram';
+import { startNightlyBackup, stopNightlyBackup } from './services/nightly-backup';
 import { cloudSync } from './services/cloud-sync';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
@@ -166,6 +167,9 @@ export function startServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     startReject = reject;
     app = express();
+    // On Railway every request arrives through one proxy. Trust that one hop so each device is
+    // seen by its own address, not the proxy's private one (which counted as "in the restaurant").
+    if (process.env.FLO_RUNTIME === 'cloud') app.set('trust proxy', 1);
 
     app.use(cors(corsOptions));
     // Scope the anonymous pre-login route to a body limit far below the
@@ -194,7 +198,8 @@ export function startServer(): Promise<void> {
     // Protect all API routes with express-rate-limit and LAN bypass.
     app.use('/api', expressRateLimit({
       windowMs: 60 * 1000,
-      limit: 100,
+      // In the cloud all tills of one restaurant share its internet address, so they share this budget.
+      limit: process.env.FLO_RUNTIME === 'cloud' ? 1500 : 100,
       standardHeaders: true,
       legacyHeaders: false,
       skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
@@ -366,6 +371,7 @@ export function startServer(): Promise<void> {
           console.error('[Server] WhatsApp startup initialization failed:', error);
         }
         startTelegram();
+        startNightlyBackup();
 
         resolve();
       };
@@ -403,6 +409,7 @@ export function stopServer(): Promise<void> {
 
   stopping = true;
   stopTelegram();
+  stopNightlyBackup();
   const rejectStart = startReject;
   startReject = null;
   rejectStart?.(createShutdownCancellationError('Main server'));

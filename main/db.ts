@@ -423,6 +423,11 @@ function getBackupDir(): string {
   return path.join(userDataPath, 'backups');
 }
 
+/** The managed backups folder (nightly backups are written here too). */
+export function getBackupDirectory(): string {
+  return getBackupDir();
+}
+
 // Marker written on first startup to distinguish empty fresh install from missing db file.
 function getDbInitializedMarkerPath(): string {
   const userDataPath = app.getPath('userData');
@@ -1725,7 +1730,7 @@ export function listBackups(): { fileName: string; path: string; sizeBytes: numb
         path: fullPath,
         sizeBytes: stat.size,
         createdAt: stat.mtime.toISOString(),
-        kind: (fileName.includes('-pre-v') ? 'auto' : 'manual') as 'manual' | 'auto',
+        kind: (fileName.includes('-pre-v') || fileName.startsWith('flo-backup-nightly-') ? 'auto' : 'manual') as 'manual' | 'auto',
         schemaVersion: readBackupSchemaVersion(fullPath),
       };
     })
