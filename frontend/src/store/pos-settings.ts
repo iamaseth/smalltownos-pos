@@ -25,6 +25,7 @@ export interface PosSettingsState {
   printerPaperSize: PaperSize;
   printerEnabled: boolean;
   printerPrintMode: PrinterPrintMode;
+  receiptPageLengthMm: number;
   autoPrintKot: boolean;
   autoPrintBill: boolean;
   whatsappShareEnabled: boolean;
@@ -67,6 +68,7 @@ export interface PosSettingsState {
   setPrinterPaperSize: (size: PaperSize) => void;
   setPrinterEnabled: (enabled: boolean) => void;
   setPrinterPrintMode: (mode: PrinterPrintMode) => void;
+  setReceiptPageLengthMm: (length: number) => void;
   setAutoPrintKot: (enabled: boolean) => void;
   setAutoPrintBill: (enabled: boolean) => void;
   setWhatsappShareEnabled: (enabled: boolean) => void;
@@ -110,6 +112,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       printerPaperSize: 'thermal58',
       printerEnabled: false,
       printerPrintMode: 'escpos',
+      receiptPageLengthMm: 297,
       autoPrintKot: false,
       autoPrintBill: false,
       whatsappShareEnabled: true,
@@ -150,6 +153,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setPrinterPaperSize: (size) => set({ printerPaperSize: size }),
       setPrinterEnabled: (enabled) => set({ printerEnabled: enabled }),
       setPrinterPrintMode: (mode) => set({ printerPrintMode: mode }),
+      setReceiptPageLengthMm: (length) => set({ receiptPageLengthMm: Math.min(1000, Math.max(50, Math.round(length) || 297)) }),
       setAutoPrintKot: (enabled) => set({ autoPrintKot: enabled }),
       setAutoPrintBill: (enabled) => set({ autoPrintBill: enabled }),
       setWhatsappShareEnabled: (enabled) => set({ whatsappShareEnabled: enabled }),
@@ -186,7 +190,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
         Object.entries(s).filter(([k]) => k !== 'whatsappEnabled' && k !== 'billLanguagePolicy' && k !== 'kotLanguagePolicy'),
       ) as PosSettingsState,
       // Migrates legacy store keys (GSTIN rename, removed A4/A5 paper sizes).
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
@@ -213,6 +217,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           state.billShowCustomerPhone ??= true;
           state.billShowTableNumber ??= true;
         }
+        if (version < 4) state.receiptPageLengthMm = 297;
         return state as unknown as PosSettingsState;
       },
     }

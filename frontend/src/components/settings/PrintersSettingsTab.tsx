@@ -71,6 +71,7 @@ export type PrinterForm = {
 export type PrintingForm = {
   printerEnabled: boolean;
   printerPaperSize: PaperSize;
+  receiptPageLengthMm: number;
   cashDrawerPulseEnabled: boolean | undefined;
   cashDrawerPulseMethods: string[];
   printMethod: 'escpos' | 'browser';
@@ -810,6 +811,25 @@ export function PrintersSettingsTab({
                   : t('printMethodBrowserHint')}
               </p>
             </div>
+            {printingForm.printMethod === 'browser' && (
+              <div>
+                <label htmlFor="receipt-page-length" className="mb-2 block font-medium text-foreground">Receipt page length (mm)</label>
+                <input
+                  id="receipt-page-length"
+                  type="number"
+                  min={50}
+                  max={1000}
+                  step={1}
+                  value={printingForm.receiptPageLengthMm}
+                  onChange={(e) => {
+                    markHydrationTouched('receiptPageLengthMm');
+                    setPrintingForm((p) => ({ ...p, receiptPageLengthMm: Math.min(1000, Math.max(50, Number(e.target.value) || 297)) }));
+                  }}
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">Use the fixed paper length offered by the Windows printer driver. Long reports print as multiple pages without scaling.</p>
+              </div>
+            )}
             <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-foreground">{t('kotPrintingEnabledToggle')}</p>

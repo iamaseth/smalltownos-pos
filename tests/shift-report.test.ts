@@ -166,6 +166,9 @@ async function main() {
   assertIncludesOrThrow(zLines.join('\n'), 'Z-REPORT', 'Z title printed');
   assertEqualOrThrow(z.closedBy, 'Thida', 'Z-report records who closed the shift');
   assertOrThrow(zLines.some((l: string) => l.startsWith('Closed by') && l.includes('Thida')), 'Closed by line printed');
+  assertOrThrow(zLines.length <= 65, `normal Z-report stays compact (${zLines.length} lines)`);
+  assertOrThrow(!zLines.some((l: string) => l.startsWith('Refunds (0)')), 'zero refunds are hidden');
+  assertOrThrow(!zLines.some((l: string) => l.startsWith('Voided items (0)')), 'zero voids are hidden');
   if (process.env.SHIFT_REPORT_PRINT) console.log(`${zLines.join('\n')}\n`);
 
   console.log('Section 4: daily sales report');
@@ -181,6 +184,7 @@ async function main() {
   assertOrThrow(day.body.orders.length === 6 && day.body.orders.every((o: any) => o.shiftId === sid), 'daily orders are tagged with their shift');
   const dLines = text.renderDailyReport(day.body, 42, 'Asia/Phnom_Penh');
   assertOrThrow(Math.max(...dLines.map((l: string) => displayCellWidth(l))) <= 42, 'daily report fits 42 columns');
+  assertOrThrow(dLines.length <= 65, `normal daily report stays compact (${dLines.length} lines)`);
   const bad = await request(app).get(`/api/reports/daily-report?date=nope`).set('Authorization', tok('owner-r', 'owner'));
   assertEqualOrThrow(bad.status, 400, 'bad date rejected');
   const missing = await request(app).get(`/api/reports/shift-report?session_id=99999`).set('Authorization', C);

@@ -1043,6 +1043,7 @@ export default function SettingsPage() {
   const initPrinting = (): PrintingForm => ({
     printerEnabled: posSettings.printerEnabled,
     printerPaperSize: posSettings.printerPaperSize,
+    receiptPageLengthMm: posSettings.receiptPageLengthMm,
     cashDrawerPulseEnabled: undefined,
     cashDrawerPulseMethods: ['cash', 'card'],
     printMethod: printMethod as 'escpos' | 'browser',
@@ -1139,6 +1140,7 @@ export default function SettingsPage() {
       await api.put('/settings/printing', printingPayload);
       posSettings.setPrinterEnabled(formSnapshot.printerEnabled);
       posSettings.setPrinterPaperSize(formSnapshot.printerPaperSize);
+      posSettings.setReceiptPageLengthMm(formSnapshot.receiptPageLengthMm);
       setPrintMethod(formSnapshot.printMethod);
       posSettings.setAutoPrintKot(formSnapshot.autoPrintKot);
       posSettings.setAutoPrintBill(formSnapshot.autoPrintBill);
