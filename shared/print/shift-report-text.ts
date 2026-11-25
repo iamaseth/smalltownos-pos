@@ -56,6 +56,8 @@ export interface ShiftReportData {
   adjustments: ReportAdjustmentRow[];
   /** Open tickets this cashier passed to someone else at close. */
   passedOn?: { label: string; totalCents: number; to: string | null }[];
+  /** Coupons used on paid bills; the paper coupons should be in the drawer. */
+  coupons?: { code: string; count: number; totalCents: number }[];
   notes: string[];
   telegram: string | null;
 }

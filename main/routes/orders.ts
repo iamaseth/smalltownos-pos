@@ -23,6 +23,7 @@ import { validateOrderNotes, validateItemNotes, validateProductQuantity } from '
 import { hasPermission, requirePermission } from '../services/authorization';
 import { COMP_REASONS, removalRequiresApproval, resolveApproval, withinChangeWindow, type Approval } from '../services/item-approvals';
 import { activeSpecialPrices, readSpecialPriceEvents } from '../services/special-prices';
+import { orderHasCoupon } from '../services/coupons';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
@@ -1395,6 +1396,10 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
     if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
       return res.status(409).json({ error: 'Discounts cannot be changed after a check has been split' });
     }
+    // One discount per bill: a coupon must be removed first.
+    if (Number(req.body?.discount_value) > 0 && orderHasCoupon(db, req.params.id as string)) {
+      return res.status(409).json({ error: 'This bill already has a coupon. Remove the coupon first.' });
+    }
 
     // Cannot apply discount to completed or cancelled orders
     if (['completed', 'cancelled'].includes(order.status)) {
@@ -1680,6 +1685,9 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
     ).get(req.params.id);
     if (refundedBill) {
       return res.status(409).json({ error: 'Cannot apply discount to a refunded bill' });
+    }
+    if (Number(req.body?.discount_value) > 0 && orderHasCoupon(db, req.params.id as string)) {
+      return res.status(409).json({ error: 'This bill already has a coupon. Remove the coupon first.' });
     }
     // Cannot apply discount to completed or cancelled orders
     if (['completed', 'cancelled'].includes(order.status)) {

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Wallet, Sparkles, User, Percent, Send, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import CouponPicker from '@/components/pos/CouponPicker';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill } from '@/lib/types';
@@ -799,9 +800,13 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             )}
 
 
+            {!bill.split_group_id && (
+              <CouponPicker bill={bill} money={(value) => currencyFmt(value)} onBillUpdate={onBillUpdate} />
+            )}
+
             {/* Less common actions */}
             <div className="flex flex-wrap gap-2.5">
-              {!bill.split_group_id && discountMode !== 'none' && (
+              {!bill.split_group_id && discountMode !== 'none' && !String(bill.discount_reason || '').startsWith('Coupon ') && (
                 <button type="button" onClick={() => setShowDiscount((open) => !open)} aria-expanded={showDiscount} className={secondaryChip(showDiscount)}>
                   <Percent size={16} />
                   {Number(bill.discount_amount) > 0 ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}` : t('discount')}

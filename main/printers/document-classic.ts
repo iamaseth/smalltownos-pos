@@ -125,6 +125,8 @@ export function buildBillPrintData(order: any, bill: any, business: any, isRepri
       billNumber: String(bill?.bill_number ?? ''),
       subtotal: Number(bill?.subtotal) || 0,
       discountAmount: Number(bill?.discount_amount) || 0,
+      ...(typeof bill?.discount_reason === 'string' && bill.discount_reason.startsWith('Coupon ')
+        ? { discountNote: bill.discount_reason.slice('Coupon '.length).split(' · ')[0].trim() } : {}),
       taxAmount: Number(bill?.tax_amount) || 0,
       total: Number(bill?.total) || 0,
       ...(Object.prototype.hasOwnProperty.call(bill || {}, 'service_charge')
