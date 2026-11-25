@@ -388,12 +388,12 @@ export default function ReportsPage() {
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const canFull = tenantCan(currentTenant, 'reports.view');
   const [view, setView] = useState<'simple' | 'full'>('simple');
-  // Today's shifts with Open shift, Hand over, Close shift and Close day: on top of both report views.
+  // Full reports keep the shift bar on top; the simple view has shifts, Open/Close and Close day in its own shift row.
   const register = tenantCan(currentTenant, 'cash.shifts.view')
     ? <div className="mx-auto w-full max-w-7xl px-4 pt-4 sm:px-6 print:hidden"><RegisterStatus /></div>
     : null;
   if (!canFull) {
-    return <div>{register}<div className="mx-auto w-full max-w-7xl p-4 sm:p-6"><SimpleReports canTelegram={tenantCan(currentTenant, 'cash.shifts.view')} /></div></div>;
+    return <div className="mx-auto w-full max-w-7xl p-4 sm:p-6"><SimpleReports canTelegram={tenantCan(currentTenant, 'cash.shifts.view')} /></div>;
   }
   return (
     <div>
@@ -403,7 +403,7 @@ export default function ReportsPage() {
             className={`h-11 rounded-xl border-2 px-5 text-base font-bold ${view === key ? 'border-foreground bg-foreground text-background' : 'border-border bg-card text-foreground hover:bg-muted'}`}>{label}</button>
         ))}
       </div>
-      {register}
+      {view === 'full' && register}
       {view === 'simple'
         ? <div className="mx-auto w-full max-w-7xl p-4 sm:p-6"><SimpleReports canTelegram={tenantCan(currentTenant, 'cash.shifts.view')} /></div>
         : <FullReports />}
