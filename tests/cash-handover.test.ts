@@ -87,7 +87,8 @@ async function main() {
   assert(threw, 'unknown note rejected');
 
   console.log('Section 3: API flow');
-  for (const [key, value] of [['country', 'KH'], ['currency', 'USD'], ['timezone', 'Asia/Phnom_Penh']]) {
+  // The last-close-of-night rule depends on the clock; it is checked separately below.
+  for (const [key, value] of [['country', 'KH'], ['currency', 'USD'], ['timezone', 'Asia/Phnom_Penh'], ['ticket_pass_cutoff_hour', 'off']]) {
     db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value, now());
   }
   for (const [id, name, role] of [['owner-h', 'Owner', 'owner'], ['manager-h', 'Manager', 'manager'], ['cashier-a', 'Sokha', 'cashier'], ['cashier-b', 'Dara', 'cashier']]) {
@@ -139,7 +140,7 @@ async function main() {
 
   const quietClose = await request(app).post(`/api/cash-handover/sessions/${sessionId}/closing-count`).set('Authorization', A)
     .send({ count: { method: 'manual', usd_cents: 1000, khr_riel: 0 } });
-  assert(quietClose.status === 409 && /unpaid bill/.test(quietClose.body.error), 'normal close blocked by unpaid ticket');
+  assert(quietClose.status === 409 && /open ticket/.test(quietClose.body.error) && quietClose.body.code === 'open_tickets', 'normal close blocked by unpaid ticket');
 
   const hand = await request(app).post(`/api/cash-handover/sessions/${sessionId}/handover-now`).set('Authorization', A)
     .send({ float_left: { method: 'manual', usd_cents: 10000, khr_riel: 400000 }, device: 'pos' });
@@ -304,10 +305,20 @@ async function main() {
   const blocked = await request(app).post(`/api/cash-handover/sessions/${s8}/closing-count`).set('Authorization', A)
     .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 } });
   assert(blocked.status === 409, 'close without passing bills is still refused');
-  const passClose = await request(app).post(`/api/cash-handover/sessions/${s8}/closing-count`).set('Authorization', A)
+  const noName = await request(app).post(`/api/cash-handover/sessions/${s8}/closing-count`).set('Authorization', A)
     .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 }, pass_open_tickets: true, device: 'pos' });
+  assert(noName.status === 400 && noName.body.code === 'pass_to_required', 'passing tickets needs a named person');
+  const ticketsList = await request(app).get('/api/cash-handover/open-tickets').set('Authorization', A);
+  assert(ticketsList.status === 200 && ticketsList.body.staff.some((u: { id: string }) => u.id === 'cashier-b')
+    && !ticketsList.body.staff.some((u: { id: string }) => u.id === 'cashier-a'), 'the pass-to list shows other staff, not the closer');
+  const passClose = await request(app).post(`/api/cash-handover/sessions/${s8}/closing-count`).set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 }, pass_open_tickets: true, pass_to_user_id: 'cashier-b', device: 'pos' });
   assert(passClose.status === 200, `close with bills passed on succeeds (${passClose.status} ${passClose.body.error || ''})`);
   assert(passClose.body.passed_to_next_cashier?.tickets >= 2, 'the unpaid bills are passed to the next cashier');
+  const assigned = db.prepare(`SELECT assigned_to FROM ticket_handovers WHERE cash_handover_id = ?`).get(passClose.body.passed_to_next_cashier.handover_id) as { assigned_to: string };
+  assert(assigned?.assigned_to === 'cashier-b', 'the handover records who the tickets were passed to');
+  const passedReport = require('../main/services/shift-report').buildShiftReport(s8);
+  assert(passedReport.passedOn.length >= 2 && passedReport.passedOn.every((t: { to: string | null }) => t.to === 'Dara'), 'the shift report lists the passed-on tickets with the person');
   assert((db.prepare(`SELECT status FROM cash_sessions WHERE id = ?`).get(s8) as { status: string }).status === 'closed', 'the shift is closed with a full count');
   assert(passClose.body.reconciliation.status === 'balanced', 'sales count is reconciled in the same close');
   const waitingNext = await request(app).get('/api/cash-handover/status').set('Authorization', B);
@@ -368,9 +379,39 @@ async function main() {
   const phoneCount = handover.phoneUploadCount(db, s9);
   assert(phoneCount === 3 && prevMax === 20, 'per-shift photo count includes removed photos (limit 20)');
   await request(app).post(`/api/cash-handover/sessions/${s9}/closing-count`).set('Authorization', B)
-    .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 }, pass_open_tickets: true });
+    .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 }, pass_open_tickets: true, pass_to_user_id: 'cashier-a' });
   const afterClose = await request(publicApp).post('/api/receipt-upload').send({ t: token, data: pngQ });
   assert(afterClose.status === 409, 'the link stops working once the shift is closed');
+
+  console.log('Section 9: $0 bill where everything is free; last close of the night');
+  const s10open = await request(app).post('/api/cash-handover/open').set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 5000, khr_riel: 0 }, device: 'pos' });
+  assert(s10open.status === 200, `A opens another shift (${s10open.status} ${s10open.body.error || ''})`);
+  const s10 = s10open.body.session.id;
+  const ft = now();
+  const freeOrderId = Number(db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at) VALUES ('T-FREE', 'cashier-a', 'dine_in', 'served', 0, 0, ?, ?)`).run(ft, ft).lastInsertRowid);
+  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at) VALUES ('B-FREE', ?, 0, 0, 0, 0, 'paid', '[]', ?, ?, ?)`)
+    .run(freeOrderId, ft, ft, ft);
+  const listedFree = await request(app).get('/api/cash-handover/open-tickets').set('Authorization', A);
+  assert(listedFree.body.tickets.some((t: { order_id: number; all_free: number }) => t.order_id === freeOrderId && t.all_free === 1), 'an all-free $0 bill shows as an open ticket');
+  const freeBlocked = await request(app).post(`/api/cash-handover/sessions/${s10}/closing-count`).set('Authorization', A)
+    .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 }, pass_open_tickets: true, pass_to_user_id: 'cashier-b' });
+  assert(freeBlocked.status === 409 && freeBlocked.body.code === 'all_free_open', 'an all-free bill cannot be passed on; the close is refused');
+  const noPin = await request(app).post(`/api/cash-handover/open-tickets/${freeOrderId}/close-free`).set('Authorization', A).send({});
+  assert(noPin.status === 400, 'closing an all-free bill needs a PIN');
+  db.prepare(`UPDATE users SET pin_hash = ? WHERE id = 'manager-h'`).run(bcrypt.hashSync('4321', 4));
+  db.prepare(`UPDATE users SET pin_hash = ? WHERE id = 'cashier-b'`).run(bcrypt.hashSync('1111', 4));
+  const cashierPin = await request(app).post(`/api/cash-handover/open-tickets/${freeOrderId}/close-free`).set('Authorization', A).send({ pin: '1111' });
+  assert(cashierPin.status === 403, 'a cashier PIN cannot close an all-free bill');
+  const okPin = await request(app).post(`/api/cash-handover/open-tickets/${freeOrderId}/close-free`).set('Authorization', A).send({ pin: '4321' });
+  assert(okPin.status === 200 && okPin.body.approved_by === 'Manager', `a manager PIN closes the all-free bill (${okPin.status} ${okPin.body.error || ''})`);
+  assert((db.prepare(`SELECT status FROM orders WHERE id = ?`).get(freeOrderId) as { status: string }).status === 'completed', 'the all-free order is completed');
+  assert(!!db.prepare(`SELECT 1 FROM order_audit_log WHERE order_id = ? AND details_json LIKE '%all_free_bill%'`).get(freeOrderId), 'closing the all-free bill is in the order history');
+  const closedTwice = await request(app).post(`/api/cash-handover/open-tickets/${freeOrderId}/close-free`).set('Authorization', A).send({ pin: '4321' });
+  assert(closedTwice.status === 409, 'a closed ticket cannot be closed twice');
+  const { isLateCloseAt } = handover;
+  assert(isLateCloseAt(22, '22') && isLateCloseAt(23, null) && isLateCloseAt(3, '22'), 'after 22:00 and before 05:00 is the last close of the night');
+  assert(!isLateCloseAt(21, '22') && !isLateCloseAt(10, null) && !isLateCloseAt(23, 'off'), 'earlier in the day, or with the rule off, tickets can be passed on');
 
   console.log('='.repeat(50));
   console.log(`Passed ${passed}/${passed + failed}, failed ${failed}`);

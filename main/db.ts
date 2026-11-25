@@ -6090,6 +6090,17 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 111,
+    name: 'ticket_handover_assigned_to',
+    up: () => {
+      // Open tickets are passed to a named person at shift close.
+      const cols = db.prepare('PRAGMA table_info(ticket_handovers)').all() as { name: string }[];
+      if (!cols.some((col) => col.name === 'assigned_to')) {
+        db.exec('ALTER TABLE ticket_handovers ADD COLUMN assigned_to TEXT REFERENCES users(id)');
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

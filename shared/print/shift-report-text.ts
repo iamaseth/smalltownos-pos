@@ -54,6 +54,8 @@ export interface ShiftReportData {
   spent: ReportSpentRow[];
   orders: ReportOrderRow[];
   adjustments: ReportAdjustmentRow[];
+  /** Open tickets this cashier passed to someone else at close. */
+  passedOn?: { label: string; totalCents: number; to: string | null }[];
   notes: string[];
   telegram: string | null;
 }

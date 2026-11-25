@@ -18,7 +18,8 @@ import { app } from 'electron';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { getDatabase, getSettingValue, localDateInTimezone, now, tenantBusinessDayStartTime, withTxn } from '../db';
+import { getDatabase, getSettingValue, localDateInTimezone, now, recordOrderAudit, tenantBusinessDayStartTime, verifyPin, withTxn } from '../db';
+import { isApprover } from '../services/item-approvals';
 import { requirePermission, hasPermission } from '../services/authorization';
 import { notifyTelegram } from '../services/telegram';
 import { getOpenSession, type CashSessionRow } from '../services/shift-session-gate';
@@ -74,8 +75,8 @@ export const MATCH_TOLERANCE_USD_CENTS = 100;
 
 /* ── small helpers ────────────────────────────────────────────────────── */
 
-function httpError(message: string, statusCode: number): Error {
-  return Object.assign(new Error(message), { statusCode });
+function httpError(message: string, statusCode: number, code?: string): Error {
+  return Object.assign(new Error(message), { statusCode, ...(code && { code }) });
 }
 
 export function sendError(res: Response, error: unknown, fallback: string): void {
@@ -84,7 +85,9 @@ export function sendError(res: Response, error: unknown, fallback: string): void
       ? (error as { statusCode: number }).statusCode : 500;
   const message = statusCode >= 500 ? fallback : (error instanceof Error ? error.message : fallback);
   if (statusCode >= 500) console.error(`[cash-handover] ${fallback}:`, error);
-  res.status(statusCode).json({ error: message });
+  const code = statusCode < 500 && typeof error === 'object' && error && 'code' in error && typeof (error as { code: unknown }).code === 'string'
+    ? (error as { code: string }).code : undefined;
+  res.status(statusCode).json({ error: message, ...(code && { code }) });
 }
 
 function actor(req: AuthedRequest): { id: string; role: string } {
@@ -365,28 +368,70 @@ function parseAmountPair(raw: unknown, label: string): { usd_cents: number; khr_
 
 /* ── ticket handover snapshot ─────────────────────────────────────────── */
 
-function openTickets(db: Db) {
+// A bill that reached $0 because every item was made free (or voided) is marked paid by
+// itself, but its order stays open. Those must be closed with a manager PIN, never passed on.
+const ALL_FREE_SQL = `(b.payment_status = 'paid' AND COALESCE(b.paid_amount, 0) = 0 AND COALESCE(b.total, 0) <= 0)`;
+
+export function openTickets(db: Db) {
   return db.prepare(`
     SELECT o.id AS order_id, o.order_number, COALESCE(t.number, o.tab_name) AS table_label, o.total, o.status AS order_status,
-      o.user_id AS original_user_id, u.name AS original_user_name,
-      COALESCE(b.balance, o.total) AS balance, COALESCE(b.paid_amount, 0) AS paid_amount
+      o.user_id AS original_user_id, u.name AS original_user_name, o.created_at,
+      COALESCE(b.balance, o.total) AS balance, COALESCE(b.paid_amount, 0) AS paid_amount,
+      CASE WHEN b.id IS NOT NULL AND ${ALL_FREE_SQL} THEN 1 ELSE 0 END AS all_free
     FROM orders o
     LEFT JOIN bills b ON b.order_id = o.id
     LEFT JOIN tables t ON t.id = o.table_id
     LEFT JOIN users u ON u.id = o.user_id
     WHERE o.status NOT IN ('completed', 'cancelled')
-      AND (b.id IS NULL OR b.payment_status NOT IN ('paid', 'refunded', 'partially_refunded'))
+      AND (b.id IS NULL OR b.payment_status NOT IN ('paid', 'refunded', 'partially_refunded') OR ${ALL_FREE_SQL})
     ORDER BY o.created_at
   `).all() as Array<Record<string, unknown>>;
 }
 
-function snapshotTickets(db: Db, sessionId: number, cashHandoverId: number | null, userId: string): number | null {
-  const tickets = openTickets(db);
+/** Hour (0-23) in the restaurant's time zone. */
+function localHour(): number {
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: tenantTimezone(), hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date());
+  return Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+}
+
+/**
+ * Last close of the night: from the cutoff hour (default 22:00) until 05:00 nothing may be
+ * passed on, so no ticket stays open overnight. Only an owner PIN overrides it.
+ */
+export function isLateCloseAt(hour: number, cutoffSetting: string | null | undefined): boolean {
+  if ((cutoffSetting ?? '').trim().toLowerCase() === 'off') return false;
+  const parsed = parseInt(cutoffSetting ?? '', 10);
+  const cutoff = Math.min(23, Math.max(12, Number.isFinite(parsed) ? parsed : 22));
+  return hour >= cutoff || hour < 5;
+}
+
+export function isLateClose(): boolean {
+  return isLateCloseAt(localHour(), getSettingValue('ticket_pass_cutoff_hour'));
+}
+
+/**
+ * Finds the active owner, or for a manager PIN anyone who may approve free items, whose PIN
+ * matches. Rate limited per device.
+ */
+function approverByPin(db: Db, req: AuthedRequest, pin: unknown, ownerOnly: boolean, purpose: string): { id: string; name: string } {
+  if (typeof pin !== 'string' || !pin.trim()) throw httpError(ownerOnly ? 'Owner PIN required' : 'Manager PIN required', 400);
+  const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
+  const { checkPinRateLimit } = require('./orders') as typeof import('./orders');
+  if (!checkPinRateLimit(`pin:${clientIp}:${purpose}`)) throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429);
+  const users = db.prepare('SELECT id, name, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL').all() as { id: string; name: string; role: string; pin_hash: string }[];
+  const allowed = (u: { id: string; role: string }) => (ownerOnly ? u.role === 'owner' : isApprover(db, u.id, 'comp'));
+  const match = users.find((u) => allowed(u) && verifyPin(u.pin_hash, pin.trim()));
+  if (!match) throw httpError(ownerOnly ? 'Invalid owner PIN' : 'Invalid manager PIN', 403);
+  return { id: match.id, name: match.name };
+}
+
+function snapshotTickets(db: Db, sessionId: number, cashHandoverId: number | null, userId: string, assignedTo: string | null = null): number | null {
+  const tickets = openTickets(db).filter((t) => Number(t.all_free) !== 1);
   const at = now();
   const header = db.prepare(`
-    INSERT INTO ticket_handovers (cash_handover_id, from_session_id, initiated_by, initiated_at, status)
-    VALUES (?, ?, ?, ?, 'pending')
-  `).run(cashHandoverId, sessionId, userId, at);
+    INSERT INTO ticket_handovers (cash_handover_id, from_session_id, initiated_by, initiated_at, status, assigned_to)
+    VALUES (?, ?, ?, ?, 'pending', ?)
+  `).run(cashHandoverId, sessionId, userId, at, assignedTo);
   const id = Number(header.lastInsertRowid);
   const insert = db.prepare(`
     INSERT INTO ticket_handover_items (ticket_handover_id, order_id, order_number, table_label, total, balance, order_status, original_user_id)
@@ -413,7 +458,8 @@ router.get('/status', requirePermission('cash.shifts.view'), (req: AuthedRequest
       FROM cash_sessions s WHERE s.handover_state = 'pending_count' ORDER BY s.cutoff_at
     `).all();
     const awaitingIncoming = db.prepare(`
-      SELECT h.id, h.from_session_id, h.cutoff_at, s.opened_by_name AS from_cashier
+      SELECT h.id, h.from_session_id, h.cutoff_at, s.opened_by_name AS from_cashier,
+        (SELECT u.name FROM ticket_handovers th JOIN users u ON u.id = th.assigned_to WHERE th.cash_handover_id = h.id LIMIT 1) AS passed_to
       FROM cash_handovers h JOIN cash_sessions s ON s.id = h.from_session_id
       WHERE h.status = 'awaiting_incoming' ORDER BY h.id
     `).all() as { id: number }[];
@@ -483,20 +529,37 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
     const floatRetained = floatOut ?? parseAmountPair((req.body || {}).float_retained, 'float_retained');
     const explanation = optionalText((req.body || {}).explanation);
     const passOpenTickets = (req.body || {}).pass_open_tickets === true;
+    const passToRaw = (req.body || {}).pass_to_user_id;
+    const passTo = typeof passToRaw === 'string' && passToRaw.trim() ? passToRaw.trim() : null;
+    const ownerPin = (req.body || {}).owner_pin;
     const result = withTxn(() => {
       const session = loadSession(db, sessionId);
       if (session.status !== 'open') throw httpError('Shift is already closed', 409);
       if (floatRetained.usd_cents > totals.usd_cents || floatRetained.khr_riel > totals.khr_riel) {
         throw httpError('Float retained cannot be more than the cash counted', 400);
       }
-      // Existing guard: a normal close needs every bill settled or handed over (busy handover path).
-      const unpaid = db.prepare(`
-        SELECT COUNT(*) AS c FROM bills b JOIN orders o ON o.id = b.order_id
-        WHERE b.payment_status NOT IN ('paid', 'refunded', 'partially_refunded') AND o.status != 'cancelled'
-          AND COALESCE(b.balance, b.total, 0) > 0 AND b.created_at >= ?
-      `).get(session.opened_at) as { c: number };
-      if (Number(unpaid.c) > 0 && !passOpenTickets) {
-        throw httpError(`Cannot close: ${unpaid.c} unpaid bill(s). Take payment or cancel them first.`, 409);
+      // Every open ticket must be paid, cancelled, or passed to a named person.
+      const tickets = openTickets(db);
+      const allFree = tickets.filter((t) => Number(t.all_free) === 1);
+      if (allFree.length > 0) {
+        const labels = allFree.map((t) => String(t.table_label || t.order_number)).join(', ');
+        throw httpError(`Close the $0 bill${allFree.length > 1 ? 's' : ''} where everything is free first (manager PIN): ${labels}`, 409, 'all_free_open');
+      }
+      const unpaid = { c: tickets.length };
+      if (unpaid.c > 0 && !passOpenTickets) {
+        throw httpError(`Cannot close: ${unpaid.c} open ticket(s). Take payment, cancel, or pass them on.`, 409, 'open_tickets');
+      }
+      let lateApprover: { id: string; name: string } | null = null;
+      if (unpaid.c > 0) {
+        if (!passTo) throw httpError('Choose who takes the open tickets', 400, 'pass_to_required');
+        const receiver = db.prepare('SELECT id, name FROM users WHERE id = ? AND is_active = 1').get(passTo) as { id: string; name: string } | undefined;
+        if (!receiver || !hasPermission(receiver.id, 'cash.shifts.open')) throw httpError('That person cannot take over tickets', 400);
+        if (isLateClose()) {
+          if (ownerPin == null || ownerPin === '') {
+            throw httpError('Last close of the night: every ticket must be paid or cancelled. Only the owner PIN can pass them on.', 409, 'late_close');
+          }
+          lateApprover = approverByPin(db, req, ownerPin, true, 'late-ticket-pass');
+        }
       }
       const cutoff = now();
       insertCount(db, session.id, 'closing', totals, me.id, deviceOf(req));
@@ -509,6 +572,10 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
         db.prepare(`INSERT INTO cash_reconciliation_notes (reconciliation_id, kind, body, author_id, author_role, created_at) VALUES (?, 'cashier_explanation', ?, ?, ?, ?)`)
           .run(done.id, explanation, me.id, me.role, now());
       }
+      if (lateApprover) {
+        db.prepare(`INSERT INTO cash_reconciliation_notes (reconciliation_id, kind, body, author_id, author_role, created_at) VALUES (?, 'manager_acknowledgement', ?, ?, 'owner', ?)`)
+          .run(done.id, `Owner PIN allowed ${unpaid.c} open ticket(s) to stay open overnight`, lateApprover.id, now());
+      }
       let passedTo: { handover_id: number; tickets: number } | null = null;
       if (Number(unpaid.c) > 0 && passOpenTickets) {
         const floatTotals: CashCountTotals = {
@@ -520,9 +587,9 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
           INSERT INTO cash_handovers (from_session_id, mode, cutoff_at, declared_count_id, status, initiated_by, created_at)
           VALUES (?, 'standard', ?, ?, 'awaiting_incoming', ?, ?)
         `).run(session.id, cutoff, declaredId, me.id, now()).lastInsertRowid);
-        const ticketHandoverId = snapshotTickets(db, session.id, handoverId, me.id);
-        const tickets = ticketHandoverId == null ? 0 : Number((db.prepare('SELECT COUNT(*) AS c FROM ticket_handover_items WHERE ticket_handover_id = ?').get(ticketHandoverId) as { c: number }).c);
-        passedTo = { handover_id: handoverId, tickets };
+        const ticketHandoverId = snapshotTickets(db, session.id, handoverId, me.id, passTo);
+        const passedCount = ticketHandoverId == null ? 0 : Number((db.prepare('SELECT COUNT(*) AS c FROM ticket_handover_items WHERE ticket_handover_id = ?').get(ticketHandoverId) as { c: number }).c);
+        passedTo = { handover_id: handoverId, tickets: passedCount };
       }
       return { done, passedTo };
     });
@@ -547,6 +614,9 @@ router.post('/sessions/:id/handover-now', requirePermission('cash.shifts.close')
     const result = withTxn(() => {
       const session = loadSession(db, sessionId);
       if (session.status !== 'open') throw httpError('Shift is already closed', 409);
+      if (openTickets(db).some((t) => Number(t.all_free) === 1)) {
+        throw httpError('Close the $0 bills where everything is free first (manager PIN)', 409, 'all_free_open');
+      }
       const cutoff = now();
       const declaredId = insertCount(db, session.id, 'handover_float_declared', declared, me.id, deviceOf(req));
       createReconciliation(db, session, cutoff);
@@ -1131,10 +1201,47 @@ router.post('/sessions/:id/close-preview', requirePermission('cash.shifts.close'
   } catch (error) { sendError(res, error, 'Failed to check the count'); }
 });
 
-router.get('/open-tickets', requirePermission('cash.shifts.view'), (_req: AuthedRequest, res: Response) => {
+router.get('/open-tickets', requirePermission('cash.shifts.view'), (req: AuthedRequest, res: Response) => {
   try {
-    res.json({ tickets: openTickets(getDatabase()) });
+    const db = getDatabase();
+    const me = actor(req);
+    // People who can take over tickets: active staff allowed to open a shift, except the one closing.
+    const staff = (db.prepare(`SELECT id, name FROM users WHERE is_active = 1 ORDER BY name COLLATE NOCASE`).all() as { id: string; name: string }[])
+      .filter((u) => u.id !== me.id && hasPermission(u.id, 'cash.shifts.open'));
+    res.json({ tickets: openTickets(db), late_close: isLateClose(), staff });
   } catch (error) { sendError(res, error, 'Failed to read open tickets'); }
+});
+
+/**
+ * Closes an open order whose bill is $0 because everything on it was made free or voided.
+ * Needs a manager PIN; the free items stay recorded as free.
+ */
+router.post('/open-tickets/:orderId/close-free', requirePermission('cash.shifts.close'), (req: AuthedRequest, res: Response) => {
+  try {
+    const db = getDatabase();
+    const me = actor(req);
+    const orderId = parseId(req.params.orderId, 'order id');
+    const result = withTxn(() => {
+      const ticket = openTickets(db).find((t) => Number(t.order_id) === orderId);
+      if (!ticket) throw httpError('This ticket is no longer open', 409);
+      if (Number(ticket.all_free) !== 1) throw httpError('This ticket still has something to pay', 409);
+      const approver = approverByPin(db, req, (req.body || {}).pin, false, 'close-free-ticket');
+      const at = now();
+      const order = db.prepare('SELECT id, status, table_id FROM orders WHERE id = ?').get(orderId) as { id: number; status: string; table_id: string | null };
+      db.prepare(`UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?`).run(at, at, orderId);
+      db.prepare(`UPDATE order_items SET status = 'served', updated_at = ? WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')`).run(at, orderId);
+      if (order.table_id) {
+        const stillOpen = db.prepare(`SELECT 1 FROM orders WHERE table_id = ? AND id != ? AND status NOT IN ('completed', 'cancelled') LIMIT 1`).get(order.table_id, orderId);
+        if (!stillOpen) db.prepare(`UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?`).run(at, order.table_id);
+      }
+      recordOrderAudit(db, {
+        orderId: String(orderId), actorUserId: me.id, action: 'status_changed',
+        details: { from: order.status, to: 'completed', all_free_bill: true, approved_by: approver.id },
+      });
+      return { order_id: orderId, approved_by: approver.name };
+    });
+    res.json(result);
+  } catch (error) { sendError(res, error, 'Failed to close the ticket'); }
 });
 
 export const cashHandoverRoutes = router;
