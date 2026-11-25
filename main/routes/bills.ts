@@ -20,7 +20,7 @@ import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
-import { getOpenSession, isCashTender, NO_CASH_SESSION_ID, requireOpenSessionForCashTender } from '../services/shift-session-gate';
+import { getOpenSession, isCashTender, NO_CASH_SESSION_ID, requireOpenSessionForSale } from '../services/shift-session-gate';
 import {
   getActiveCountryPack,
   scaleTaxSnapshots,
@@ -2123,7 +2123,7 @@ function applyPaymentBatch(
   }
   // Shift enforcement (#279) runs after replay detection: retrying an already
   // recorded payment must succeed even if its shift has since closed.
-  requireOpenSessionForCashTender(db, payments);
+  requireOpenSessionForSale(db, 'payments');
   const activeSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;
   const currency = getTenantCurrency();
   const minorFactor = getCurrencyMinorUnitFactor(currency);
@@ -2237,7 +2237,7 @@ router.post('/:id/payment', requirePermission('payments.take'), (req: Request, r
   } catch (error: any) {
     const statusCode = error.statusCode || 500;
     console.error('[API] Bill payment failed:', error);
-    res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message });
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message, ...(error.code ? { code: error.code } : {}) });
   }
 });
 
@@ -2282,7 +2282,7 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
         });
       } catch { /* diagnostics must never mask the original failure */ }
     }
-    res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message });
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message, ...(error.code ? { code: error.code } : {}) });
   }
 });
 

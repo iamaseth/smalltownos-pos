@@ -28,6 +28,7 @@ import OpenTabsModal from '@/components/pos/OpenTabsModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
 import { useCashSession } from '@/hooks/useCashSession';
+import { ShiftRequiredOverlay, useShiftGate } from '@/components/pos/ShiftRequiredOverlay';
 import { tenantCan } from '@/lib/permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
@@ -120,6 +121,7 @@ export default function POSPage() {
   // Shift actions follow the same owner/manager/cashier group as the
   // backend route gates (backend still enforces; this only hides the entry).
   const canUseShift = tenantCan(currentTenant, 'cash.shifts.view');
+  const shiftGate = useShiftGate();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -1461,7 +1463,10 @@ export default function POSPage() {
         canArrange={tenantCan(currentTenant, 'catalog.manage')}
         onOpenSearch={() => setSearchOpen(true)}
       />
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {shiftGate.blocked && (
+          <ShiftRequiredOverlay canOpenShift={tenantCan(currentTenant, 'cash.shifts.open')} onCheckAgain={() => { void shiftGate.refresh(); }} />
+        )}
         {/* Product Grid — full width on mobile, flex-1 on desktop */}
         <div className="flex-1 min-w-0 h-full flex flex-col">
           {specialBanner.length > 0 && (
