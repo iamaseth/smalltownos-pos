@@ -55,9 +55,17 @@ assert.match(posPage, /data-testid="destination-choice"/, 'the Table / Tab / To 
 assert.match(posPage, /Select a table, tab or To Go to continue\./, 'the chooser explains why it opened');
 
 const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
-assert.match(dashboard, /dayInputRef.*monthInputRef/s, 'dashboard retains explicit date and month picker controls');
-assert.match(dashboard, /input\.showPicker\(\)/, 'dashboard calendar buttons invoke the native Chromium picker');
-assert.match(dashboard, /aria-label=\{t\('openDatePicker'\)\}/, 'dashboard date picker trigger stays accessible');
+assert.match(dashboard, /redirect\('\/reports'\)/, 'legacy dashboard bookmarks redirect to Reports');
+const sidebar = source('frontend/src/components/layout/Sidebar.tsx');
+assert.doesNotMatch(sidebar, /href: '\/dashboard'/, 'Dashboard is absent from the sidebar');
+const authGuard = source('frontend/src/components/layout/AuthGuard.tsx');
+assert.doesNotMatch(authGuard, /\['dashboard\.view', '\/dashboard'\]/, 'Dashboard is absent from landing-page candidates');
+const rootPage = source('frontend/src/app/page.tsx');
+assert.match(rootPage, /redirect\('\/pos'\)/, 'the application root lands on POS');
+const registerStatus = source('frontend/src/components/reports/RegisterStatus.tsx');
+assert.match(registerStatus, /Register OPEN/, 'Reports shows the open-register state');
+assert.match(registerStatus, /Register CLOSED/, 'Reports shows the closed-register state');
+assert.match(registerStatus, /dayClose\.openCloseModal/, 'Reports keeps the close-day workflow available');
 
 const prepaidCheckout = source('frontend/src/components/pos/PrepaidCheckoutModal.tsx');
 assert.doesNotMatch(prepaidCheckout, /bg-gradient-to-br from-slate-800 to-slate-900/, 'prepaid checkout does not restore the oversized total card');

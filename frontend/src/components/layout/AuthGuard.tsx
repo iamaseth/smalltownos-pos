@@ -12,7 +12,6 @@ import type { Tenant } from '@/lib/types';
 export function getLandingPage(tenant?: Tenant | null): string {
   const candidates = [
     ['pos.use', '/pos'],
-    ['dashboard.view', '/dashboard'],
     ['orders.read', '/orders'],
     ['kitchen.use', '/kds'],
     ['catalog.manage', '/products'],
@@ -29,7 +28,6 @@ const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/server-standalone', '/receipt
 
 const PAGE_PERMISSIONS = [
   ['/pos', 'pos.use'],
-  ['/dashboard', 'dashboard.view'],
   ['/reports', 'cash.shifts.view'],
   ['/orders', 'orders.read'],
   ['/products', 'catalog.manage'],
