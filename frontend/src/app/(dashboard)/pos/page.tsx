@@ -9,6 +9,7 @@ import { useHeldOrdersStore } from '@/store/held-orders';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
+import Link from 'next/link';
 import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
@@ -117,6 +118,15 @@ export default function POSPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const cashDrawer = useCashDrawerMovements();
   const shift = useCashSession();
+  const [requireOpenShift, setRequireOpenShift] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/settings/require_open_shift')
+      .then(({ data }) => { if (!cancelled) setRequireOpenShift(data?.setting?.value === 'true'); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  const paymentLocked = requireOpenShift && !shift.loading && !shift.session;
   // Shift actions follow the same owner/manager/cashier group as the
   // backend route gates (backend still enforces; this only hides the entry).
   const canUseShift = tenantCan(currentTenant, 'cash.shifts.view');
@@ -1332,6 +1342,7 @@ export default function POSPage() {
     submitting,
     onPlaceOrder: handlePlaceOrder,
     onPayNow: handlePayNow,
+    paymentLocked,
     destination,
     showTableOption: tablesRequired,
     onSelectTable: handleChooseTableMode,
@@ -1430,6 +1441,12 @@ export default function POSPage() {
               </div>
             </>
           )}
+        </div>
+      )}
+      {paymentLocked && (
+        <div className="mx-3 mt-3 flex items-center justify-between gap-4 rounded-2xl border-2 border-red-300 bg-red-50 px-5 py-4 text-red-900 dark:bg-red-950 dark:text-red-100">
+          <div><p className="text-xl font-black">Open your shift first</p><p className="text-sm">Payments are disabled until a shift is open.</p></div>
+          <Link href="/cash" className="rounded-xl bg-red-700 px-5 py-3 text-lg font-black text-white hover:bg-red-800">Open shift</Link>
         </div>
       )}
 

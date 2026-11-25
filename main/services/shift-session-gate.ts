@@ -52,9 +52,8 @@ export function isCashTender(db: ReturnType<typeof getDatabase>, payment: unknow
 }
 
 /**
- * When the owner opted into `require_open_shift`, cash touching the drawer
- * needs an open session. Non-cash tenders are never gated. Missing setting
- * rows (pre-v90 upgrades) read as off.
+ * When the owner opted into `require_open_shift`, drawer activity needs an
+ * open session. Missing setting rows (pre-v90 upgrades) read as off.
  */
 export function requireOpenSessionForCash(db: ReturnType<typeof getDatabase>): void {
   if (getSettingValue('require_open_shift') !== 'true') return;
@@ -64,12 +63,12 @@ export function requireOpenSessionForCash(db: ReturnType<typeof getDatabase>): v
 }
 
 /**
- * Payment-line variant: gates when any line is effectively cash (see
- * isCashTender), so a custom method named "Cash" cannot bypass the gate.
+ * Payment-line variant: every valid payment method requires an open shift
+ * when enforcement is enabled.
  */
 export function requireOpenSessionForCashTender(db: ReturnType<typeof getDatabase>, payments: unknown[]): void {
   if (getSettingValue('require_open_shift') !== 'true') return;
-  if (payments.some((line) => isCashTender(db, line)) && !getOpenSession(db)) {
-    throw httpError('No open shift: open a shift before taking cash', 409);
+  if (payments.length > 0 && !getOpenSession(db)) {
+    throw httpError('No open shift: open a shift before taking payment', 409);
   }
 }
