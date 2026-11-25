@@ -179,34 +179,20 @@ function cashBlock(w: number, c: ReportCash, closing: boolean): string[] {
   return out;
 }
 
-function tableLine(w: number, row: ReportTableRow, timezone: string): string {
-  const when = row.openedAt ? timeOnly(formatStamp(row.openedAt, timezone)) : '';
-  const status = row.status === 'paid' ? '' : row.status === 'open' ? ' open' : ' due';
-  return cols(w, `${row.label}${row.who ? ` ${row.who}` : ''}`, when, `${usd(row.totalCents)}${status}`);
-}
-
-const CHANNEL_SHORT: Record<string, string> = { pin: 'PIN', telegram: 'TG', allowance: 'allowance' };
-
-/** Voids, comps and removed items, grouped by kind; entertainer drinks get their own group. */
-function adjustmentsBlock(w: number, rows: ReportAdjustmentRow[], timezone: string): string[] {
+/** Compact totals only; item-level audit detail belongs in the separate ticket print. */
+function adjustmentsBlock(w: number, rows: ReportAdjustmentRow[]): string[] {
   if (rows.length === 0) return [];
   const out = [w >= 40 ? 'VOIDS, COMPS & REMOVED ITEMS' : 'VOIDS, COMPS, REMOVED'];
-  const wide = w >= 40;
   const groups: [string, (r: ReportAdjustmentRow) => boolean][] = [
-    [wide ? 'Voids (made, taken off)' : 'Voids', (r) => r.kind === 'void'],
-    [wide ? 'Comps (made, free)' : 'Comps', (r) => r.kind === 'comp' && r.reason !== 'entertainer'],
-    [wide ? 'Entertainer drinks' : 'Entertainer', (r) => r.kind === 'comp' && r.reason === 'entertainer'],
-    [wide ? 'Removed before cooking' : 'Not made', (r) => r.kind === 'removed'],
+    ['Voids', (r) => r.kind === 'void'],
+    ['Comps', (r) => r.kind === 'comp' && r.reason !== 'entertainer'],
+    ['Entertainer', (r) => r.kind === 'comp' && r.reason === 'entertainer'],
+    ['Removed', (r) => r.kind === 'removed'],
   ];
   for (const [title, test] of groups) {
     const list = rows.filter(test);
     if (!list.length) continue;
     out.push(cols(w, title, String(list.reduce((n, r) => n + r.qty, 0)), usd(list.reduce((n, r) => n + r.amountCents, 0))));
-    for (const r of list) {
-      out.push(lr(w, ` ${timeOnly(formatStamp(r.at, timezone))} ${r.product} x${r.qty} ${r.label}`, usd(r.amountCents)));
-      const who = r.approvedBy && r.channel !== 'allowance' ? `${r.requestedBy} > ok ${r.approvedBy} (${CHANNEL_SHORT[r.channel ?? ''] ?? r.channel ?? '-'})` : `${r.requestedBy}${r.channel === 'allowance' ? ' (allowance)' : ''}`;
-      out.push(...wrap(w, `${who} ${r.reasonLabel}${r.note ? ` - ${r.note}` : ''}`, '   '));
-    }
   }
   out.push(lr(w, 'Not charged total', usd(rows.reduce((n, r) => n + r.amountCents, 0))));
   return out;
@@ -229,12 +215,9 @@ export function renderShiftReport(d: ShiftReportData, w: ReportWidth, timezone: 
     lr(w, 'Tables served', String(d.tables.served)),
     lr(w, 'Completed', String(d.tables.completed)),
     lr(w, closing ? 'Still occupied' : 'Occupied now', String(d.tables.occupied)));
-  if (d.tables.awaiting.length === 0) out.push(lr(w, 'Awaiting payment', '0'));
-  d.tables.awaiting.forEach((row, i) => out.push(lr(w, i === 0 ? 'Awaiting payment' : '', `${row.label} ${usd(row.totalCents)}`)));
-  if (d.tables.rows.length) {
-    out.push(cols(w, 'Table list', w >= 40 ? 'open' : 'open', 'total'));
-    d.tables.rows.forEach((row) => out.push(tableLine(w, row, timezone)));
-  }
+  out.push(lr(w, 'Awaiting payment', d.tables.awaiting.length
+    ? `${d.tables.awaiting.length} · ${usd(d.tables.awaiting.reduce((sum, row) => sum + row.totalCents, 0))}`
+    : '0'));
   out.push(...cashBlock(w, d.cash, closing));
   if (d.spent.length) {
     out.push('CASH SPENT');
@@ -247,7 +230,7 @@ export function renderShiftReport(d: ShiftReportData, w: ReportWidth, timezone: 
     if (d.cash.countedUsdCents != null && d.cash.floatKeptUsdCents != null) out.push(lr(w, 'Takings out USD', usd(d.cash.countedUsdCents - d.cash.floatKeptUsdCents)));
     if (d.cash.countedKhrRiel != null) out.push(lr(w, 'Takings out KHR', khr(d.cash.countedKhrRiel - (d.cash.floatKeptKhrRiel ?? 0))));
   }
-  out.push(...adjustmentsBlock(w, d.adjustments ?? [], timezone));
+  out.push(...adjustmentsBlock(w, d.adjustments ?? []));
   if (d.notes.length) {
     out.push('NOTES');
     d.notes.forEach((n) => out.push(...wrap(w, n)));
@@ -271,21 +254,14 @@ export function renderDailyReport(d: DailyReportData, w: ReportWidth, timezone: 
     out.push(cols(w, w >= 40 ? `${s.cashier} ${span}` : s.cashier, String(s.orders), usd(s.netCents)));
     if (w < 40) out.push(` ${span}`);
   }
-  out.push(...paymentsBlock(w, d.payments, 0), cols(w, 'CATEGORIES', 'qty', 'net'));
-  d.categories.forEach((c) => out.push(cols(w, c.label, String(c.qty), usd(c.netCents))));
-  out.push(cols(w, 'TOP ITEMS', 'qty', 'net'));
-  d.products.forEach((p) => out.push(cols(w, p.label, String(p.qty), usd(p.netCents))));
-  out.push(cols(w, 'TABLES (day)', 'open', 'total'));
-  if (d.tables.length === 0) out.push(' No tables');
-  d.tables.forEach((row) => out.push(tableLine(w, row, timezone)));
+  out.push(...paymentsBlock(w, d.payments, 0));
   out.push('CASH DIFFERENCES');
   const counted = d.shifts.filter((s) => s.varianceUsdCents != null);
   if (counted.length === 0) out.push(' No closed shifts');
   counted.forEach((s) => out.push(lr(w, s.cashier, `USD ${signed(usd(s.varianceUsdCents ?? 0), s.varianceUsdCents ?? 0)} / ${signed(khr(s.varianceKhrRiel ?? 0), s.varianceKhrRiel ?? 0)}`)));
-  out.push(...adjustmentsBlock(w, d.adjustments ?? [], timezone));
+  out.push(...adjustmentsBlock(w, d.adjustments ?? []));
   if (d.unpaid.count || d.unpaid.totalCents) {
     out.push(lr(w, 'Outstanding tickets', `${d.unpaid.count} · ${usd(d.unpaid.totalCents)}`));
-    d.unpaid.labels.forEach((l) => out.push(` ${l}`));
   }
   out.push(center(w, 'End of daily report'));
   return out;
