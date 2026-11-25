@@ -54,6 +54,39 @@ export function paginateReportLines(lines: string[], capacity: number): string[]
   return pages;
 }
 
+/**
+ * Splits rendered rows into pages of at most `capacityPx`, preferring to break before a
+ * dashed rule or a section heading in the last 40% of a page. A row taller than a page
+ * gets a page to itself.
+ */
+export function paginateRichRows(rows: HTMLElement[], capacityPx: number): HTMLElement[][] {
+  const heights = rows.map((r) => {
+    const style = r.ownerDocument.defaultView?.getComputedStyle(r);
+    const margin = style ? (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0) : 0;
+    return r.getBoundingClientRect().height + margin;
+  });
+  const total = heights.reduce((a, h) => a + h, 0);
+  if (!(capacityPx > 0) || total <= capacityPx) return [rows];
+  const isBreak = (r: HTMLElement) => r.classList.contains('r-rule') || r.classList.contains('r-section');
+  const pages: HTMLElement[][] = [];
+  let start = 0;
+  while (start < rows.length) {
+    let used = 0;
+    let end = start;
+    while (end < rows.length && (used + heights[end] <= capacityPx || end === start)) { used += heights[end]; end += 1; }
+    if (end < rows.length) {
+      let acc = 0;
+      for (let k = start; k < end; k += 1) {
+        acc += heights[k];
+        if (k > start && isBreak(rows[k]) && acc - heights[k] >= capacityPx * 0.6) { end = k; }
+      }
+    }
+    pages.push(rows.slice(start, end));
+    start = end;
+  }
+  return pages;
+}
+
 function paginateReceiptReport(doc: Document, options: FramePrintOptions): void {
   const pageLength = options.receiptPageLengthMm;
   const paperWidth = options.receiptPaperWidthMm;
@@ -71,18 +104,28 @@ function paginateReceiptReport(doc: Document, options: FramePrintOptions): void 
   if (!(pxPerMm > 0) || !(lineHeight > 0)) throw new Error('Could not measure receipt report line height');
 
   // The driver page is fixed; reserve 8 mm for the repeated header/footer.
-  const capacity = Math.max(1, Math.floor(((pageLength - 8) * pxPerMm) / lineHeight));
-  const pages = paginateReportLines(lineNodes.map((line) => line.textContent ?? ''), capacity);
   const label = options.reportPageLabel || doc.title || 'Report';
+  // Rich cashier receipts (rows of different sizes) move the row elements onto pages so
+  // big totals and bold lines keep their look; plain-text reports re-flow as text.
+  const rich = root.dataset.rich === '1';
+  const pages: (string[] | HTMLElement[])[] = rich
+    ? paginateRichRows(lineNodes, (pageLength - 8) * pxPerMm)
+    : paginateReportLines(lineNodes.map((line) => line.textContent ?? ''), Math.max(1, Math.floor(((pageLength - 8) * pxPerMm) / lineHeight)));
   root.replaceChildren(...pages.map((pageLines, index) => {
     const page = doc.createElement('section');
     page.className = 'receipt-page';
     const header = doc.createElement('div');
     header.className = 'receipt-page-header';
     header.textContent = `${label} · page ${index + 1} of ${pages.length}`;
-    const content = doc.createElement('pre');
+    let content: HTMLElement;
+    if (rich) {
+      content = doc.createElement('div');
+      content.append(...(pageLines as HTMLElement[]));
+    } else {
+      content = doc.createElement('pre');
+      content.textContent = (pageLines as string[]).join('\n');
+    }
     content.className = 'receipt-page-content';
-    content.textContent = pageLines.join('\n');
     page.append(header, content);
     if (index < pages.length - 1) {
       const footer = doc.createElement('div');
@@ -104,6 +147,7 @@ function paginateReceiptReport(doc: Document, options: FramePrintOptions): void 
       .receipt-page:last-child { break-after: auto; page-break-after: auto; }
       .receipt-page-header, .receipt-page-footer { font: 10px/1.25 'Courier New', monospace; white-space: nowrap; }
       .receipt-page-content { margin: 0; padding: 0; font: 12px/1.25 'Courier New', monospace; white-space: pre; }
+      .receipt-report[data-rich="1"] .receipt-page-content { font: inherit; white-space: normal; padding: 0 3mm; }
       .receipt-page-footer { text-align: right; }
     }
   `;

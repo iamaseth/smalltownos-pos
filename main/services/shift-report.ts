@@ -457,6 +457,8 @@ export interface CashierReportData {
   items: ReportQtyRow[];
   tickets: ReportOrderRow[];
   unpaid: { count: number; totalCents: number; labels: string[] };
+  /** Deleted (voided / removed) and free (comp) items in the window, with who asked and approved. */
+  adjustments: ReportAdjustmentRow[];
   cash: { openingUsdCents: number; expectedUsdCents: number; countedUsdCents: number | null; differenceUsdCents: number | null; openingKhrRiel: number; expectedKhrRiel: number; countedKhrRiel: number | null; differenceKhrRiel: number | null; shiftsCounted: number; shiftsTotal: number };
 }
 
@@ -548,6 +550,7 @@ export function buildCashierReport(input: { startDate: string; endDate: string; 
     items: itemsFor(db, billIds),
     tickets: orderRows(db, orders, (o) => sessions.find((x) => o.created_at >= x.opened_at && (!x.closed_at || o.created_at <= x.closed_at))?.id ?? null),
     unpaid: unpaidSummary(orders),
+    adjustments: adjustmentsFor(db, w),
     cash: {
       ...cash,
       countedUsdCents: anyCounted ? cash.countedUsdCents : null, countedKhrRiel: anyCounted ? cash.countedKhrRiel : null,

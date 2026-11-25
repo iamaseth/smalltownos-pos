@@ -10,8 +10,8 @@ function message(error: unknown, fallback: string): string {
   return data?.error || (error as Error)?.message || fallback;
 }
 
-/** Receipt (80 mm) · PDF / A4 · Telegram for one report. */
-export function ReportOutputButtons({ target, telegram = true, size = 'md' }: { target: ReportTarget; telegram?: boolean; size?: 'sm' | 'md' }) {
+/** Receipt (80 mm) · PDF / A4 · Telegram for one report. `detailed` prints the full owner layout instead of the cashier one. */
+export function ReportOutputButtons({ target, telegram = true, size = 'md', detailed = false }: { target: ReportTarget; telegram?: boolean; size?: 'sm' | 'md'; detailed?: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
@@ -25,7 +25,7 @@ export function ReportOutputButtons({ target, telegram = true, size = 'md' }: { 
     <div className="flex flex-wrap gap-2">
       <button type="button" className={cls} disabled={busy !== null}
         onClick={() => run('receipt', async () => {
-          try { await printReportReceipt(target); toast.success('Sent to the receipt printer'); }
+          try { await printReportReceipt(target, { detailed }); toast.success('Sent to the receipt printer'); }
           catch (error) { toast.error(message(error, 'Could not print')); }
         })}>
         <Printer className={icon} /> {busy === 'receipt' ? 'Printing…' : 'Receipt'}
