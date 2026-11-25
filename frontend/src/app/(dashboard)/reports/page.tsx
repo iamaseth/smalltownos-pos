@@ -14,6 +14,7 @@ import TelegramSendButton from '@/components/reports/TelegramSendButton';
 import { tenantCan } from '@/lib/permissions';
 import { DayReports, type DayView } from '@/components/reports/DayReports';
 import { SimpleReports } from '@/components/reports/SimpleReports';
+import { RegisterStatus } from '@/components/reports/RegisterStatus';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type Preset = 'today' | 'yesterday' | 'thisWeek' | 'lastWeek' | 'thisMonth' | 'lastMonth' | 'custom';
@@ -174,6 +175,7 @@ function FullReports() {
 
   return (
     <div className="print-report mx-auto w-full max-w-7xl p-4 sm:p-6">
+      <RegisterStatus />
       <div className="mb-5 flex gap-1 overflow-x-auto border-b-2 border-border print:hidden" role="tablist" aria-label="Report">
         {TABS.map((item) => (
           <button key={item.key} type="button" role="tab" aria-selected={tab === item.key} onClick={() => setTab(item.key)}

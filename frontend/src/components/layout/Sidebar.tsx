@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard,
   ShoppingCart,
   ClipboardList,
   Package,
@@ -72,7 +71,6 @@ interface NavItem {
 // null = show for all business types
 const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/pos', labelKey: 'pos', icon: ShoppingCart, permission: 'pos.use', businessTypes: null },
-  { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard, permission: 'dashboard.view', businessTypes: null },
   { href: '/reports', labelKey: 'reports', icon: BarChart3, permission: 'cash.shifts.view', businessTypes: null },
   { href: '/orders', labelKey: 'orders', icon: ClipboardList, permission: 'orders.read', businessTypes: null },
   { href: '/whatsapp', labelKey: 'whatsapp', icon: MessageCircle, permission: 'whatsapp.use', businessTypes: null },

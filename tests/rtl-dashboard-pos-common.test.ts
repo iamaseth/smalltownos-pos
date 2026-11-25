@@ -53,7 +53,8 @@ const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.j
 /** Batch E screen files that must use logical direction utilities. */
 const SCREEN_FILES = [
   'frontend/src/app/(dashboard)/pos/page.tsx',
-  'frontend/src/app/(dashboard)/dashboard/page.tsx',
+  'frontend/src/app/(dashboard)/reports/page.tsx',
+  'frontend/src/components/reports/RegisterStatus.tsx',
   'frontend/src/app/(dashboard)/orders/page.tsx',
   'frontend/src/app/(dashboard)/products/page.tsx',
   'frontend/src/app/(dashboard)/customers/page.tsx',
