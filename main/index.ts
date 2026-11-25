@@ -20,6 +20,7 @@ import { authorizeMasterPin } from './services/master-pin';
 import { requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
+import { BACKSTREET_BUILD } from '../shared/backstreet-build';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
 import {
   classifyUpdateError,
@@ -223,6 +224,10 @@ function setupAutoUpdater(): void {
 }
 
 function checkForUpdates(): void {
+  if (!BACKSTREET_BUILD.upstreamAutoUpdate) {
+    log.info('[Update] BackStreet build: updates come from the BackStreet branch, not FloCafe releases');
+    return;
+  }
   if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
     log.info('[Update] Ignoring check while a staged update awaits installation');
     return;
@@ -1180,7 +1185,7 @@ function createMenu(): void {
       label: 'Help',
       submenu: [
         ...(process.platform !== 'darwin' ? [{ label: 'About Flo', click: () => showAbout() }] : []),
-        ...(isStoreBuild
+        ...(isStoreBuild || !BACKSTREET_BUILD.upstreamAutoUpdate
           ? []
           : [{ label: 'Check for Updates', click: () => checkForUpdates() }]),
         { label: 'Open Logs Folder', click: () => shell.showItemInFolder(log.transports.file.getFile().path) },
@@ -1244,8 +1249,12 @@ async function initialize(): Promise<void> {
     if (isShutdownRequested()) return;
 
     if (process.env.FLO_DEMO_MODE !== '1') {
-      cloudSync.start();
-      telemetry.start();
+      if (BACKSTREET_BUILD.upstreamCloud) {
+        cloudSync.start();
+        telemetry.start();
+      } else {
+        log.info('[BackStreet] FloAdmin cloud sync and telemetry are off in this build');
+      }
       googleDrive.start();
     } else {
       log.warn('[DEMO MODE] Cloud synchronization, telemetry and Google Drive disabled.');
@@ -1410,7 +1419,7 @@ async function initialize(): Promise<void> {
     createMenu();
     // Auto-updater configured on non-store platforms.
     if (!isStoreBuild) {
-      if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
+      if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1' && BACKSTREET_BUILD.upstreamAutoUpdate) {
         setupAutoUpdater();
         setTimeout(() => checkForUpdates(), 5000);
       }
