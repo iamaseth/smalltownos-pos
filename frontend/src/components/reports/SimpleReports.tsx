@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, Lock, LockOpen, Moon, Printer, Search, Send, Sun, TriangleAlert } from 'lucide-react';
 import api from '@/lib/api';
-import { usd, khr, type ReportAdjustmentRow, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ReportSales } from '@print/shift-report-text';
-import { adjustmentRows, itemsSoldRows, paymentsRows, splitAdjustments, ticketsRows, type ReceiptRow } from '@print/cashier-receipt';
+import { usd, khr, type ReportAdjustmentRow, type ReportDiscountRow, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ReportSales } from '@print/shift-report-text';
+import { adjustmentRows, discountRows, itemsSoldRows, paymentsRows, splitAdjustments, ticketsRows, type ReceiptRow } from '@print/cashier-receipt';
 import { printReceiptRows, printReportReceipt, sendReportTelegram } from '@/lib/printer/shift-report-print';
 import { OrderList } from './OrderList';
 import { CashCloseModal } from '@/components/dashboard/CashCloseModal';
@@ -17,7 +17,7 @@ import { useAuthStore } from '@/store/auth';
 import { clock } from './DayReports';
 
 type Period = 'today' | 'week' | 'month';
-type Tab = 'summary' | 'items' | 'tickets' | 'payments' | 'deleted' | 'free';
+type Tab = 'summary' | 'items' | 'tickets' | 'payments' | 'deleted' | 'free' | 'discounts';
 
 interface Shift { id: number; cashier: string; openedAt: string; closedAt: string | null; open: boolean; part: 'day' | 'night'; varianceUsdCents?: number | null; varianceKhrRiel?: number | null }
 interface CashierReport {
@@ -30,6 +30,7 @@ interface CashierReport {
   tickets: ReportOrderRow[];
   unpaid: { count: number; totalCents: number; labels: string[] };
   adjustments?: ReportAdjustmentRow[];
+  discounts?: ReportDiscountRow[];
   cash: { openingUsdCents: number; expectedUsdCents: number; countedUsdCents: number | null; differenceUsdCents: number | null; openingKhrRiel: number; expectedKhrRiel: number; countedKhrRiel: number | null; differenceKhrRiel: number | null; shiftsCounted: number; shiftsTotal: number };
 }
 
@@ -74,7 +75,7 @@ const PART = {
 const ALL = { color: '#3B6D11', soft: '#EAF3DE', ink: '#27500A' };
 const TABS: { key: Tab; label: string }[] = [
   { key: 'summary', label: 'Summary' }, { key: 'items', label: 'Items sold' }, { key: 'tickets', label: 'Tickets' }, { key: 'payments', label: 'Payments' },
-  { key: 'deleted', label: 'Deleted' }, { key: 'free', label: 'Free' },
+  { key: 'deleted', label: 'Deleted' }, { key: 'free', label: 'Free' }, { key: 'discounts', label: 'Discounts' },
 ];
 
 const card = 'rounded-2xl bg-muted/60 p-4';
@@ -159,6 +160,7 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
       else if (tab === 'payments') rows = paymentsRows(biz, scope, data.payments, stamp);
       else if (tab === 'deleted') rows = adjustmentRows(biz, scope, 'deleted', adjustments.deleted, tz, stamp);
       else if (tab === 'free') rows = adjustmentRows(biz, scope, 'free', adjustments.free, tz, stamp);
+      else if (tab === 'discounts') rows = discountRows(biz, scope, data.discounts ?? [], tz, stamp);
       if (rows) await printReceiptRows(`${TABS.find((t) => t.key === tab)?.label ?? 'Report'} ${scope}`, rows);
       else if (period === 'today') await printReportReceipt(sessionId != null ? { kind: 'shift', sessionId } : { kind: 'daily', date: start });
       else {
@@ -423,6 +425,25 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
                   <span className="tabular-nums">{usd((tab === 'deleted' ? adjustments.deleted : adjustments.free).reduce((n, a) => n + a.amountCents, 0))}</span>
                 </div>
               )}
+            </div>
+          )}
+
+          {tab === 'discounts' && (
+            <div className="max-w-2xl" data-testid="report-discounts">
+              {(data.discounts ?? []).map((d, i) => (
+                <div key={`${d.at}-${i}`} className="border-b border-border py-2.5">
+                  <div className="flex justify-between gap-3 text-base">
+                    <span><span className="tabular-nums text-muted-foreground">{clock(d.at, tz)}</span> · <b>{d.label}</b> · {d.what}</span>
+                    <span className="font-bold tabular-nums">−{usd(d.amountCents)}</span>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    by {d.requestedBy || '—'} · {d.kind === 'coupon' ? 'paper coupon' : d.approvedBy
+                      ? <>approved with <b className="text-foreground">{d.approvedBy}</b>&apos;s PIN{d.self ? <span className="font-bold text-amber-700"> (own sale)</span> : null}</>
+                      : <span className="text-red-700">no PIN</span>}
+                  </div>
+                </div>
+              ))}
+              {(data.discounts ?? []).length === 0 && <p className="py-6 text-center text-muted-foreground">No discounts</p>}
             </div>
           )}
 

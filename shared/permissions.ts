@@ -67,6 +67,8 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'bills.generate', area: 'payments', defaultRoles: OWNER_MANAGER_CASHIER, configurable: true, risk: 'sensitive' },
   { id: 'payments.take', area: 'payments', defaultRoles: OWNER_MANAGER_CASHIER, configurable: true, risk: 'sensitive' },
   { id: 'bills.discount.apply', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
+  /** Whose PIN can approve a discount. Give it to one person in Staff → permissions without making them a manager. */
+  { id: 'discounts.approve', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
   { id: 'bills.print', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'standard' },
   { id: 'refunds.view', area: 'payments', defaultRoles: OWNER_MANAGER_CASHIER, configurable: true, risk: 'sensitive' },
   { id: 'refunds.initiate', area: 'payments', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },

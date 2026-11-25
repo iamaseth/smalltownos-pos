@@ -6,7 +6,7 @@
  */
 import {
   usd, khr, formatStamp,
-  type DailyReportData, type ReportAdjustmentRow, type ReportDayCash, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ShiftReportData,
+  type DailyReportData, type ReportAdjustmentRow, type ReportDayCash, type ReportDiscountRow, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ShiftReportData,
 } from './shift-report-text';
 
 /** title: business name · heading: report name · sub: who/when · big: headline money · result: boxed cash result. */
@@ -124,6 +124,11 @@ export function cashierShiftRows(d: ShiftReportData, tz: string, opts: { reprint
     d.spent.forEach((s) => out.push(row('line', s.label, money(s.usdCents, s.khrRiel))));
   }
   out.push(rule(), ...extrasBlock(d.sales, d.unpaid));
+  const manual = (d.discounts ?? []).filter((x) => x.kind !== 'coupon');
+  if (manual.length) {
+    out.push(rule(), row('section', 'DISCOUNTS - WHO APPROVED'));
+    manual.forEach((x) => { out.push(row('line', `${x.label} ${x.what}`, usd(-x.amountCents))); out.push(row('note', discountNote(x))); });
+  }
   if (d.coupons?.length) {
     out.push(rule(), row('section', 'COUPONS - PAPER IN DRAWER'));
     d.coupons.forEach((c) => out.push(row('line', `${c.code} x${c.count}`, usd(-c.totalCents))));
@@ -173,6 +178,24 @@ export function cashierDayRows(d: DailyReportData, tz: string, opts: { reprint?:
 }
 
 /** Header shared by the tab prints: title, what was printed (shift or day), when. */
+function discountNote(r: ReportDiscountRow): string {
+  if (r.kind === 'coupon') return `by ${r.requestedBy || '—'} · paper coupon`;
+  return `by ${r.requestedBy || '—'} · ${r.approvedBy ? `PIN ${r.approvedBy}${r.self ? ' (own sale)' : ''}` : 'no PIN'}`;
+}
+
+/** Discounts list for the Discounts tab: what, how much, who asked and whose PIN approved it. */
+export function discountRows(businessName: string, scope: string, rows: ReportDiscountRow[], tz: string, printedAt: string): ReceiptRow[] {
+  const out = listHeader(businessName, 'DISCOUNTS', scope);
+  if (!rows.length) out.push(row('line', 'No discounts'));
+  rows.forEach((r) => {
+    out.push(row('line', `${time(r.at, tz)} ${r.label} ${r.what}`, usd(-r.amountCents)));
+    out.push(row('note', discountNote(r)));
+  });
+  out.push(rule(), row('line', plural(rows.length, 'discount')), row('big', 'TOTAL', usd(-rows.reduce((n, r) => n + r.amountCents, 0))));
+  out.push(row('footer', `Printed ${printedAt}`));
+  return out;
+}
+
 function listHeader(businessName: string, title: string, scope: string): ReceiptRow[] {
   return [row('title', businessName.toUpperCase()), row('heading', title), row('sub', scope), rule()];
 }

@@ -50,7 +50,7 @@ function loadBill(billId: string) {
 }
 
 /** Checkout: coupons live right now that give something off this bill. */
-router.get('/for-bill/:billId', requirePermission('bills.discount.apply'), (req: Request, res: Response) => {
+router.get('/for-bill/:billId', requirePermission('payments.take'), (req: Request, res: Response) => {
   try {
     const { db, bill } = loadBill(String(req.params.billId));
     const applied = isCouponReason(bill.discount_reason) && Number(bill.discount_amount) > 0
@@ -70,7 +70,7 @@ router.get('/for-bill/:billId', requirePermission('bills.discount.apply'), (req:
 });
 
 /** Applies one coupon as the bill's only discount. The cashier keeps the paper coupon in the drawer. */
-router.post('/for-bill/:billId/apply', requirePermission('bills.discount.apply'), (req: Request, res: Response) => {
+router.post('/for-bill/:billId/apply', requirePermission('payments.take'), (req: Request, res: Response) => {
   try {
     const me = actorId(req);
     if (req.body?.paper_confirmed !== true) throw httpError('Take the paper coupon from the customer and put it in the drawer', 400);
@@ -98,7 +98,7 @@ router.post('/for-bill/:billId/apply', requirePermission('bills.discount.apply')
   } catch (error) { fail(res, error); }
 });
 
-router.post('/for-bill/:billId/remove', requirePermission('bills.discount.apply'), (req: Request, res: Response) => {
+router.post('/for-bill/:billId/remove', requirePermission('payments.take'), (req: Request, res: Response) => {
   try {
     const me = actorId(req);
     const { db, bill } = loadBill(String(req.params.billId));
