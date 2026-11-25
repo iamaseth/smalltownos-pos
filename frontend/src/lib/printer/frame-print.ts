@@ -94,6 +94,10 @@ function paginateReceiptReport(doc: Document, options: FramePrintOptions): void 
   if (!pageLength || !paperWidth || !root) return;
   const lineNodes = Array.from(root.querySelectorAll<HTMLElement>('.receipt-line'));
   if (!lineNodes.length) return;
+  // The print frame is 0 px wide on screen; lay the report out at the real paper width
+  // before measuring, or every row wraps word by word and looks a page tall.
+  root.style.width = `${paperWidth}mm`;
+  root.style.boxSizing = 'border-box';
 
   const ruler = doc.createElement('div');
   ruler.style.cssText = 'position:absolute;visibility:hidden;width:1mm;height:100mm;padding:0;margin:0;border:0;';
