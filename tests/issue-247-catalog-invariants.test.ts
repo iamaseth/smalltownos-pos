@@ -100,6 +100,17 @@ async function main() {
     assertEqual(res.status, 200, 'explicit null clears category parent');
     assertEqual(db.prepare('SELECT parent_id FROM categories WHERE id = ?').get(childId).parent_id, null, 'parent_id is null after clear');
 
+    res = await api(baseUrl, `/api/categories/${childId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: { icon: '🇰🇭' },
+    });
+    assertEqual(res.status, 200, 'emoji icon can be set on its own');
+    assertEqual(res.data.category.icon, '🇰🇭', 'emoji icon is returned after save');
+    assertEqual(res.data.category.name, 'Child Menu', 'setting an icon leaves the name unchanged');
+    res = await api(baseUrl, `/api/categories/${childId}`, { headers: authHeader });
+    assertEqual(res.data.category.icon, '🇰🇭', 'emoji icon reloads unchanged');
+
     res = await api(baseUrl, `/api/categories/${parentId}`, {
       method: 'PUT',
       headers: authHeader,

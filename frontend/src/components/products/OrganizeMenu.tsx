@@ -10,6 +10,15 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 const NO_CATEGORY = '__none__';
 
+// Icons shown on the POS subcategory buttons. Seth's picks are included; any other emoji can be pasted.
+const ICON_CHOICES = [
+  '🍳', '🥞', '🥐', '🥗', '🥣', '🍲', '🍜', '🍚', '🍛', '🥘', '🍝', '🍕',
+  '🍔', '🥪', '🌮', '🌯', '🧀', '🍟', '🍗', '🍖', '🐖', '🥩', '🐟', '🦐',
+  '🦀', '🦞', '🥦', '🥬', '🌶️', '🥥', '🍤', '🥟', '🍢', '🫕', '🍰', '🍨',
+  '🍮', '🍦', '☕', '🍵', '🧋', '🥤', '🧃', '🍹', '🍸', '🍷', '🍺', '🥃',
+  '🇰🇭', '🇹🇭', '🇱🇦', '🇻🇳',
+];
+
 function errorText(error: unknown, fallback: string): string {
   const data = (error as { response?: { data?: { error?: string } } })?.response?.data;
   return data?.error || fallback;
@@ -39,6 +48,8 @@ export default function OrganizeMenu({ categories, products, onChanged }: {
   const [nameDraft, setNameDraft] = useState('');
   const [addingUnder, setAddingUnder] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  const [iconOpen, setIconOpen] = useState(false);
+  const [iconDraft, setIconDraft] = useState('');
 
   const current = selectedCat === NO_CATEGORY ? null : byId.get(selectedCat) ?? null;
   const items = (current ? products.filter(p => String(p.category_id ?? '') === current.id) : uncategorized)
@@ -47,7 +58,7 @@ export default function OrganizeMenu({ categories, products, onChanged }: {
     .map(c => ({ id: c.id, label: pathOf(c) }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
-  const pick = (id: string) => { setSelectedCat(id); setChecked(new Set()); setTarget(''); setRenaming(null); };
+  const pick = (id: string) => { setSelectedCat(id); setChecked(new Set()); setTarget(''); setRenaming(null); setIconOpen(false); };
   const refresh = async () => { await onChanged(); };
 
   const run = async (work: () => Promise<void>, fallback: string) => {
@@ -89,6 +100,18 @@ export default function OrganizeMenu({ categories, products, onChanged }: {
   const setColour = (cat: Category, color: string) => run(async () => {
     await api.put(`/categories/${cat.id}`, { color });
   }, 'Could not change colour');
+
+  const setIcon = (cat: Category, icon: string | null) => run(async () => {
+    const value = icon?.trim() || null;
+    await api.put(`/categories/${cat.id}`, { icon: value });
+    toast.success(value ? `${cat.name} icon set to ${value}` : `${cat.name} icon removed`);
+    setIconOpen(false);
+    setIconDraft('');
+  }, 'Could not change icon');
+
+  const iconBadge = (cat: Category) => (
+    <span className="w-5 shrink-0 text-center text-base leading-none" aria-hidden="true">{cat.icon || ''}</span>
+  );
 
   const addSub = (parent: Category | null) => run(async () => {
     const name = newName.trim();
@@ -152,6 +175,7 @@ export default function OrganizeMenu({ categories, products, onChanged }: {
                   {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                 </button>
                 <span className="size-3 shrink-0 rounded-full" style={{ backgroundColor: cat.color || '#888780' }} />
+                {iconBadge(cat)}
                 <button type="button" onClick={() => { pick(cat.id); setOpen(o => ({ ...o, [cat.id]: true })); }} className="min-w-0 flex-1 truncate text-start">
                   {cat.name}{!cat.is_active && ' (hidden)'}
                 </button>
@@ -162,6 +186,7 @@ export default function OrganizeMenu({ categories, products, onChanged }: {
                   {kids.map(kid => (
                     <div key={kid.id} className={`${rowClass(kid.is_active, selectedCat === kid.id)} ps-7`}>
                       {!kid.is_active && <EyeOff size={13} className="shrink-0" />}
+                      {iconBadge(kid)}
                       <button type="button" onClick={() => pick(kid.id)} className="min-w-0 flex-1 truncate text-start">
                         {kid.name}{!kid.is_active && ' (hidden)'}
                       </button>
@@ -206,9 +231,34 @@ export default function OrganizeMenu({ categories, products, onChanged }: {
                 Colour
                 <input type="color" className="sr-only" value={current.color || '#888780'} onChange={(e) => void setColour(current, e.target.value)} />
               </label>
+              <Button size="sm" variant="outline" aria-label={`Icon for ${current.name}`} aria-expanded={iconOpen}
+                onClick={() => { setIconOpen(o => !o); setIconDraft(''); }} disabled={busy}>
+                {current.icon ? <span className="text-base leading-none">{current.icon}</span> : <Plus size={14} />} Icon
+              </Button>
             </>
           )}
         </div>
+
+        {current && iconOpen && (
+          <div data-testid="icon-picker" className="flex flex-col gap-2 rounded-lg border border-border bg-muted/40 p-3">
+            <p className="text-sm text-muted-foreground">Pick an icon for {pathOf(current)}. It shows on the POS buttons.</p>
+            <div className="flex flex-wrap gap-1">
+              {ICON_CHOICES.map(icon => (
+                <button key={icon} type="button" disabled={busy} onClick={() => void setIcon(current, icon)} aria-label={`Use ${icon}`}
+                  className={`size-10 rounded-lg border text-xl leading-none hover:bg-background ${current.icon === icon ? 'border-brand bg-brand/15' : 'border-transparent'}`}>
+                  {icon}
+                </button>
+              ))}
+            </div>
+            <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (iconDraft.trim()) void setIcon(current, iconDraft); }}>
+              <input value={iconDraft} onChange={(e) => setIconDraft(e.target.value)} maxLength={16} placeholder="Or paste any emoji" aria-label="Paste an emoji"
+                className="w-40 rounded-lg border border-border bg-background px-2 py-1.5 text-base" />
+              <Button type="submit" size="sm" disabled={busy || !iconDraft.trim()}>Use this</Button>
+              {current.icon && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void setIcon(current, null)}>No icon</Button>}
+              <Button type="button" size="sm" variant="outline" onClick={() => setIconOpen(false)}>Close</Button>
+            </form>
+          </div>
+        )}
 
         {current && !current.parent_id && childrenOf(current.id).length > 0 && (
           <p className="text-sm text-muted-foreground">Items placed directly in {current.name}, not in a subcategory. Open a subcategory on the left to see its items.</p>
