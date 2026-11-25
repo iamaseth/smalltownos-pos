@@ -1,3 +1,4 @@
+import { pinClientKey } from '../middleware/security';
 import { createHash, randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
@@ -2411,7 +2412,7 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       if (!override_pin) {
         return res.status(403).json({ error: 'Manager PIN required for discounts', requiresApproval: true });
       }
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+      const clientIp = pinClientKey(req);
       const rateLimitKey = `pin:${clientIp}:bill-discount`;
       if (!checkPinRateLimit(rateLimitKey)) {
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });

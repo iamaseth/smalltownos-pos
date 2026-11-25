@@ -1,3 +1,4 @@
+import { pinClientKey } from '../middleware/security';
 import type { Request } from 'express';
 import { getDatabase, getSettingValue, now, verifyPin } from '../db';
 import { hasPermission } from './authorization';
@@ -49,7 +50,7 @@ export function isApprover(db: Db, userId: string | null | undefined, action: It
 }
 
 export function approverByPin(db: Db, req: Request, pin: string, action: ItemAction): string {
-  const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
+  const clientIp = pinClientKey(req);
   const { checkPinRateLimit } = require('../routes/orders') as typeof import('../routes/orders');
   if (!checkPinRateLimit(`pin:${clientIp}:item-${action}`)) throw httpError(429, 'Too many PIN attempts. Try again in 15 minutes.');
   const managers = db.prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1').all() as { id: string; role: string; pin_hash: string }[];

@@ -5,6 +5,7 @@ import { AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { reportRendererError } from '@/lib/report-renderer-error';
+import { reloadOnceForChunkError } from '@/lib/chunk-reload';
 
 const AUTO_RETRY_DELAY_MS = 2000;
 
@@ -15,6 +16,8 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
   const [reportStatus, setReportStatus] = useState<'pending' | 'sent' | 'failed'>('pending');
 
   useEffect(() => {
+    // A deploy replaced the code files: a full reload loads the new version.
+    if (reloadOnceForChunkError(error)) return;
     // Deduplicate error reporting across resets using error digest.
     const digest = error.digest ?? error.message;
     if (reportedDigest.current !== digest) {

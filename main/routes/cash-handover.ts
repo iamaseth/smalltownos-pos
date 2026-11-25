@@ -13,6 +13,7 @@
  * Amounts: USD integer cents, KHR integer riel. Combined USD equivalent is a
  * reporting value only.
  */
+import { pinClientKey } from '../middleware/security';
 import { Router, Request, Response } from 'express';
 import { app } from 'electron';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
@@ -415,7 +416,7 @@ export function isLateClose(): boolean {
  */
 function approverByPin(db: Db, req: AuthedRequest, pin: unknown, ownerOnly: boolean, purpose: string): { id: string; name: string } {
   if (typeof pin !== 'string' || !pin.trim()) throw httpError(ownerOnly ? 'Owner PIN required' : 'Manager PIN required', 400);
-  const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
+  const clientIp = pinClientKey(req);
   const { checkPinRateLimit } = require('./orders') as typeof import('./orders');
   if (!checkPinRateLimit(`pin:${clientIp}:${purpose}`)) throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429);
   const users = db.prepare('SELECT id, name, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL').all() as { id: string; name: string; role: string; pin_hash: string }[];

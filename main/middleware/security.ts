@@ -396,3 +396,14 @@ export function validatePassword(password: string): boolean {
   if (!/[0-9]/.test(password)) return false;
   return true;
 }
+
+/**
+ * Key for PIN-attempt limits: the device's address plus the signed-in person. Tills behind one
+ * restaurant router share an address, so without the person one till's wrong PINs would lock
+ * PIN approvals on every till.
+ */
+export function pinClientKey(req: Request): string {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  const userId = (req as Request & { user?: { userId?: string } }).user?.userId;
+  return userId ? `${ip}:${userId}` : ip;
+}

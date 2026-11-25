@@ -1,3 +1,4 @@
+import { pinClientKey } from '../middleware/security';
 import { createHash } from 'crypto';
 import { requireOpenSessionForSale } from '../services/shift-session-gate';
 import { Router, Request, Response } from 'express';
@@ -1182,7 +1183,7 @@ router.patch('/:id/status', orderWriteRateLimit, requirePermission('orders.statu
           throw Object.assign(new Error(message), { statusCode: 400 });
         }
 
-        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const clientIp = pinClientKey(req);
         // Rate-limit override attempts per client.
         const rateLimitKey = `pin:${clientIp}:${status === 'completed' ? 'order-complete' : 'order-cancel'}`;
         if (!checkPinRateLimit(rateLimitKey)) {
@@ -1428,7 +1429,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         if (!override_pin) {
           return res.status(403).json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
-        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const clientIp = pinClientKey(req);
         const rateLimitKey = `pin:${clientIp}:discount`;
         if (!checkPinRateLimit(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
@@ -1722,7 +1723,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
       if (!override_pin) {
         return res.status(403).json({ error: 'Manager PIN required for discounts', requiresApproval: true });
       }
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+      const clientIp = pinClientKey(req);
       const rateLimitKey = `pin:${clientIp}:item-discount`;
       if (!checkPinRateLimit(rateLimitKey)) {
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
@@ -1867,7 +1868,7 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
           throw Object.assign(new Error('Manager PIN required to void an item already in progress'), { statusCode: 400 });
         }
 
-        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const clientIp = pinClientKey(req);
         // Rate-limit attempts per client rather than per item to prevent brute force attacks.
         const rateLimitKey = `pin:${clientIp}:item-void`;
         if (!checkPinRateLimit(rateLimitKey)) {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { reportRendererError } from '@/lib/report-renderer-error';
+import { reloadOnceForChunkError } from '@/lib/chunk-reload';
 
 /** Root error boundary catching layout-level exceptions;
  * renders dedicated html/body wrapper. */
@@ -10,6 +11,8 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
   const [reportStatus, setReportStatus] = useState<'pending' | 'sent' | 'failed'>('pending');
 
   useEffect(() => {
+    // A deploy replaced the code files: a full reload loads the new version.
+    if (reloadOnceForChunkError(error)) return;
     const digest = error.digest ?? error.message;
     if (reportedDigest.current !== digest) {
       reportedDigest.current = digest;
