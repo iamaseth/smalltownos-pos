@@ -160,12 +160,16 @@ export default function CashPage() {
     }
   }, []);
   const [fromPos, setFromPos] = useState(false);
+  // Where to go after opening, receiving or closing: back to Reports when that is where the user came from.
+  const [returnTo, setReturnTo] = useState('/pos');
   useEffect(() => {
     let active = true;
-    const entry = new URLSearchParams(window.location.search).get('go');
+    const params = new URLSearchParams(window.location.search);
+    const entry = params.get('go');
     api.get('/cash-handover/status')
       .then((res) => {
         if (!active) return;
+        if (params.get('from') === 'reports') setReturnTo('/reports');
         const st = res.data as Status;
         setStatus(st);
         const s = st.open_session;
@@ -180,6 +184,9 @@ export default function CashPage() {
         } else if (entry === 'close' && s && (s.is_mine || st.can_resolve || st.can_close)) {
           setFromPos(true);
           setView({ name: 'close', sessionId: s.id });
+        } else if (entry === 'handover' && s && (s.is_mine || st.can_resolve || st.can_close)) {
+          setFromPos(true);
+          setView({ name: 'handover', sessionId: s.id });
         }
       })
       .catch((error) => toast.error(errorText(error, 'Could not load cash status')));
@@ -209,7 +216,7 @@ export default function CashPage() {
       <h1 className="text-xl font-bold">{title}</h1>
       {view.name !== 'home' && (
         <button type="button" className="text-sm text-muted-foreground underline"
-          onClick={() => { if (fromPos) { router.push('/pos'); return; } go({ name: 'home' }); void load(); }}>Back</button>
+          onClick={() => { if (fromPos) { router.push(returnTo); return; } go({ name: 'home' }); void load(); }}>Back</button>
       )}
     </div>
   );
@@ -281,7 +288,7 @@ export default function CashPage() {
           try {
             await api.post('/cash-handover/open', { count: cashCountPayload(count), device: 'pos' });
             toast.success(`Shift opened with ${floatText}`);
-            router.push('/pos');
+            router.push(returnTo);
           } catch (error) { toast.error(errorText(error, 'Could not open shift')); }
         })}>{countIsEmpty ? 'Count the float first' : `Start with ${floatText}: go to POS`}</BigButton>
       </div>
@@ -338,7 +345,7 @@ export default function CashPage() {
                 } else {
                   toast.success('Float OK. Shift open.');
                 }
-                router.push('/pos');
+                router.push(returnTo);
               } catch (error) { toast.error(errorText(error, 'Could not open the shift')); }
             })}>{countIsEmpty ? 'Count the float first' : `Start with ${formatUsdCents(openTotals.usd)} + ${formatKhr(openTotals.khr)}: go to POS`}</BigButton>
             {tickets.length > 0 && <button type="button" className="text-sm underline" onClick={() => setOpenStep('bills')}>Back</button>}
@@ -365,6 +372,7 @@ export default function CashPage() {
           try {
             await api.post(`/cash-handover/sessions/${view.sessionId}/handover-now`, { float_left: cashCountPayload(count), device: 'pos' });
             toast.success('Handed over. Count your takings on your phone: Cash › Takings still to count.', { duration: 8000 });
+            if (fromPos) { router.push(returnTo); return; }
             go({ name: 'home' });
             await load();
           } catch (error) { toast.error(errorText(error, 'Could not hand over')); }
@@ -377,7 +385,7 @@ export default function CashPage() {
     body = (
       <SimpleClose header={header} sessionId={view.sessionId} rate={rate} openingFloat={status.open_session.opening_float}
         openedBy={status.open_session.opened_by_name} openedAt={status.open_session.opened_at} closingAs={status.my_name || ''}
-        onClosed={() => { if (fromPos) { router.push('/pos'); return; } go({ name: 'home' }); void load(); }} />
+        onClosed={() => { if (fromPos) { router.push(returnTo); return; } go({ name: 'home' }); void load(); }} />
     );
   }
 

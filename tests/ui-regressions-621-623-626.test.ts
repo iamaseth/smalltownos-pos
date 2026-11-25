@@ -63,8 +63,10 @@ assert.doesNotMatch(authGuard, /\['dashboard\.view', '\/dashboard'\]/, 'Dashboar
 const rootPage = source('frontend/src/app/page.tsx');
 assert.match(rootPage, /redirect\('\/pos'\)/, 'the application root lands on POS');
 const registerStatus = source('frontend/src/components/reports/RegisterStatus.tsx');
-assert.match(registerStatus, /Register OPEN/, 'Reports shows the open-register state');
-assert.match(registerStatus, /Register CLOSED/, 'Reports shows the closed-register state');
+assert.match(registerStatus, /Register open/, 'Reports shows the open-register state');
+assert.match(registerStatus, /Register closed/, 'Reports shows the closed-register state');
+assert.match(registerStatus, /go=\$\{entry\}&from=reports/, 'Reports opens, hands over and closes shifts straight from the timeline');
+assert.match(registerStatus, /orders without a shift/, 'Reports flags orders taken with no shift');
 assert.match(registerStatus, /dayClose\.openCloseModal/, 'Reports keeps the close-day workflow available');
 
 const prepaidCheckout = source('frontend/src/components/pos/PrepaidCheckoutModal.tsx');
