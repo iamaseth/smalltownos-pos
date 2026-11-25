@@ -11,15 +11,14 @@ import {
   parseRowJson,
   recordOrderAudit,
   utcTodayDate,
-  verifyPin,
   withTxn,
 } from '../db';
 import { asyncHandler } from '../middleware/async-handler';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
-import { hasPermission, requirePermission } from '../services/authorization';
-import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
+import { findDiscountApprover } from '../services/discount-approval';
 import { getOpenSession, isCashTender, NO_CASH_SESSION_ID, requireOpenSessionForSale } from '../services/shift-session-gate';
 import {
   getActiveCountryPack,
@@ -2405,6 +2404,7 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     }
 
     // Check if approval is required
+    let approver: { id: string; name: string } | null = null;
     const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
     if (requiresApproval && value > 0) {
       const { override_pin } = req.body;
@@ -2416,26 +2416,11 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       if (!checkPinRateLimit(rateLimitKey)) {
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
       }
-      const managerId = req.body.manager_id || req.body.user_id;
-      let user: any = null;
-      if (managerId) {
-        const candidate = db.prepare('SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1').get(managerId) as any;
-        if (candidate && hasRole(candidate.role, ROLE_ACCESS.ownerManager) && hasPermission(candidate.id, 'bills.discount.apply') && verifyPin(candidate.pin_hash, override_pin)) {
-          user = candidate;
-        }
-      }
-      if (!user) {
-        const managers = db.prepare('SELECT * FROM users WHERE pin_hash IS NOT NULL AND is_active = 1').all() as any[];
-        for (const u of managers) {
-          if (hasRole(u.role, ROLE_ACCESS.ownerManager) && hasPermission(u.id, 'bills.discount.apply') && verifyPin(u.pin_hash, override_pin)) {
-            user = u;
-            break;
-          }
-        }
-      }
+      const user = findDiscountApprover(db, override_pin, req.body.manager_id || req.body.user_id);
       if (!user) {
         return res.status(403).json({ error: 'Invalid manager PIN' });
       }
+      approver = user;
     }
 
     // Check discount mode
@@ -2470,6 +2455,16 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       discountAmount = Number(value);
     }
     const updatedBill = writeBillDiscount(db, bill, order, discountAmount, type, value, reason || null);
+    const actor = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    if (actor) {
+      recordOrderAudit(db, {
+        orderId: String(bill.order_id), actorUserId: actor, action: 'bill_discount_applied',
+        details: {
+          bill_id: bill.id, discount_type: type, discount_value: value, amount: Number(updatedBill.discount_amount) || 0,
+          ...(reason ? { reason } : {}), ...(approver ? { approved_by: approver.id } : {}),
+        },
+      });
+    }
 
     notifyOrderUpdated();
     res.json({ bill: updatedBill });

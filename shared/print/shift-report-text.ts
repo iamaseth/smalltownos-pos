@@ -15,6 +15,11 @@ export interface ReportAdjustmentRow {
   kind: 'void' | 'comp' | 'removed'; at: string; product: string; qty: number; amountCents: number; label: string;
   requestedBy: string; approvedBy: string | null; channel: string | null; reason: string | null; reasonLabel: string; note: string | null;
 }
+/** One discount given: who asked, whose PIN approved it (or the coupon), and whether they approved their own sale. */
+export interface ReportDiscountRow {
+  kind: 'bill' | 'order' | 'item' | 'coupon'; at: string; label: string; what: string; amountCents: number;
+  requestedBy: string; approvedBy: string | null; self: boolean;
+}
 export interface ReportQtyRow { label: string; qty: number; netCents: number }
 export interface ReportSpentRow { label: string; usdCents: number; khrRiel: number; hasPhoto: boolean }
 export interface ReportShiftRow { id: number; cashier: string; openedAt: string; closedAt: string | null; orders: number; netCents: number; varianceUsdCents: number | null; varianceKhrRiel: number | null }
@@ -54,6 +59,7 @@ export interface ShiftReportData {
   spent: ReportSpentRow[];
   orders: ReportOrderRow[];
   adjustments: ReportAdjustmentRow[];
+  discounts?: ReportDiscountRow[];
   /** Open tickets this cashier passed to someone else at close. */
   passedOn?: { label: string; totalCents: number; to: string | null }[];
   /** Coupons used on paid bills; the paper coupons should be in the drawer. */
@@ -89,6 +95,7 @@ export interface DailyReportData {
   tables: ReportTableRow[];
   orders: ReportOrderRow[];
   adjustments: ReportAdjustmentRow[];
+  discounts?: ReportDiscountRow[];
   unpaid: { count: number; totalCents: number; labels: string[] };
 }
 

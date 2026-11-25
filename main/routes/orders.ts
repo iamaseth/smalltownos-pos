@@ -24,6 +24,7 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { COMP_REASONS, removalRequiresApproval, resolveApproval, withinChangeWindow, type Approval } from '../services/item-approvals';
 import { activeSpecialPrices, readSpecialPriceEvents } from '../services/special-prices';
 import { orderHasCoupon } from '../services/coupons';
+import { findDiscountApprover } from '../services/discount-approval';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
@@ -1432,8 +1433,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         if (!checkPinRateLimit(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const user = (db.prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL').all() as any[])
-          .find((candidate) => hasRole(candidate.role, ROLE_ACCESS.ownerManager) && hasPermission(candidate.id, 'orders.discount.apply') && verifyPin(candidate.pin_hash, override_pin));
+        const user = findDiscountApprover(db, override_pin);
         if (!user) {
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
@@ -1727,8 +1727,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
       if (!checkPinRateLimit(rateLimitKey)) {
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
       }
-      const user = (db.prepare('SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL').all() as any[])
-        .find((candidate) => hasRole(candidate.role, ROLE_ACCESS.ownerManager) && hasPermission(candidate.id, 'orders.discount.apply') && verifyPin(candidate.pin_hash, override_pin));
+      const user = findDiscountApprover(db, override_pin);
       if (!user) {
         return res.status(403).json({ error: 'Invalid manager PIN' });
       }

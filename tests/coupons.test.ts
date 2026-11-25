@@ -142,6 +142,43 @@ async function main(): Promise<void> {
     const row = (report.coupons || []).find((c: any) => c.code === 'BIG5');
     assert(!!row && row.count === 1 && row.totalCents === 500, 'the shift report lists the coupon used, to match the paper coupons');
 
+    console.log('\n─── whose PIN approved the discount ───');
+    const jwt = require('jsonwebtoken');
+    const bcrypt = require('bcryptjs');
+    const { getJWTSecret } = require('../main/routes/auth');
+    db.prepare(`INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at) VALUES ('ly-1', 'Ly', 'ly@test.local', 'x', 'cashier', ?, 1, ?, ?)`)
+      .run(bcrypt.hashSync('7894', 4), now(), now());
+    const LY = { Authorization: `Bearer ${jwt.sign({ userId: 'ly-1', email: 'ly@test.local', role: 'cashier' }, getJWTSecret(), { expiresIn: '1h' })}` };
+    setSetting(db, 'discount_requires_approval', 'true');
+    const cashierCoupons = await api(baseUrl, `/api/coupons/for-bill/${drinksOnly.billId}`, { headers: LY });
+    assertEqual(cashierCoupons.status, 200, 'a cashier can see coupons at checkout');
+
+    const d1 = await newBill([{ product_id: 'prod-eggs', quantity: 1 }]);
+    const noRight = await api(baseUrl, `/api/bills/${d1.billId}/applyDiscount`, { method: 'POST', headers: A, body: { type: 'percentage', value: 10, override_pin: '7894' } });
+    assertEqual(noRight.status, 403, "a cashier's PIN can't approve a discount by default");
+    db.prepare(`INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by) VALUES ('ly-1', 'discounts.approve', 'allow', ?)`).run(ownerId);
+    require('../main/services/authorization').invalidateAuthorizationCache?.();
+    const lyOk = await api(baseUrl, `/api/bills/${d1.billId}/applyDiscount`, { method: 'POST', headers: A, body: { type: 'percentage', value: 10, reason: 'Regular', override_pin: '7894' } });
+    assertEqual(lyOk.status, 200, `with the approve-discounts permission, Ly's own PIN approves (${lyOk.status} ${JSON.stringify(lyOk.data?.error ?? '')})`);
+    const billAudit = db.prepare(`SELECT details_json FROM order_audit_log WHERE order_id = ? AND action = 'bill_discount_applied'`).get(d1.orderId) as { details_json: string };
+    assert(!!billAudit && JSON.parse(billAudit.details_json).approved_by === 'ly-1', 'a payment-screen discount records whose PIN approved it');
+
+    const d2 = await newBill([{ product_id: 'prod-eggs', quantity: 1 }]);
+    const selfDisc = await api(baseUrl, `/api/orders/${d2.orderId}/discount`, { method: 'PATCH', headers: LY, body: { discount_type: 'percentage', discount_value: 5, override_pin: '7894' } });
+    assertEqual(selfDisc.status, 200, `Ly can approve a discount on her own sale (${selfDisc.status} ${JSON.stringify(selfDisc.data?.error ?? '')})`);
+    const sess2 = Number(db.prepare(`INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status) VALUES (?, 'Tester', datetime(?, '-1 hour'), 0, 'closed')`).run(ownerId, now()).lastInsertRowid);
+    db.prepare(`UPDATE cash_sessions SET closed_at = datetime(?, '+1 hour') WHERE id = ?`).run(now(), sess2);
+    const rep2 = require('../main/services/shift-report').buildShiftReport(sess2);
+    const lyRow = (rep2.discounts || []).find((x: any) => x.kind === 'bill' && x.approvedBy === 'Ly');
+    assert(!!lyRow && lyRow.amountCents === 100 && !lyRow.self, 'the report shows the $1.00 discount approved with Ly\'s PIN');
+    const selfRow = (rep2.discounts || []).find((x: any) => x.kind === 'order' && x.approvedBy === 'Ly');
+    assert(!!selfRow && selfRow.self, 'the report flags a discount Ly approved on her own sale');
+    const couponRow = (rep2.discounts || []).find((x: any) => x.kind === 'coupon');
+    assert(!!couponRow && couponRow.approvedBy === 'coupon', 'coupons show as approved by the coupon');
+    const { cashierShiftRows } = require('../shared/print/cashier-receipt');
+    const printed = JSON.stringify(cashierShiftRows(rep2, 'Asia/Phnom_Penh'));
+    assert(printed.includes('DISCOUNTS - WHO APPROVED') && printed.includes('PIN Ly (own sale)'), 'the shift printout shows whose PIN approved each discount');
+
     console.log('\n─── hours ───');
     const breakfastHours = { id: 'h', code: 'AM', name: 'Morning', kind: 'percent_bill', value: 10, category_id: null, min_spend: 0, start_date: null, end_date: null, days: [], start_time: '07:00', end_time: '11:00', enabled: true };
     assert(isCouponLive(breakfastHours, new Date('2026-11-25T02:00:00Z'), 'Asia/Phnom_Penh'), '09:00 local is inside 07:00-11:00');

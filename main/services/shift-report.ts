@@ -2,7 +2,7 @@ import { dayBoundsInTimezone, getDatabase, getSettingValue, now, tenantBusinessD
 import { tenantTimezone } from '../routes/cash-closures';
 import { exchangeRate, expectedByCurrency, MATCH_TOLERANCE_USD_CENTS } from '../routes/cash-handover';
 import type {
-  DailyReportData, ReportAdjustmentRow, ReportDayCash, ReportOrderRow, ReportPaymentRow, ReportQtyRow, ReportSales, ReportShiftRow, ReportSpentRow, ReportTableRow, ShiftReportData,
+  DailyReportData, ReportAdjustmentRow, ReportDayCash, ReportDiscountRow, ReportOrderRow, ReportPaymentRow, ReportQtyRow, ReportSales, ReportShiftRow, ReportSpentRow, ReportTableRow, ShiftReportData,
 } from '../../shared/print/shift-report-text';
 
 type Db = ReturnType<typeof getDatabase>;
@@ -235,6 +235,49 @@ function orderRows(db: Db, orders: OrderRow[], shiftFor: (o: OrderRow) => number
 const ADJUSTMENT_KIND: Record<string, ReportAdjustmentRow['kind']> = { item_voided: 'void', item_comped: 'comp', item_cancelled: 'removed' };
 
 /** Voids, comps and removed items recorded in the window (from the order audit log). */
+const DISCOUNT_KIND: Record<string, ReportDiscountRow['kind']> = {
+  bill_discount_applied: 'bill', order_discount_applied: 'order', item_discount_applied: 'item', coupon_applied: 'coupon',
+};
+
+/** Every discount given in the window, with whose PIN approved it (coupons are approved by the coupon itself). */
+function discountsFor(db: Db, w: Window): ReportDiscountRow[] {
+  const rows = db.prepare(`
+    SELECT a.action, a.created_at, a.actor_user_id, a.details_json, o.discount_amount AS order_discount, oi.product_name, oi.discount_amount AS item_discount,
+      o.order_number, o.tab_name, o.type, t.number AS table_number, req.name AS requester, app.name AS approver,
+      json_extract(a.details_json, '$.approved_by') AS approver_id
+    FROM order_audit_log a
+    JOIN orders o ON o.id = a.order_id
+    LEFT JOIN order_items oi ON oi.id = a.order_item_id
+    LEFT JOIN tables t ON t.id = o.table_id
+    LEFT JOIN users req ON req.id = a.actor_user_id
+    LEFT JOIN users app ON app.id = json_extract(a.details_json, '$.approved_by')
+    WHERE a.action IN ('bill_discount_applied', 'order_discount_applied', 'item_discount_applied', 'coupon_applied')
+      AND datetime(a.created_at) >= datetime(?) AND datetime(a.created_at) < datetime(?)
+    ORDER BY a.created_at, a.id
+  `).all(w.start, w.end) as {
+    action: string; created_at: string; actor_user_id: string; details_json: string | null; order_discount: number; product_name: string | null; item_discount: number;
+    order_number: string; tab_name: string | null; type: string; table_number: string | null; requester: string | null; approver: string | null; approver_id: string | null;
+  }[];
+  const out: ReportDiscountRow[] = [];
+  for (const r of rows) {
+    let d: Record<string, unknown> = {};
+    try { d = JSON.parse(r.details_json || '{}'); } catch { d = {}; }
+    const kind = DISCOUNT_KIND[r.action];
+    if (kind !== 'coupon' && !(Number(d.discount_value) > 0)) continue; // removing a discount
+    const amount = kind === 'coupon' || kind === 'bill' ? cents(d.amount) : kind === 'item' ? cents(r.item_discount) : cents(r.order_discount);
+    const pct = d.discount_type === 'percentage' ? `${Number(d.discount_value)}%` : '';
+    const what = kind === 'coupon' ? `Coupon ${String(d.coupon ?? '')}`
+      : kind === 'item' ? `${r.product_name ?? 'Item'}${pct ? ` ${pct}` : ''}`
+      : pct ? `${pct} off bill` : 'Amount off bill';
+    out.push({
+      kind, at: r.created_at, label: tableKey({ table_number: r.table_number, tab_name: r.tab_name, type: r.type } as OrderRow),
+      what, amountCents: amount, requestedBy: r.requester ?? '—',
+      approvedBy: kind === 'coupon' ? 'coupon' : r.approver, self: !!r.approver_id && r.approver_id === r.actor_user_id,
+    });
+  }
+  return out;
+}
+
 function adjustmentsFor(db: Db, w: Window): ReportAdjustmentRow[] {
   const { REASON_LABELS } = require('./item-approvals') as typeof import('./item-approvals');
   const rows = db.prepare(`
@@ -416,6 +459,7 @@ export function buildShiftReport(sessionId: number): ShiftReportData {
     spent: spentFor(db, session.id),
     orders: orderRows(db, orders, () => session.id),
     adjustments: adjustmentsFor(db, w),
+    discounts: discountsFor(db, w),
     passedOn: passedOnFor(db, session.id),
     coupons: couponsFor(db, billIds),
     notes,
@@ -492,6 +536,7 @@ export function buildDailyReport(businessDate: string): DailyReportData {
     products: items.map((i) => ({ label: i.product, qty: Number(i.qty || 0), netCents: cents(i.total) })).sort((a, b) => b.netCents - a.netCents).slice(0, 10),
     tables: tableRows(orders, (o) => o.cashier ?? ''),
     adjustments: adjustmentsFor(db, w),
+    discounts: discountsFor(db, w),
     orders: orderRows(db, orders, (o) => sessions.find((x) => o.created_at >= x.opened_at && (!x.closed_at || o.created_at <= x.closed_at))?.id ?? null),
     unpaid: unpaidSummary(orders),
   };
@@ -514,6 +559,7 @@ export interface CashierReportData {
   unpaid: { count: number; totalCents: number; labels: string[] };
   /** Deleted (voided / removed) and free (comp) items in the window, with who asked and approved. */
   adjustments: ReportAdjustmentRow[];
+  discounts: ReportDiscountRow[];
   cash: { openingUsdCents: number; expectedUsdCents: number; countedUsdCents: number | null; differenceUsdCents: number | null; openingKhrRiel: number; expectedKhrRiel: number; countedKhrRiel: number | null; differenceKhrRiel: number | null; shiftsCounted: number; shiftsTotal: number };
 }
 
@@ -606,6 +652,7 @@ export function buildCashierReport(input: { startDate: string; endDate: string; 
     tickets: orderRows(db, orders, (o) => sessions.find((x) => o.created_at >= x.opened_at && (!x.closed_at || o.created_at <= x.closed_at))?.id ?? null),
     unpaid: unpaidSummary(orders),
     adjustments: adjustmentsFor(db, w),
+    discounts: discountsFor(db, w),
     cash: {
       ...cash,
       countedUsdCents: anyCounted ? cash.countedUsdCents : null, countedKhrRiel: anyCounted ? cash.countedKhrRiel : null,
