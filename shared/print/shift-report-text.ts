@@ -58,9 +58,26 @@ export interface ShiftReportData {
   telegram: string | null;
 }
 
+/** Cash drawer for a whole business day: every shift's float, cash sales, purchases and count added together. */
+export interface ReportDayCash {
+  openingUsdCents: number; openingKhrRiel: number;
+  cashSalesUsdCents: number; cashSalesKhrRiel: number;
+  payInUsdCents: number; payInKhrRiel: number;
+  payOutUsdCents: number; payOutKhrRiel: number;
+  cashRefundUsdCents: number;
+  expectedUsdCents: number; expectedKhrRiel: number;
+  /** Float left in the drawer at each close (opening float for shifts not closed yet). */
+  floatKeptUsdCents: number; floatKeptKhrRiel: number;
+  /** Sums over counted shifts only; null when no shift has been counted yet. */
+  countedUsdCents: number | null; countedKhrRiel: number | null;
+  varianceUsdCents: number | null; varianceKhrRiel: number | null; varianceCombinedCents: number | null;
+  shiftsCounted: number; shiftsTotal: number;
+}
+
 export interface DailyReportData {
   businessName: string; timezone: string; businessDate: string; dayStart: string; dayEnd: string; printedAt: string;
   sales: ReportSales;
+  cash?: ReportDayCash;
   shifts: ReportShiftRow[];
   payments: ReportPaymentRow[];
   categories: ReportQtyRow[];

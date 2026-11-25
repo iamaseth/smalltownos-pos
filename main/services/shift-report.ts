@@ -2,7 +2,7 @@ import { dayBoundsInTimezone, getDatabase, getSettingValue, now, tenantBusinessD
 import { tenantTimezone } from '../routes/cash-closures';
 import { exchangeRate, expectedByCurrency, MATCH_TOLERANCE_USD_CENTS } from '../routes/cash-handover';
 import type {
-  DailyReportData, ReportAdjustmentRow, ReportOrderRow, ReportPaymentRow, ReportQtyRow, ReportSales, ReportShiftRow, ReportSpentRow, ReportTableRow, ShiftReportData,
+  DailyReportData, ReportAdjustmentRow, ReportDayCash, ReportOrderRow, ReportPaymentRow, ReportQtyRow, ReportSales, ReportShiftRow, ReportSpentRow, ReportTableRow, ShiftReportData,
 } from '../../shared/print/shift-report-text';
 
 type Db = ReturnType<typeof getDatabase>;
@@ -428,9 +428,34 @@ export function buildDailyReport(businessDate: string): DailyReportData {
     byCategory.set(i.category, row);
   }
   const orders = ordersInWindow(db, w, false);
+  const cash: ReportDayCash = {
+    openingUsdCents: 0, openingKhrRiel: 0, cashSalesUsdCents: 0, cashSalesKhrRiel: 0, payInUsdCents: 0, payInKhrRiel: 0,
+    payOutUsdCents: 0, payOutKhrRiel: 0, cashRefundUsdCents: 0, expectedUsdCents: 0, expectedKhrRiel: 0, floatKeptUsdCents: 0, floatKeptKhrRiel: 0,
+    countedUsdCents: null, countedKhrRiel: null, varianceUsdCents: null, varianceKhrRiel: null, varianceCombinedCents: null,
+    shiftsCounted: 0, shiftsTotal: sessions.length,
+  };
+  for (const s of sessions) {
+    const c = buildShiftReport(s.id).cash;
+    cash.openingUsdCents += c.openingUsdCents; cash.openingKhrRiel += c.openingKhrRiel;
+    cash.cashSalesUsdCents += c.cashSalesUsdCents; cash.cashSalesKhrRiel += c.cashSalesKhrRiel;
+    cash.payInUsdCents += c.payInUsdCents; cash.payInKhrRiel += c.payInKhrRiel;
+    cash.payOutUsdCents += c.payOutUsdCents; cash.payOutKhrRiel += c.payOutKhrRiel;
+    cash.cashRefundUsdCents += c.cashRefundUsdCents;
+    cash.expectedUsdCents += c.expectedUsdCents; cash.expectedKhrRiel += c.expectedKhrRiel;
+    cash.floatKeptUsdCents += c.floatKeptUsdCents ?? c.openingUsdCents; cash.floatKeptKhrRiel += c.floatKeptKhrRiel ?? c.openingKhrRiel;
+    if (c.countedUsdCents != null) {
+      cash.shiftsCounted += 1;
+      cash.countedUsdCents = (cash.countedUsdCents ?? 0) + c.countedUsdCents;
+      cash.countedKhrRiel = (cash.countedKhrRiel ?? 0) + (c.countedKhrRiel ?? 0);
+      cash.varianceUsdCents = (cash.varianceUsdCents ?? 0) + (c.varianceUsdCents ?? 0);
+      cash.varianceKhrRiel = (cash.varianceKhrRiel ?? 0) + (c.varianceKhrRiel ?? 0);
+      cash.varianceCombinedCents = (cash.varianceCombinedCents ?? 0) + (c.varianceCombinedCents ?? c.varianceUsdCents ?? 0);
+    }
+  }
   return {
     businessName: businessName(db), timezone: tenantTimezone(), businessDate, dayStart: start, dayEnd: end, printedAt: now(),
     sales: salesFor(db, w, billIds),
+    cash,
     shifts,
     payments: paymentsFor(db, w),
     categories: Array.from(byCategory.values()).sort((a, b) => b.netCents - a.netCents),
