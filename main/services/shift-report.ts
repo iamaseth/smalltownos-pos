@@ -318,6 +318,21 @@ export function buildOrderDetail(orderId: number): OrderDetail {
   };
 }
 
+function couponsFor(db: Db, billIds: number[]): { code: string; count: number; totalCents: number }[] {
+  if (billIds.length === 0) return [];
+  const rows = db.prepare(`SELECT discount_reason, discount_amount FROM bills WHERE id IN (${billIds.map(() => '?').join(',')})
+    AND COALESCE(discount_amount, 0) > 0 AND discount_reason LIKE 'Coupon %'`).all(...billIds) as { discount_reason: string; discount_amount: number }[];
+  const byCode = new Map<string, { code: string; count: number; totalCents: number }>();
+  for (const r of rows) {
+    const code = r.discount_reason.slice('Coupon '.length).split(' · ')[0].trim();
+    const entry = byCode.get(code) ?? { code, count: 0, totalCents: 0 };
+    entry.count += 1;
+    entry.totalCents += Math.round(Number(r.discount_amount) * 100);
+    byCode.set(code, entry);
+  }
+  return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code));
+}
+
 function passedOnFor(db: Db, sessionId: number): { label: string; totalCents: number; to: string | null }[] {
   const rows = db.prepare(`
     SELECT COALESCE(i.table_label, i.order_number) AS label, i.balance, COALESCE(ua.name, ub.name) AS to_name
@@ -402,6 +417,7 @@ export function buildShiftReport(sessionId: number): ShiftReportData {
     orders: orderRows(db, orders, () => session.id),
     adjustments: adjustmentsFor(db, w),
     passedOn: passedOnFor(db, session.id),
+    coupons: couponsFor(db, billIds),
     notes,
     telegram,
   };

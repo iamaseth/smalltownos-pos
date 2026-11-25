@@ -147,6 +147,8 @@ export interface BillSnapshot {
   readonly billNumber: string;
   readonly subtotal: number;
   readonly discountAmount: number;
+  /** Short note printed after the discount label, e.g. the coupon code. */
+  readonly discountNote?: string;
   readonly taxAmount: number;
   readonly total: number;
   /** Flat service charge, when the server-persisted bill carries one. */
@@ -659,7 +661,10 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
     }),
     discount: bill.discountAmount > 0
       ? Object.freeze({
-        label: resolveSemanticLabel(labels, 'pos.discount'),
+        label: (() => {
+          const label = resolveSemanticLabel(labels, 'pos.discount');
+          return bill.discountNote ? Object.freeze({ ...label, primary: `${label.primary} (${bill.discountNote})` }) : label;
+        })(),
         amount: bill.discountAmount,
       })
       : null,

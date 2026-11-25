@@ -124,6 +124,10 @@ export function cashierShiftRows(d: ShiftReportData, tz: string, opts: { reprint
     d.spent.forEach((s) => out.push(row('line', s.label, money(s.usdCents, s.khrRiel))));
   }
   out.push(rule(), ...extrasBlock(d.sales, d.unpaid));
+  if (d.coupons?.length) {
+    out.push(rule(), row('section', 'COUPONS - PAPER IN DRAWER'));
+    d.coupons.forEach((c) => out.push(row('line', `${c.code} x${c.count}`, usd(-c.totalCents))));
+  }
   if (d.passedOn?.length) {
     out.push(rule(), row('section', 'PASSED ON'));
     d.passedOn.forEach((t) => out.push(row('line', `${t.label} to ${t.to ?? 'next cashier'}`, usd(t.totalCents))));
