@@ -14,6 +14,100 @@
 export interface FramePrintOptions {
   /** Physical roll width for content-sized customer receipts. */
   receiptPaperWidthMm?: 58 | 80;
+  /** Fixed driver page length for paginated browser-mode reports. */
+  receiptPageLengthMm?: number;
+  /** Repeated heading on each fixed-length report page. */
+  reportPageLabel?: string;
+}
+
+const isPreferredBreak = (line: string): boolean => {
+  const trimmed = line.trim();
+  return trimmed === '' || (/^[A-Z][A-Z0-9 ,&/()#.-]+$/.test(trimmed) && trimmed.length > 2);
+};
+
+/** Split whole receipt lines, preferring blank lines and section headings. */
+export function paginateReportLines(lines: string[], capacity: number): string[][] {
+  if (capacity < 1 || lines.length <= capacity) return [lines];
+  const pages: string[][] = [];
+  let start = 0;
+  while (start < lines.length) {
+    const hardEnd = Math.min(lines.length, start + capacity);
+    if (hardEnd === lines.length) {
+      pages.push(lines.slice(start));
+      break;
+    }
+    let end = hardEnd;
+    const earliest = start + Math.max(1, Math.floor(capacity * 0.6));
+    for (let candidate = hardEnd; candidate > earliest; candidate -= 1) {
+      if (isPreferredBreak(lines[candidate] ?? '')) {
+        end = candidate;
+        break;
+      }
+      if ((lines[candidate - 1] ?? '').trim() === '') {
+        end = candidate;
+        break;
+      }
+    }
+    pages.push(lines.slice(start, end));
+    start = end;
+  }
+  return pages;
+}
+
+function paginateReceiptReport(doc: Document, options: FramePrintOptions): void {
+  const pageLength = options.receiptPageLengthMm;
+  const paperWidth = options.receiptPaperWidthMm;
+  const root = doc.querySelector<HTMLElement>('.receipt-report');
+  if (!pageLength || !paperWidth || !root) return;
+  const lineNodes = Array.from(root.querySelectorAll<HTMLElement>('.receipt-line'));
+  if (!lineNodes.length) return;
+
+  const ruler = doc.createElement('div');
+  ruler.style.cssText = 'position:absolute;visibility:hidden;width:1mm;height:100mm;padding:0;margin:0;border:0;';
+  doc.body.appendChild(ruler);
+  const pxPerMm = ruler.getBoundingClientRect().height / 100;
+  ruler.remove();
+  const lineHeight = lineNodes[0].getBoundingClientRect().height;
+  if (!(pxPerMm > 0) || !(lineHeight > 0)) throw new Error('Could not measure receipt report line height');
+
+  // The driver page is fixed; reserve 8 mm for the repeated header/footer.
+  const capacity = Math.max(1, Math.floor(((pageLength - 8) * pxPerMm) / lineHeight));
+  const pages = paginateReportLines(lineNodes.map((line) => line.textContent ?? ''), capacity);
+  const label = options.reportPageLabel || doc.title || 'Report';
+  root.replaceChildren(...pages.map((pageLines, index) => {
+    const page = doc.createElement('section');
+    page.className = 'receipt-page';
+    const header = doc.createElement('div');
+    header.className = 'receipt-page-header';
+    header.textContent = `${label} · page ${index + 1} of ${pages.length}`;
+    const content = doc.createElement('pre');
+    content.className = 'receipt-page-content';
+    content.textContent = pageLines.join('\n');
+    page.append(header, content);
+    if (index < pages.length - 1) {
+      const footer = doc.createElement('div');
+      footer.className = 'receipt-page-footer';
+      footer.textContent = 'continued →';
+      page.appendChild(footer);
+    }
+    return page;
+  }));
+
+  const style = doc.createElement('style');
+  style.media = 'print';
+  style.textContent = `
+    @page { size: ${paperWidth}mm ${pageLength}mm; margin: 0; }
+    @media print {
+      html, body { width: ${paperWidth}mm !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; display: block !important; }
+      .receipt-report { margin: 0 !important; padding: 0 !important; }
+      .receipt-page { box-sizing: border-box; width: ${paperWidth}mm; height: ${pageLength}mm; margin: 0; padding: 0; break-after: page; page-break-after: always; overflow: hidden; }
+      .receipt-page:last-child { break-after: auto; page-break-after: auto; }
+      .receipt-page-header, .receipt-page-footer { font: 10px/1.25 'Courier New', monospace; white-space: nowrap; }
+      .receipt-page-content { margin: 0; padding: 0; font: 12px/1.25 'Courier New', monospace; white-space: pre; }
+      .receipt-page-footer { text-align: right; }
+    }
+  `;
+  doc.head.appendChild(style);
 }
 
 export async function printHtmlInFrame(html: string, options: FramePrintOptions = {}): Promise<void> {
@@ -50,11 +144,13 @@ export async function printHtmlInFrame(html: string, options: FramePrintOptions 
     ]);
     await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 50)));
 
+    if (options.receiptPageLengthMm) paginateReceiptReport(doc, options);
+
     // Customer receipts use a continuous roll. Ask Chrome for a page whose
     // height matches the rendered receipt instead of the printer driver's
     // multi-metre default roll length. This option is only passed by the
     // customer-bill browser path; kitchen tickets keep their existing sizing.
-    if (options.receiptPaperWidthMm) {
+    if (options.receiptPaperWidthMm && !options.receiptPageLengthMm) {
       // Test and embedded print documents may expose only the minimal DOM surface.
       // Skip content-height sizing when querySelector is unavailable; printing still works.
       const receipt = typeof doc.querySelector === 'function'

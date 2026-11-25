@@ -103,8 +103,6 @@ function wrap(w: number, text: string, indent = ' '): string[] {
   if (cur) out.push(indent + cur);
   return out;
 }
-const rule = (w: number, ch = '-') => ch.repeat(w);
-
 /** "2026-11-20 11:02:00" UTC → "20 Nov 18:02" in the store timezone. */
 export function formatStamp(utc: string | null, timezone: string): string {
   if (!utc) return '—';
@@ -125,25 +123,22 @@ function duration(fromUtc: string, toUtc: string): string {
 }
 
 function header(w: number, name: string, title: string, sub: string | null, reprint: boolean): string[] {
-  const out = [center(w, name.toUpperCase()), rule(w, '='), center(w, title)];
-  if (sub) out.push(center(w, sub));
+  const out = [center(w, name.toUpperCase()), center(w, `${title}${sub ? ` · ${sub}` : ''}`)];
   if (reprint) out.push(center(w, '*** REPRINT ***'));
-  out.push(rule(w, '='));
   return out;
 }
 
 function salesBlock(w: number, s: ReportSales): string[] {
-  return [
+  const out = [
     'SALES',
     lr(w, 'Gross sales', usd(s.grossCents)),
-    lr(w, 'Discounts', usd(-s.discountCents)),
-    lr(w, `Refunds (${s.refundCount})`, usd(-s.refundCents)),
-    lr(w, `Voided items (${s.voidCount})`, `${usd(s.voidCents)} n/c`),
-    lr(w, `Complimentary (${s.compCount})`, `${usd(s.compCents)} n/c`),
-    lr(w, 'NET SALES', usd(s.netCents)),
-    lr(w, 'Orders', String(s.orders)),
-    lr(w, 'Average bill', usd(s.averageCents)),
   ];
+  if (s.discountCents) out.push(lr(w, 'Discounts', usd(-s.discountCents)));
+  if (s.refundCount || s.refundCents) out.push(lr(w, `Refunds (${s.refundCount})`, usd(-s.refundCents)));
+  if (s.voidCount || s.voidCents) out.push(lr(w, `Voided items (${s.voidCount})`, `${usd(s.voidCents)} n/c`));
+  if (s.compCount || s.compCents) out.push(lr(w, `Complimentary (${s.compCount})`, `${usd(s.compCents)} n/c`));
+  out.push(lr(w, 'NET SALES', usd(s.netCents)), lr(w, 'Orders', String(s.orders)), lr(w, 'Average bill', usd(s.averageCents)));
+  return out;
 }
 
 function paymentsBlock(w: number, rows: ReportPaymentRow[], rate: number): string[] {
@@ -194,8 +189,8 @@ const CHANNEL_SHORT: Record<string, string> = { pin: 'PIN', telegram: 'TG', allo
 
 /** Voids, comps and removed items, grouped by kind; entertainer drinks get their own group. */
 function adjustmentsBlock(w: number, rows: ReportAdjustmentRow[], timezone: string): string[] {
-  const out = [rule(w), w >= 40 ? 'VOIDS, COMPS & REMOVED ITEMS' : 'VOIDS, COMPS, REMOVED', rule(w)];
-  if (rows.length === 0) return [...out, ' None'];
+  if (rows.length === 0) return [];
+  const out = [w >= 40 ? 'VOIDS, COMPS & REMOVED ITEMS' : 'VOIDS, COMPS, REMOVED'];
   const wide = w >= 40;
   const groups: [string, (r: ReportAdjustmentRow) => boolean][] = [
     [wide ? 'Voids (made, taken off)' : 'Voids', (r) => r.kind === 'void'],
@@ -213,7 +208,7 @@ function adjustmentsBlock(w: number, rows: ReportAdjustmentRow[], timezone: stri
       out.push(...wrap(w, `${who} ${r.reasonLabel}${r.note ? ` - ${r.note}` : ''}`, '   '));
     }
   }
-  out.push(rule(w), lr(w, 'Not charged total', usd(rows.reduce((n, r) => n + r.amountCents, 0))));
+  out.push(lr(w, 'Not charged total', usd(rows.reduce((n, r) => n + r.amountCents, 0))));
   return out;
 }
 
@@ -227,10 +222,9 @@ export function renderShiftReport(d: ShiftReportData, w: ReportWidth, timezone: 
     lr(w, closing ? 'Opened' : 'Shift opened', formatStamp(d.openedAt, timezone)),
   ];
   if (closing && d.closedAt) out.push(lr(w, 'Closed', formatStamp(d.closedAt, timezone)), lr(w, 'Duration', duration(d.openedAt, d.closedAt)));
-  out.push(lr(w, 'Printed', formatStamp(d.printedAt, timezone)), rule(w));
-  out.push(...salesBlock(w, d.sales), rule(w));
+  out.push(...salesBlock(w, d.sales));
   out.push(...paymentsBlock(w, d.payments, d.cash.rate));
-  out.push(lr(w, closing ? 'Unpaid at close' : `Unpaid (${d.unpaid.count} ticket${d.unpaid.count === 1 ? '' : 's'})`, usd(d.unpaid.totalCents)), rule(w));
+  if (d.unpaid.count || d.unpaid.totalCents) out.push(lr(w, closing ? 'Unpaid at close' : `Unpaid (${d.unpaid.count} ticket${d.unpaid.count === 1 ? '' : 's'})`, usd(d.unpaid.totalCents)));
   out.push('TABLES',
     lr(w, 'Tables served', String(d.tables.served)),
     lr(w, 'Completed', String(d.tables.completed)),
@@ -241,13 +235,13 @@ export function renderShiftReport(d: ShiftReportData, w: ReportWidth, timezone: 
     out.push(cols(w, 'Table list', w >= 40 ? 'open' : 'open', 'total'));
     d.tables.rows.forEach((row) => out.push(tableLine(w, row, timezone)));
   }
-  out.push(rule(w), ...cashBlock(w, d.cash, closing));
+  out.push(...cashBlock(w, d.cash, closing));
   if (d.spent.length) {
-    out.push(rule(w), 'CASH SPENT');
+    out.push('CASH SPENT');
     d.spent.forEach((s) => out.push(lr(w, ` ${s.label}`, `${s.khrRiel ? khr(s.khrRiel) : usd(s.usdCents)}${s.hasPhoto ? ' [photo]' : ''}`)));
   }
   if (closing) {
-    out.push(rule(w), 'CASH HANDLING');
+    out.push('CASH HANDLING');
     if (d.cash.floatKeptUsdCents != null) out.push(lr(w, 'Float kept', usd(d.cash.floatKeptUsdCents)));
     if (d.cash.floatKeptKhrRiel) out.push(lr(w, '', khr(d.cash.floatKeptKhrRiel)));
     if (d.cash.countedUsdCents != null && d.cash.floatKeptUsdCents != null) out.push(lr(w, 'Takings out USD', usd(d.cash.countedUsdCents - d.cash.floatKeptUsdCents)));
@@ -255,11 +249,11 @@ export function renderShiftReport(d: ShiftReportData, w: ReportWidth, timezone: 
   }
   out.push(...adjustmentsBlock(w, d.adjustments ?? [], timezone));
   if (d.notes.length) {
-    out.push(rule(w), 'NOTES');
+    out.push('NOTES');
     d.notes.forEach((n) => out.push(...wrap(w, n)));
   }
-  if (closing) out.push(rule(w), lr(w, 'Telegram', d.telegram ?? 'not sent'));
-  out.push(rule(w, '='), center(w, closing ? 'End of shift report' : w >= 40 ? 'X-report does not close the shift' : 'Shift is still open'));
+  if (closing) out.push(lr(w, 'Telegram', d.telegram ?? 'not sent'));
+  out.push(center(w, closing ? 'End of shift report' : w >= 40 ? 'X-report does not close the shift' : 'Shift is still open'));
   return out;
 }
 
@@ -268,10 +262,7 @@ export function renderDailyReport(d: DailyReportData, w: ReportWidth, timezone: 
     ...header(w, d.businessName, 'DAILY SALES REPORT', `Business day ${d.businessDate}`, reprint),
     lr(w, 'From', formatStamp(d.dayStart, timezone)),
     lr(w, 'To', formatStamp(d.dayEnd, timezone)),
-    lr(w, 'Printed', formatStamp(d.printedAt, timezone)),
-    rule(w),
     ...salesBlock(w, d.sales),
-    rule(w),
     cols(w, 'SHIFTS', w >= 40 ? 'ords' : 'no.', 'net'),
   ];
   if (d.shifts.length === 0) out.push(' No shifts');
@@ -280,20 +271,22 @@ export function renderDailyReport(d: DailyReportData, w: ReportWidth, timezone: 
     out.push(cols(w, w >= 40 ? `${s.cashier} ${span}` : s.cashier, String(s.orders), usd(s.netCents)));
     if (w < 40) out.push(` ${span}`);
   }
-  out.push(rule(w), ...paymentsBlock(w, d.payments, 0), rule(w), cols(w, 'CATEGORIES', 'qty', 'net'));
+  out.push(...paymentsBlock(w, d.payments, 0), cols(w, 'CATEGORIES', 'qty', 'net'));
   d.categories.forEach((c) => out.push(cols(w, c.label, String(c.qty), usd(c.netCents))));
-  out.push(rule(w), cols(w, 'TOP ITEMS', 'qty', 'net'));
+  out.push(cols(w, 'TOP ITEMS', 'qty', 'net'));
   d.products.forEach((p) => out.push(cols(w, p.label, String(p.qty), usd(p.netCents))));
-  out.push(rule(w), cols(w, 'TABLES (day)', 'open', 'total'));
+  out.push(cols(w, 'TABLES (day)', 'open', 'total'));
   if (d.tables.length === 0) out.push(' No tables');
   d.tables.forEach((row) => out.push(tableLine(w, row, timezone)));
-  out.push(rule(w), 'CASH DIFFERENCES');
+  out.push('CASH DIFFERENCES');
   const counted = d.shifts.filter((s) => s.varianceUsdCents != null);
   if (counted.length === 0) out.push(' No closed shifts');
   counted.forEach((s) => out.push(lr(w, s.cashier, `USD ${signed(usd(s.varianceUsdCents ?? 0), s.varianceUsdCents ?? 0)} / ${signed(khr(s.varianceKhrRiel ?? 0), s.varianceKhrRiel ?? 0)}`)));
-  out.push(...adjustmentsBlock(w, d.adjustments ?? [], timezone), rule(w));
-  out.push(lr(w, 'Outstanding tickets', d.unpaid.count ? `${d.unpaid.count} · ${usd(d.unpaid.totalCents)}` : 'none'));
-  d.unpaid.labels.forEach((l) => out.push(` ${l}`));
-  out.push(rule(w, '='), center(w, 'End of daily report'));
+  out.push(...adjustmentsBlock(w, d.adjustments ?? [], timezone));
+  if (d.unpaid.count || d.unpaid.totalCents) {
+    out.push(lr(w, 'Outstanding tickets', `${d.unpaid.count} · ${usd(d.unpaid.totalCents)}`));
+    d.unpaid.labels.forEach((l) => out.push(` ${l}`));
+  }
+  out.push(center(w, 'End of daily report'));
   return out;
 }

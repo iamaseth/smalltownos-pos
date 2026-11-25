@@ -29,6 +29,12 @@ function title(target: ReportTarget, data: ShiftReportData | DailyReportData): s
     : `Daily sales ${target.date}`;
 }
 
+function pageLabel(target: ReportTarget, data: ShiftReportData | DailyReportData): string {
+  return target.kind === 'shift'
+    ? `${(data as ShiftReportData).kind}-report #${target.sessionId}`
+    : `Daily report ${target.date}`;
+}
+
 const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /**
@@ -48,11 +54,12 @@ export async function printReportReceipt(target: ReportTarget, opts: { auto?: bo
     jobKey: opts.auto ? key : `${key}:print:${Date.now()}`,
     label: `${title(target, data)}${reprint ? ' (reprint)' : ''}`,
     payload: target,
+    pageLabel: pageLabel(target, data),
   });
 }
 
 /** Prints plain report lines on the receipt printer (WebUSB) or the browser print path. */
-async function printLines(lines: string[], columns: number, paper: 58 | 80, job: { jobKey: string; label: string; payload: unknown }): Promise<void> {
+async function printLines(lines: string[], columns: number, paper: 58 | 80, job: { jobKey: string; label: string; payload: unknown; pageLabel: string }): Promise<void> {
   const printer = usePrinterStore.getState();
   const transport = printer.currentTransport() === 'webusb' ? 'webusb' : 'browser';
   await printerService.awaitPendingReconnect();
@@ -66,10 +73,15 @@ async function printLines(lines: string[], columns: number, paper: 58 | 80, job:
       return;
     }
     const { printHtmlInFrame } = await import('./frame-print');
+    const lineHtml = lines.map((line) => `<div class="receipt-line">${line ? escapeHtml(line) : '&nbsp;'}</div>`).join('');
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(job.label)}</title>
-<style>body{margin:0}pre{margin:0;padding:2mm 0;font:12px/1.25 'Courier New',monospace;white-space:pre}</style></head>
-<body><div class="bill-container"><pre>${escapeHtml(lines.join('\n'))}</pre></div></body></html>`;
-    await printHtmlInFrame(html, { receiptPaperWidthMm: paper });
+<style>html,body{margin:0;padding:0;display:block}body{font:12px/1.25 'Courier New',monospace}.receipt-report{margin:0;padding:0}.receipt-line{min-height:1.25em;white-space:pre}</style></head>
+<body><div class="receipt-report">${lineHtml}</div></body></html>`;
+    await printHtmlInFrame(html, {
+      receiptPaperWidthMm: paper,
+      receiptPageLengthMm: usePosSettingsStore.getState().receiptPageLengthMm,
+      reportPageLabel: job.pageLabel,
+    });
   });
 }
 
@@ -78,7 +90,7 @@ export async function printSummaryReceipt(titleText: string, build: (columns: nu
   const paper = usePosSettingsStore.getState().printerPaperSize === 'thermal80' ? 80 : 58;
   const printer = usePrinterStore.getState();
   const columns = columnsForConfiguredPrinter((printer.webusbPrinter ?? printer.hardwarePrinter)?.paper_width, paper);
-  await printLines(build(columns), columns, paper, { jobKey: `summary:${titleText}:${Date.now()}`, label: titleText, payload: { kind: 'summary', title: titleText } });
+  await printLines(build(columns), columns, paper, { jobKey: `summary:${titleText}:${Date.now()}`, label: titleText, payload: { kind: 'summary', title: titleText }, pageLabel: titleText });
 }
 
 /**
