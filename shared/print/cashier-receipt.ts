@@ -6,7 +6,7 @@
  */
 import {
   usd, khr, formatStamp,
-  type DailyReportData, type ReportAdjustmentRow, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ShiftReportData,
+  type DailyReportData, type ReportAdjustmentRow, type ReportDayCash, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ShiftReportData,
 } from './shift-report-text';
 
 /** title: business name · heading: report name · sub: who/when · big: headline money · result: boxed cash result. */
@@ -26,26 +26,82 @@ export function shiftPartLabel(openedAtUtc: string, tz: string): 'Day' | 'Night'
   return hour >= 5 && hour < 16 ? 'Day' : 'Night';
 }
 
-function paidBlock(payments: ReportPaymentRow[]): ReceiptRow[] {
-  const out: ReceiptRow[] = [row('section', 'HOW CUSTOMERS PAID')];
-  const shown = payments.filter((p) => p.count > 0 || p.usdCents || p.khrRiel);
-  if (!shown.length) out.push(row('line', 'No payments'));
-  for (const p of shown) out.push(row('line', `${p.label} (${p.count})`, money(p.usdCents, p.khrRiel)));
-  return out;
+/** Payment label groups: Cash (USD + riel), Card, QR (ACLEDA / ABA / KHQR / Wing); anything else is Other. */
+function payGroup(label: string): 'cash' | 'card' | 'qr' | 'other' {
+  if (/^cash/i.test(label)) return 'cash';
+  if (/card|visa|master|amex|jcb|union/i.test(label)) return 'card';
+  if (/aba|acleda|khqr|qr|wing|bakong/i.test(label)) return 'qr';
+  return 'other';
 }
 
-function adjustmentTotals(sales: { voidCount: number; voidCents: number; compCount: number; compCents: number }, unpaid: { count: number; totalCents: number }): ReceiptRow[] {
-  return [
-    row('line', `Deleted (${sales.voidCount})`, usd(sales.voidCents)),
-    row('line', `Free (${sales.compCount})`, usd(sales.compCents)),
-    row('line', 'Unpaid tables', unpaid.count ? `${unpaid.count} · ${usd(unpaid.totalCents)}` : '0'),
+/** SALES big, then Cash / Card / QR under it, then Tables / To go / Orders. */
+function salesTop(netCents: number, payments: ReportPaymentRow[], orders: ReportOrderRow[], orderCount: number): ReceiptRow[] {
+  const sum = (g: string) => payments.filter((p) => payGroup(p.label) === g)
+    .reduce((a, p) => ({ usd: a.usd + p.usdCents, khr: a.khr + p.khrRiel }), { usd: 0, khr: 0 });
+  const cash = sum('cash'); const card = sum('card'); const qr = sum('qr'); const other = sum('other');
+  const toGo = orders.filter((o) => o.label === 'To Go').length;
+  const out: ReceiptRow[] = [
+    row('big', 'SALES', usd(netCents)),
+    row('line', '  Cash', money(cash.usd, cash.khr)),
+    row('line', '  Card', money(card.usd, card.khr)),
+    row('line', '  QR', money(qr.usd, qr.khr)),
   ];
+  if (other.usd || other.khr) out.push(row('line', '  Other', money(other.usd, other.khr)));
+  out.push(row('line', 'Tables', String(Math.max(0, orders.length - toGo))), row('line', 'To go', String(toGo)), row('line', 'Orders', String(orderCount)));
+  return out;
 }
 
 function cashResult(variance: number | null, matches: boolean | null): string {
   if (variance == null) return 'NOT COUNTED';
   if (matches || variance === 0) return 'MATCHED';
   return `${variance < 0 ? 'SHORT' : 'OVER'} ${usd(Math.abs(variance))}`;
+}
+
+interface DrawerNumbers {
+  openingUsdCents: number; openingKhrRiel: number; cashSalesUsdCents: number; cashSalesKhrRiel: number;
+  payInUsdCents: number; payInKhrRiel: number; payOutUsdCents: number; payOutKhrRiel: number; cashRefundUsdCents: number;
+  expectedUsdCents: number; expectedKhrRiel: number; countedUsdCents: number | null; countedKhrRiel: number | null;
+  floatKeptUsdCents?: number | null; floatKeptKhrRiel?: number | null;
+}
+
+/**
+ * Cash in the cashier's words. The float is shown but left out of the sums:
+ * cash sales - purchases = should have; cash on hand is the count without the
+ * float; then matched / short / over. The same float is taken off both sides,
+ * so the difference is the system's own closing difference.
+ */
+function drawerBlock(c: DrawerNumbers, counted: boolean, result: string, note?: string): ReceiptRow[] {
+  const floatUsd = c.floatKeptUsdCents ?? c.openingUsdCents;
+  const floatKhr = c.floatKeptKhrRiel ?? c.openingKhrRiel;
+  const out: ReceiptRow[] = [
+    row('section', 'CASH'),
+    row('line', 'Float', money(floatUsd, floatKhr)),
+    row('line', 'Cash sales', money(c.cashSalesUsdCents, c.cashSalesKhrRiel)),
+  ];
+  if (c.payInUsdCents || c.payInKhrRiel) out.push(row('line', '+ Cash added', money(c.payInUsdCents, c.payInKhrRiel)));
+  out.push(row('line', '- Purchases', money(c.payOutUsdCents, c.payOutKhrRiel)));
+  if (c.cashRefundUsdCents) out.push(row('line', '- Cash refunds', usd(c.cashRefundUsdCents)));
+  if (counted && c.countedUsdCents != null) {
+    out.push(row('strong', 'Cash on hand', money(c.countedUsdCents - floatUsd, (c.countedKhrRiel ?? 0) - floatKhr)));
+    out.push(row('result', 'RESULT', result));
+  } else {
+    // Shift still open (X) or not counted yet: show what should be in hand without the float.
+    out.push(row('strong', 'Cash in hand now', money(c.expectedUsdCents - floatUsd, c.expectedKhrRiel - floatKhr)));
+  }
+  if (note) out.push(row('note', note));
+  return out;
+}
+
+/** Discounts, refunds, voids and free items, always listed so a zero is visible too. */
+function extrasBlock(sales: { discountCents: number; refundCount: number; refundCents: number; voidCount: number; voidCents: number; compCount: number; compCents: number }, unpaid: { count: number; totalCents: number }): ReceiptRow[] {
+  return [
+    row('section', 'DISCOUNTS, REFUNDS, VOIDS, FREE'),
+    row('line', 'Discounts', usd(sales.discountCents)),
+    row('line', `Refunds (${sales.refundCount})`, usd(sales.refundCents)),
+    row('line', `Voids / deleted (${sales.voidCount})`, usd(sales.voidCents)),
+    row('line', `Free / comps (${sales.compCount})`, usd(sales.compCents)),
+    row('line', 'Unpaid tables', unpaid.count ? `${unpaid.count} · ${usd(unpaid.totalCents)}` : '0'),
+  ];
 }
 
 /** Shift report for the cashier: X while open, Z when closed. */
@@ -59,36 +115,29 @@ export function cashierShiftRows(d: ShiftReportData, tz: string, opts: { reprint
     row('sub', `${shiftPartLabel(d.openedAt, tz)} · ${d.cashier} · ${dayLabel(d.openedAt, tz)}`),
     row('sub', `${time(d.openedAt, tz)} – ${closing && d.closedAt ? time(d.closedAt, tz) : 'still open'}`),
     rule(),
-    row('big', 'SALES', usd(d.sales.netCents)),
-    row('line', 'Orders', String(d.sales.orders)),
-    ...(d.sales.discountCents ? [row('line', 'Discounts', usd(-d.sales.discountCents))] : []),
-    ...(d.sales.refundCents ? [row('line', `Refunds (${d.sales.refundCount})`, usd(-d.sales.refundCents))] : []),
+    ...salesTop(d.sales.netCents, d.payments, d.orders, d.sales.orders),
     rule(),
-    ...paidBlock(d.payments),
-    rule(),
-    row('section', 'CASH DRAWER'),
-    row('line', 'Float at start', money(c.openingUsdCents, c.openingKhrRiel)),
-    row('line', '+ Cash sales', money(c.cashSalesUsdCents, c.cashSalesKhrRiel)),
   ];
-  if (c.payInUsdCents || c.payInKhrRiel) out.push(row('line', '+ Cash added', money(c.payInUsdCents, c.payInKhrRiel)));
-  if (c.payOutUsdCents || c.payOutKhrRiel) out.push(row('line', '- Cash spent', money(c.payOutUsdCents, c.payOutKhrRiel)));
-  if (c.cashRefundUsdCents) out.push(row('line', '- Cash refunds', usd(c.cashRefundUsdCents)));
-  out.push(row('strong', closing ? 'Should be' : 'Should be now', money(c.expectedUsdCents, c.expectedKhrRiel)));
-  if (closing) {
-    if (c.countedUsdCents != null) out.push(row('line', 'Counted', money(c.countedUsdCents, c.countedKhrRiel ?? 0)));
-    out.push(row('result', 'RESULT', cashResult(c.varianceCombinedCents ?? c.varianceUsdCents, c.matches)));
-  }
+  out.push(...drawerBlock(c, closing, cashResult(c.varianceCombinedCents ?? c.varianceUsdCents, c.matches)));
   if (d.spent.length) {
-    out.push(rule(), row('section', 'CASH SPENT'));
+    out.push(rule(), row('section', 'PURCHASES'));
     d.spent.forEach((s) => out.push(row('line', s.label, money(s.usdCents, s.khrRiel))));
   }
-  out.push(rule(), ...adjustmentTotals(d.sales, d.unpaid));
+  out.push(rule(), ...extrasBlock(d.sales, d.unpaid));
   if (d.notes.length) {
     out.push(rule(), row('section', 'NOTES'));
     d.notes.forEach((n) => out.push(row('note', n)));
   }
   out.push(rule(), row('footer', `Printed ${formatStamp(d.printedAt, tz)}${opts.printedBy ? ` by ${opts.printedBy}` : ''}`));
   return out;
+}
+
+function dayDrawer(c: ReportDayCash): ReceiptRow[] {
+  // Cash on hand and the result only make sense once every shift of the day is counted.
+  const allCounted = c.shiftsTotal > 0 && c.shiftsCounted === c.shiftsTotal;
+  const variance = c.varianceCombinedCents ?? c.varianceUsdCents;
+  const note = c.shiftsTotal > 0 && !allCounted ? `${c.shiftsCounted} of ${plural(c.shiftsTotal, 'shift')} counted so far` : undefined;
+  return drawerBlock(c, allCounted, cashResult(variance, variance === 0), note);
 }
 
 /** Whole business day for the cashier: sales, how paid, each shift with its cash result. */
@@ -99,13 +148,9 @@ export function cashierDayRows(d: DailyReportData, tz: string, opts: { reprint?:
     ...(opts.reprint ? [row('heading', '*** REPRINT ***')] : []),
     row('sub', new Date(`${d.businessDate}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })),
     rule(),
-    row('big', 'SALES', usd(d.sales.netCents)),
-    row('line', 'Orders', String(d.sales.orders)),
-    ...(d.sales.discountCents ? [row('line', 'Discounts', usd(-d.sales.discountCents))] : []),
-    ...(d.sales.refundCents ? [row('line', `Refunds (${d.sales.refundCount})`, usd(-d.sales.refundCents))] : []),
+    ...salesTop(d.sales.netCents, d.payments, d.orders, d.sales.orders),
     rule(),
-    ...paidBlock(d.payments),
-    rule(),
+    ...(d.cash ? [...dayDrawer(d.cash), rule()] : []),
     row('section', 'SHIFTS'),
   ];
   if (!d.shifts.length) out.push(row('line', 'No shifts'));
@@ -114,7 +159,7 @@ export function cashierDayRows(d: DailyReportData, tz: string, opts: { reprint?:
     const counted = s.varianceUsdCents == null ? (s.closedAt ? 'not counted' : 'open now') : cashResult(s.varianceUsdCents, s.varianceUsdCents === 0 && !s.varianceKhrRiel).toLowerCase();
     out.push(row('note', `${time(s.openedAt, tz)}–${s.closedAt ? time(s.closedAt, tz) : 'open'} · ${plural(s.orders, 'order')} · ${counted}`));
   }
-  out.push(rule(), ...adjustmentTotals(d.sales, d.unpaid));
+  out.push(rule(), ...extrasBlock(d.sales, d.unpaid));
   out.push(rule(), row('footer', `Printed ${formatStamp(d.printedAt, tz)}${opts.printedBy ? ` by ${opts.printedBy}` : ''}`));
   return out;
 }
@@ -128,7 +173,7 @@ export function itemsSoldRows(businessName: string, scope: string, items: Report
   const out = listHeader(businessName, 'ITEMS SOLD', scope);
   if (!items.length) out.push(row('line', 'Nothing sold'));
   items.forEach((i) => out.push(row('line', `${i.qty}x ${i.label}`, usd(i.netCents))));
-  out.push(rule(), row('strong', plural(items.reduce((n, i) => n + i.qty, 0), 'item'), usd(items.reduce((n, i) => n + i.netCents, 0))));
+  out.push(rule(), row('line', plural(items.reduce((n, i) => n + i.qty, 0), 'item')), row('big', 'TOTAL', usd(items.reduce((n, i) => n + i.netCents, 0))));
   out.push(row('footer', `Printed ${printedAt}`));
   return out;
 }
@@ -140,7 +185,7 @@ export function ticketsRows(businessName: string, scope: string, tickets: Report
     out.push(row('line', `${time(t.openedAt, tz)} ${t.label}`, usd(t.totalCents)));
     out.push(row('note', t.status === 'paid' ? `${t.paidWith || 'paid'}${t.cashier ? ` · ${t.cashier}` : ''}` : 'NOT PAID'));
   });
-  out.push(rule(), row('strong', plural(tickets.length, 'ticket'), usd(tickets.reduce((n, t) => n + t.totalCents, 0))));
+  out.push(rule(), row('line', plural(tickets.length, 'ticket')), row('big', 'TOTAL', usd(tickets.reduce((n, t) => n + t.totalCents, 0))));
   out.push(row('footer', `Printed ${printedAt}`));
   return out;
 }
@@ -149,8 +194,15 @@ export function paymentsRows(businessName: string, scope: string, payments: Repo
   const out = listHeader(businessName, 'PAYMENTS', scope);
   const shown = payments.filter((p) => p.count > 0 || p.usdCents || p.khrRiel);
   if (!shown.length) out.push(row('line', 'No payments'));
-  shown.forEach((p) => out.push(row('line', `${p.label} (${p.count})`, money(p.usdCents, p.khrRiel))));
-  out.push(rule(), row('strong', 'Total', usd(shown.reduce((n, p) => n + p.usdCents, 0))));
+  const groups: [string, 'cash' | 'card' | 'qr' | 'other'][] = [['Cash', 'cash'], ['Card', 'card'], ['QR', 'qr'], ['Other', 'other']];
+  for (const [title, key] of groups) {
+    const list = shown.filter((p) => payGroup(p.label) === key);
+    if (!list.length) continue;
+    const n = list.reduce((a, p) => a + p.count, 0);
+    out.push(row('strong', `${title} (${n})`, money(list.reduce((a, p) => a + p.usdCents, 0), list.reduce((a, p) => a + p.khrRiel, 0))));
+    if (list.length > 1 || list[0].label !== title) list.forEach((p) => out.push(row('note', `${p.label} (${p.count}): ${money(p.usdCents, p.khrRiel)}`)));
+  }
+  out.push(rule(), row('big', 'TOTAL', usd(shown.reduce((n, p) => n + p.usdCents, 0))));
   if (shown.some((p) => p.khrRiel)) out.push(row('line', '', khr(shown.reduce((n, p) => n + p.khrRiel, 0))));
   out.push(row('footer', `Printed ${printedAt}`));
   return out;
@@ -165,7 +217,7 @@ export function adjustmentRows(businessName: string, scope: string, kind: 'delet
     const why = kind === 'free' && r.reasonLabel ? `${r.reasonLabel} · ` : '';
     out.push(row('note', `${why}asked ${r.requestedBy || '—'}${r.approvedBy ? ` · ok ${r.approvedBy}` : ''}`));
   });
-  out.push(rule(), row('strong', plural(rows.reduce((n, r) => n + r.qty, 0), 'item'), usd(rows.reduce((n, r) => n + r.amountCents, 0))));
+  out.push(rule(), row('line', plural(rows.reduce((n, r) => n + r.qty, 0), 'item')), row('big', 'TOTAL', usd(rows.reduce((n, r) => n + r.amountCents, 0))));
   out.push(row('footer', `Printed ${printedAt}`));
   return out;
 }

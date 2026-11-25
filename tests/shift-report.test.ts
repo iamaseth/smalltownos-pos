@@ -177,7 +177,7 @@ async function main() {
   const zRows = cashierReceipt.cashierShiftRows(z, 'Asia/Phnom_Penh', { printedBy: 'Thida' });
   assertOrThrow(zRows.some((r: any) => r.kind === 'big' && r.left === 'SALES' && r.right === '$69.00'), 'cashier Z shows sales big');
   assertOrThrow(zRows.some((r: any) => r.kind === 'result' && r.right === 'MATCHED'), 'cashier Z shows the cash result boxed as MATCHED');
-  assertOrThrow(zRows.some((r: any) => r.kind === 'section' && r.left === 'HOW CUSTOMERS PAID'), 'cashier Z groups how customers paid');
+  assertOrThrow(zRows.some((r: any) => r.left.trim() === 'Cash') && zRows.some((r: any) => r.left.trim() === 'QR' && r.right === '$25.00') && zRows.some((r: any) => r.left === 'To go'), 'cashier Z splits sales into cash, card, QR with tables and to go');
   assertOrThrow(!zRows.some((r: any) => /Register|Duration|Tables served|Telegram/.test(r.left)), 'cashier Z drops register, duration, tables and Telegram lines');
   assertOrThrow(zRows.some((r: any) => r.kind === 'footer' && r.left.includes('by Thida')), 'cashier Z says who printed it');
   for (const width of [42, 32]) {
@@ -204,6 +204,9 @@ async function main() {
   assertOrThrow(dLines.length <= 65, `normal daily report stays compact (${dLines.length} lines)`);
   assertOrThrow(!dLines.some((l: string) => l.includes('CATEGORIES') || l.includes('TOP ITEMS') || l.includes('TABLES (day)')), 'daily receipt omits detail available in separate prints');
   const dayRows = cashierReceipt.cashierDayRows(day.body, 'Asia/Phnom_Penh', {});
+  assertOrThrow(day.body.cash && day.body.cash.openingUsdCents === 5000 && day.body.cash.shiftsCounted === 1, 'daily report adds up the shift cash (float, counted shifts)');
+  assertOrThrow(dayRows.some((r: any) => r.left === 'Float') && dayRows.some((r: any) => r.left === '- Purchases') && dayRows.some((r: any) => r.left === 'Cash on hand' && String(r.right).startsWith('$15.00')) && dayRows.some((r: any) => r.kind === 'result' && r.right === 'MATCHED') && dayRows.some((r: any) => r.left.startsWith('Voids / deleted')), 'day print: float shown but not added, purchases, cash on hand without the float, result, voids/free');
+  if (process.env.SHIFT_REPORT_PRINT) console.log(`${cashierReceipt.rowsToText(dayRows, 42).join('\n')}\n`);
   assertOrThrow(dayRows.some((r: any) => r.kind === 'section' && r.left === 'SHIFTS') && dayRows.some((r: any) => r.kind === 'note' && r.left.includes('matched')), 'cashier day print lists each shift with its cash result');
   const listText: string[] = cashierReceipt.rowsToText(cashierReceipt.paymentsRows('BackStreet', 'Day · Thida · 25 Nov', day.body.payments, '25 Nov 16:20'), 32);
   assertOrThrow(listText.some((l) => l.includes('PAYMENTS')) && Math.max(...listText.map((l) => displayCellWidth(l))) <= 32, 'payments tab print fits 58 mm');
