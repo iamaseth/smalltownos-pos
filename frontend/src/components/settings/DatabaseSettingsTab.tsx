@@ -20,6 +20,7 @@ import {
   History,
   RotateCcw,
   Check,
+  Download,
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -105,6 +106,7 @@ export type PinGate =
   | { mode: 'restore'; payload: { backupPath: string } }
   | { mode: 'restore-google-drive'; payload: { fileId: string; sha256: string } }
   | { mode: 'delete-backup'; payload: { fileName: string } }
+  | { mode: 'download-backup'; payload: { fileName: string } }
   | { mode: 'delete-cloud' }
   | { mode: 'cancel-cloud-deletion' }
   | null;
@@ -130,6 +132,7 @@ export interface DatabaseSettingsTabProps {
   onChooseBackupLocation: () => void;
   onRestoreFromHistory: (backup: BackupInfo) => void;
   onDeleteBackup: (backup: BackupInfo) => void;
+  onDownloadBackup?: (backup: BackupInfo) => void;
   onConnectGoogleDrive: () => void;
   onDisconnectGoogleDrive: () => void;
   onCreateGoogleDriveDestination?: () => void;
@@ -200,6 +203,7 @@ export function DatabaseSettingsTab({
   onChooseBackupLocation,
   onRestoreFromHistory,
   onDeleteBackup,
+  onDownloadBackup,
   onConnectGoogleDrive,
   onDisconnectGoogleDrive,
   onUpdateGoogleDrivePrefs,
@@ -341,6 +345,15 @@ export function DatabaseSettingsTab({
                     </p>
                   </div>
                   <div className="shrink-0 flex items-center gap-2">
+                    {onDownloadBackup && (
+                      <button
+                        onClick={() => onDownloadBackup(backup)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs bg-muted text-foreground rounded-lg hover:bg-muted font-medium"
+                        title={`Download ${backup.fileName}`}
+                      >
+                        <Download size={14} /> Download
+                      </button>
+                    )}
                     <button
                       onClick={() => onRestoreFromHistory(backup)}
                       className="px-3 py-1.5 text-xs bg-muted text-foreground rounded-lg hover:bg-muted font-medium"

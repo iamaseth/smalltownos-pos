@@ -594,6 +594,16 @@ export default function SettingsPage() {
       }
     }
 
+    if (pinGate.mode === 'download-backup') {
+      try {
+        await saveBackupFile(pinGate.payload.fileName, pin);
+        setPinGate(null);
+        return { success: true };
+      } catch {
+        return { success: false, error: 'Download failed' };
+      }
+    }
+
     if (pinGate.mode === 'delete-backup') {
       try {
         await api.post(`/db-tools/backups/${encodeURIComponent(pinGate.payload.fileName)}/delete`, { master_pin: pin });
@@ -706,6 +716,33 @@ export default function SettingsPage() {
       return;
     }
     setPinGate({ mode: 'restore', payload: { backupPath: backup.path } });
+  };
+
+  // Saves one backup file to this computer's Downloads folder (an off-server copy).
+  const saveBackupFile = async (fileName: string, masterPin?: string) => {
+    const response = await api.post(`/db-tools/backups/${encodeURIComponent(fileName)}/download`,
+      masterPin ? { master_pin: masterPin } : {}, { responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/octet-stream' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    toast.success(`Saved ${fileName} to Downloads`);
+  };
+
+  const handleDownloadBackup = async (backup: BackupInfo) => {
+    if (masterPinStatus.available && !masterPinStatus.isSet) {
+      toast.error(t('setMasterPinFirst'));
+      return;
+    }
+    if (!masterPinStatus.available) {
+      try { await saveBackupFile(backup.fileName); } catch { toast.error('Download failed'); }
+      return;
+    }
+    setPinGate({ mode: 'download-backup', payload: { fileName: backup.fileName } });
   };
 
   const handleDeleteBackup = async (backup: BackupInfo) => {
@@ -4020,6 +4057,7 @@ export default function SettingsPage() {
             onChooseBackupLocation={handleChooseBackupLocation}
             onRestoreFromHistory={handleRestoreFromHistory}
             onDeleteBackup={handleDeleteBackup}
+            onDownloadBackup={handleDownloadBackup}
             onConnectGoogleDrive={connectGoogleDrive}
             onDisconnectGoogleDrive={disconnectGoogleDrive}
             onCreateGoogleDriveDestination={createGoogleDriveDestination}
@@ -4572,6 +4610,7 @@ export default function SettingsPage() {
           pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('confirmBackupTitle')
           : pinGate?.mode === 'import' ? t('confirmImportTitle')
           : pinGate?.mode === 'restore' ? t('confirmRestoreTitle')
+          : pinGate?.mode === 'download-backup' ? 'Download backup'
           : pinGate?.mode === 'restore-google-drive' ? t('googleDriveRestoreTitle')
           : pinGate?.mode === 'delete-cloud' ? t('cloudConfirmDeletion')
           : pinGate?.mode === 'cancel-cloud-deletion' ? t('cloudCancelDeletionTitle')
