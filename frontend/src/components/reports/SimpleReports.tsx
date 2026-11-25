@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { ArrowLeftRight, CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, Lock, LockOpen, Moon, Printer, Search, Send, Sun, TriangleAlert } from 'lucide-react';
+import { CalendarCheck, CalendarDays, ChevronLeft, ChevronRight, Lock, LockOpen, Moon, Printer, Search, Send, Sun, TriangleAlert } from 'lucide-react';
 import api from '@/lib/api';
 import { usd, khr, type ReportAdjustmentRow, type ReportOrderRow, type ReportPaymentRow, type ReportQtyRow, type ReportSales } from '@print/shift-report-text';
 import { adjustmentRows, itemsSoldRows, paymentsRows, splitAdjustments, ticketsRows, type ReceiptRow } from '@print/cashier-receipt';
@@ -201,7 +201,7 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
   };
 
   /** Re-check the live shift, then go straight to the open / hand-over / close screen and come back here. */
-  const goCash = async (entry: 'open' | 'close' | 'handover') => {
+  const goCash = async (entry: 'open' | 'close') => {
     const result = await register.refresh();
     if (result.status !== 'ok') return;
     if (result.error) { toast.error(result.error); return; }
@@ -245,10 +245,6 @@ export function SimpleReports({ canTelegram }: { canTelegram: boolean }) {
                   </button>
                   {live && canClose && (
                     <>
-                      <button type="button" onClick={() => { void goCash('handover'); }}
-                        className="inline-flex h-10 items-center gap-1.5 rounded-lg border-2 border-border bg-card px-3 text-sm font-bold text-foreground hover:bg-muted">
-                        <ArrowLeftRight className="size-4" aria-hidden /> Hand over
-                      </button>
                       <button type="button" onClick={() => { void goCash('close'); }}
                         className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-amber-700 px-3 text-sm font-bold text-white hover:bg-amber-800">
                         <Lock className="size-4" aria-hidden /> Close shift

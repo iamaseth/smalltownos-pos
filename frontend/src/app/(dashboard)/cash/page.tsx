@@ -29,7 +29,7 @@ interface Status {
   } | null;
   pending_counts: { id: number; opened_by: string; opened_by_name: string; cutoff_at: string }[];
   awaiting_incoming: {
-    id: number; from_session_id: number; cutoff_at: string; from_cashier: string;
+    id: number; from_session_id: number; cutoff_at: string; from_cashier: string; passed_to?: string | null;
     tickets: { order_id: number; order_number: string; table_label: string | null; total: number; balance: number }[];
   }[];
 }
@@ -242,7 +242,7 @@ export default function CashPage() {
         )}
         {!s && status.awaiting_incoming.map((h) => (
           <BigButton key={h.id} tone="primary" onClick={() => { setOpenStep(h.tickets.length > 0 ? 'bills' : 'float'); go({ name: 'receive', handoverId: h.id, fromCashier: h.from_cashier }); }}>
-            Open shift{h.tickets.length > 0 ? ` (${h.tickets.length} bills from ${h.from_cashier})` : ` after ${h.from_cashier}`}
+            Open shift{h.tickets.length > 0 ? ` (${h.tickets.length} bills from ${h.from_cashier}${h.passed_to ? ` for ${h.passed_to}` : ''})` : ` after ${h.from_cashier}`}
           </BigButton>
         ))}
         {!s && status.awaiting_incoming.length === 0 && (
@@ -460,6 +460,10 @@ export default function CashPage() {
   return <div className="mx-auto w-full max-w-none p-3 pb-24">{body}</div>;
 }
 
+interface OpenTicket {
+  order_id: number; order_number: string; table_label: string | null; balance: number;
+  all_free?: number; original_user_name?: string | null;
+}
 interface SpentItem { id: number; reason: string | null; amount_cents: number; amount_khr_riel: number; media_id: number | null }
 
 interface ClosePreview {
@@ -704,8 +708,13 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
   onClosed: () => void;
 }) {
   const router = useRouter();
-  const [openTickets, setOpenTickets] = useState<{ order_id: number; order_number: string; table_label: string | null; balance: number }[] | null>(null);
-  const [passBills, setPassBills] = useState(false);
+  const [openTickets, setOpenTickets] = useState<OpenTicket[] | null>(null);
+  const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
+  const [lateClose, setLateClose] = useState(false);
+  const [passTo, setPassTo] = useState('');
+  const [ownerPin, setOwnerPin] = useState('');
+  const [freeId, setFreeId] = useState<number | null>(null);
+  const [freePin, setFreePin] = useState('');
   const [activeCounter, setActiveCounter] = useState<'cash' | 'float'>('cash');
   const [floatCount, setFloatCount] = useState<CashCountValue>(emptyCashCount());
   const [count, setCount] = useState<CashCountValue>(emptyCashCount());
@@ -741,6 +750,8 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
     ]).then(([ticketsRes, spentRes, previewRes]) => {
       if (!active) return;
       setOpenTickets(ticketsRes.data.tickets || []);
+      setStaff(ticketsRes.data.staff || []);
+      setLateClose(!!ticketsRes.data.late_close);
       setSpent(spentRes.data.items || []);
       setPreview(previewRes.data);
     }).catch((error) => {
@@ -755,6 +766,26 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
     setBusy(true);
     try { await fn(); } finally { setBusy(false); }
   };
+
+  const reloadTickets = async () => {
+    const { data } = await api.get('/cash-handover/open-tickets');
+    setOpenTickets(data.tickets || []);
+    setStaff(data.staff || []);
+    setLateClose(!!data.late_close);
+  };
+
+  const closeFree = (orderId: number) => run(async () => {
+    try {
+      const res = await api.post('/cash-handover/open-tickets/' + orderId + '/close-free', { pin: freePin });
+      toast.success('Bill closed. Approved by ' + res.data.approved_by);
+      setFreeId(null);
+      setFreePin('');
+      await reloadTickets();
+    } catch (error) {
+      setFreePin('');
+      toast.error(errorText(error, 'Could not close the bill'));
+    }
+  });
 
   const removeSpent = (id: number) => run(async () => {
     try {
@@ -772,7 +803,10 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
   const payoutTotal = preview?.cash_spent_usd_cents ?? 0;
   const cashSales = preview?.cash_sales_usd_cents ?? 0;
   const tickets = openTickets ?? [];
-  const openOwed = tickets.reduce((sum, ticket) => sum + Number(ticket.balance || 0), 0);
+  const freeTickets = tickets.filter((t) => Number(t.all_free) === 1);
+  const owedTickets = tickets.filter((t) => Number(t.all_free) !== 1);
+  const openOwed = owedTickets.reduce((sum, ticket) => sum + Number(ticket.balance || 0), 0);
+  const ticketsBlock = freeTickets.length > 0 || (owedTickets.length > 0 && (!passTo || (lateClose && !ownerPin.trim())));
   const floatCountCombined = combinedUsdCents(floatPayload.usd_cents, floatPayload.khr_riel, rate);
   const floatGap = floatCountCombined - openingCombined;
   const difference = countTotals.combined + floatCountCombined - expected;
@@ -786,8 +820,16 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
       toast.error('A phone receipt photo still needs details. Tap Add payout.');
       return;
     }
-    if (tickets.length > 0 && !passBills) {
-      toast.error('Transfer the unpaid tickets to the next cashier, or take payment first.');
+    if (freeTickets.length > 0) {
+      toast.error('Close the $0 bills where everything is free first (manager PIN).');
+      return;
+    }
+    if (owedTickets.length > 0 && !passTo) {
+      toast.error('Take payment for the open tickets, or choose who takes them.');
+      return;
+    }
+    if (owedTickets.length > 0 && lateClose && !ownerPin.trim()) {
+      toast.error('Last close of the night: take payment for every ticket, or enter the owner PIN.');
       return;
     }
     if (openingCombined > 0 && floatCountCombined === 0) {
@@ -804,17 +846,24 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
         float_retained: floatPayload,
         explanation: reason.trim() || undefined,
         device: 'pos',
-        pass_open_tickets: passBills || undefined,
+        pass_open_tickets: owedTickets.length > 0 || undefined,
+        pass_to_user_id: owedTickets.length > 0 ? passTo : undefined,
+        owner_pin: owedTickets.length > 0 && lateClose ? ownerPin.trim() : undefined,
       });
       const passed = res.data?.passed_to_next_cashier;
-      toast.success(passed?.tickets ? 'Shift closed. ' + passed.tickets + ' bills go to the next cashier.' : 'Shift closed', { duration: 6000 });
+      const passedName = staff.find((u) => u.id === passTo)?.name ?? 'the next cashier';
+      toast.success(passed?.tickets ? 'Shift closed. ' + passed.tickets + ' tickets passed to ' + passedName + '.' : 'Shift closed', { duration: 6000 });
       try {
         await printReportReceipt({ kind: 'shift', sessionId }, { auto: true });
       } catch (printError) {
         if (!(printError instanceof PrintSkippedError)) toast.error('The shift is closed, but the Z report did not print. Reprint it from Reports → Shifts.', { duration: 8000 });
       }
       onClosed();
-    } catch (error) { toast.error(errorText(error, 'Could not close the shift')); }
+    } catch (error) {
+      setOwnerPin('');
+      toast.error(errorText(error, 'Could not close the shift'));
+      void reloadTickets().catch(() => {});
+    }
   });
 
   const activeValue = activeCounter === 'cash' ? count : floatCount;
@@ -870,8 +919,75 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
         </aside>
 
         <main className="space-y-3">
+          <section data-testid="close-open-tickets" className={'rounded-xl border p-4 ' + (ticketsBlock ? 'border-orange-300 bg-orange-50' : 'bg-card')}>
+            <h2 className="mb-2 text-lg font-bold">Step 1 · Open tickets</h2>
+            {openTickets === null ? <p className="text-sm text-muted-foreground">Checking tickets…</p> : tickets.length === 0 ? (
+              <p className="text-base font-semibold text-emerald-700">✓ No open tickets</p>
+            ) : (
+              <div className="space-y-2">
+                {freeTickets.map((t) => (
+                  <div key={t.order_id} className="rounded-lg border border-red-300 bg-red-50 p-3 text-red-900">
+                    <div className="flex items-center justify-between gap-2 font-bold">
+                      <span>{t.table_label || t.order_number} · everything free</span><span className="tabular-nums">$0.00</span>
+                    </div>
+                    <p className="text-xs">Can&apos;t be passed on. A manager must close it.</p>
+                    {freeId === t.order_id ? (
+                      <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); void closeFree(t.order_id); }}>
+                        <input autoFocus type="password" inputMode="numeric" value={freePin} onChange={(e) => setFreePin(e.target.value)} aria-label="Manager PIN"
+                          placeholder="Manager PIN" className="min-w-0 flex-1 rounded-lg border bg-white px-3 py-2 text-base text-foreground" />
+                        <button type="submit" disabled={busy || !freePin} className="rounded-lg bg-red-700 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">Close bill</button>
+                        <button type="button" onClick={() => { setFreeId(null); setFreePin(''); }} className="rounded-lg border bg-white px-3 py-2 text-sm text-foreground">Cancel</button>
+                      </form>
+                    ) : (
+                      <button type="button" onClick={() => { setFreeId(t.order_id); setFreePin(''); }} className="mt-2 w-full rounded-lg bg-red-700 px-3 py-2 text-sm font-bold text-white">Close with manager PIN</button>
+                    )}
+                  </div>
+                ))}
+                {owedTickets.length > 0 && (
+                  <div className="rounded-lg border bg-white p-3">
+                    <div className="mb-1 flex items-center justify-between font-bold">
+                      <span>{owedTickets.length} open ticket{owedTickets.length > 1 ? 's' : ''}</span>
+                      <span className="tabular-nums">{formatUsdCents(Math.round(openOwed * 100))}</span>
+                    </div>
+                    <ul className="mb-2 text-sm">
+                      {owedTickets.map((t) => (
+                        <li key={t.order_id} className="flex justify-between border-t py-1">
+                          <span>{t.table_label || t.order_number}{t.original_user_name ? <span className="text-muted-foreground"> · {t.original_user_name}</span> : null}</span>
+                          <span className="tabular-nums">{formatUsdCents(Math.round(Number(t.balance || 0) * 100))}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button type="button" onClick={() => router.push('/orders')} className="mb-2 w-full rounded-lg border-2 border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800">Take payment now</button>
+                    {lateClose ? (
+                      <div className="rounded-lg bg-red-50 p-2 text-sm text-red-900">
+                        <p className="font-bold">Last close of the night: every ticket must be paid or cancelled.</p>
+                        <p className="mb-2 text-xs">Only the owner can let them stay open overnight.</p>
+                        <select value={passTo} onChange={(e) => setPassTo(e.target.value)} aria-label="Pass tickets to"
+                          className="mb-2 w-full rounded-lg border bg-white px-2 py-2 text-base text-foreground">
+                          <option value="">Pass them to…</option>
+                          {staff.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        </select>
+                        <input type="password" inputMode="numeric" value={ownerPin} onChange={(e) => setOwnerPin(e.target.value)} aria-label="Owner PIN"
+                          placeholder="Owner PIN" className="w-full rounded-lg border bg-white px-3 py-2 text-base text-foreground" />
+                      </div>
+                    ) : (
+                      <label className="block text-sm font-semibold">
+                        Or pass them to
+                        <select value={passTo} onChange={(e) => setPassTo(e.target.value)} aria-label="Pass tickets to"
+                          className="mt-1 w-full rounded-lg border bg-white px-2 py-2 text-base">
+                          <option value="">Choose a person…</option>
+                          {staff.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
           <section className="overflow-hidden rounded-xl border bg-card">
-            <h2 className="bg-emerald-50 px-4 py-3 text-lg font-bold">Close Day Shift</h2>
+            <h2 className="bg-emerald-50 px-4 py-3 text-lg font-bold">Step 2 · Count the cash</h2>
             <CloseLine n={1} label="Cash sales" hint="(from POS)" value={formatUsdCents(cashSales)} />
             <CloseLine n={2} label="Float" hint={`(counted · start ${formatUsdCents(openingCombined)})`} value={formatUsdCents(floatCountCombined)} />
             <div className="border-b">
@@ -907,28 +1023,16 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
           </section>
 
           <section className="rounded-xl border bg-card p-4">
-            <h2 className="mb-2 text-lg font-bold">Handover</h2>
-            {openTickets === null ? <p className="text-sm text-muted-foreground">Checking tickets…</p> : tickets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No open tickets.</p>
-            ) : (
-              <div className="rounded-lg bg-orange-50 p-3">
-                <label className="flex items-center gap-2 text-base font-bold text-orange-900">
-                  <input type="checkbox" className="size-5" checked={passBills} onChange={(e) => setPassBills(e.target.checked)} />
-                  {tickets.length} open ticket{tickets.length > 1 ? 's' : ''} – {formatUsdCents(Math.round(openOwed * 100))} · pass to next cashier
-                </label>
-                <p className="mt-1 truncate text-xs text-orange-800">{tickets.map((t) => t.table_label || t.order_number).join(', ')}</p>
-                <button type="button" className="mt-1 text-sm underline" onClick={() => router.push('/orders')}>Take payment first</button>
-              </div>
-            )}
+            <h2 className="mb-2 text-lg font-bold">Note</h2>
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} aria-label="Note"
               placeholder={needsExplanation ? 'Explain the difference (required)' : 'Note (optional)…'}
-              className={'mt-3 w-full rounded-lg border px-3 py-2 text-sm ' + (needsExplanation && !reason.trim() ? 'border-amber-400 bg-amber-50' : '')} />
+              className={'w-full rounded-lg border px-3 py-2 text-sm ' + (needsExplanation && !reason.trim() ? 'border-amber-400 bg-amber-50' : '')} />
           </section>
 
-          <button type="button" disabled={busy || loading || !preview || phonePending > 0 || (tickets.length > 0 && !passBills) || needsExplanation && !reason.trim() || (openingCombined > 0 && floatCountCombined === 0)}
+          <button type="button" disabled={busy || loading || !preview || phonePending > 0 || ticketsBlock || needsExplanation && !reason.trim() || (openingCombined > 0 && floatCountCombined === 0)}
             onClick={closeShift}
             className="w-full rounded-xl bg-emerald-700 px-5 py-4 text-white disabled:opacity-50">
-            <span className="block text-xl font-bold">{busy ? 'Closing…' : 'Handover & close shift'}</span>
+            <span className="block text-xl font-bold">{busy ? 'Closing…' : 'Close shift'}</span>
             <span className="block text-sm">Print shift report</span>
           </button>
         </main>

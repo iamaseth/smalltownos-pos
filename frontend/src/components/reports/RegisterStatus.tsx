@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { ArrowLeftRight, CalendarCheck, CircleCheck, Lock, LockOpen, TriangleAlert } from 'lucide-react';
+import { CalendarCheck, CircleCheck, Lock, LockOpen, TriangleAlert } from 'lucide-react';
 import { usd, type DailyReportData, type ReportShiftRow } from '@print/shift-report-text';
 import api from '@/lib/api';
 import { businessDateInTimezone } from '@/lib/business-date';
@@ -37,7 +37,7 @@ function CountTag({ shift }: { shift: ReportShiftRow }) {
 
 /**
  * Today at a glance on Reports: every shift of the business day in order, the
- * open one with Hand over and Close shift, an Open shift button when none is
+ * open one with Close shift, an Open shift button when none is
  * open, Close day once everything is closed, and orders taken with no shift in red.
  */
 export function RegisterStatus() {
@@ -65,7 +65,7 @@ export function RegisterStatus() {
   }, [loadDay]);
 
   /** Re-check the shift before going to a cash screen; someone may have opened or closed it meanwhile. */
-  const goCash = async (entry: 'open' | 'close' | 'handover') => {
+  const goCash = async (entry: 'open' | 'close') => {
     const result = await shift.refresh();
     if (result.status !== 'ok') return;
     if (result.error) { toast.error(result.error); return; }
@@ -121,9 +121,6 @@ export function RegisterStatus() {
             <span className="rounded-full bg-amber-600 px-3 py-1 text-xs font-bold text-white">Open now</span>
             {canClose && (
               <>
-                <button type="button" onClick={() => { void goCash('handover'); }} className={`${btn} border-2 border-border bg-card text-foreground hover:bg-muted`}>
-                  <ArrowLeftRight className="size-4" aria-hidden /> Hand over
-                </button>
                 <button type="button" onClick={() => { void goCash('close'); }} className={`${btn} bg-amber-700 text-white hover:bg-amber-800`}>
                   <Lock className="size-4" aria-hidden /> Close shift
                 </button>

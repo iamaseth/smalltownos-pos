@@ -318,6 +318,19 @@ export function buildOrderDetail(orderId: number): OrderDetail {
   };
 }
 
+function passedOnFor(db: Db, sessionId: number): { label: string; totalCents: number; to: string | null }[] {
+  const rows = db.prepare(`
+    SELECT COALESCE(i.table_label, i.order_number) AS label, i.balance, COALESCE(ua.name, ub.name) AS to_name
+    FROM ticket_handover_items i
+    JOIN ticket_handovers th ON th.id = i.ticket_handover_id
+    LEFT JOIN users ua ON ua.id = th.assigned_to
+    LEFT JOIN users ub ON ub.id = th.accepted_by
+    WHERE th.from_session_id = ?
+    ORDER BY i.id
+  `).all(sessionId) as { label: string; balance: number; to_name: string | null }[];
+  return rows.map((r) => ({ label: String(r.label), totalCents: Math.round(Number(r.balance || 0) * 100), to: r.to_name }));
+}
+
 export function buildShiftReport(sessionId: number): ShiftReportData {
   const db = getDatabase();
   const session = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId) as SessionRow | undefined;
@@ -388,6 +401,7 @@ export function buildShiftReport(sessionId: number): ShiftReportData {
     spent: spentFor(db, session.id),
     orders: orderRows(db, orders, () => session.id),
     adjustments: adjustmentsFor(db, w),
+    passedOn: passedOnFor(db, session.id),
     notes,
     telegram,
   };
