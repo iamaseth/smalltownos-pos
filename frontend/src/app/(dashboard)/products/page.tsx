@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Search, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, GripVertical, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff, Image as ImageIcon, Check } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, GripVertical, CheckCircle, AlertCircle, AlertTriangle, Eye, EyeOff, Image as ImageIcon, Check, FolderTree } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -21,6 +21,7 @@ import { genericMenuPhoto } from '@/lib/generic-menu-photos';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { tenantCan } from '@/lib/permissions';
 import RecipeTools from '@/components/products/RecipeTools';
+import OrganizeMenu from '@/components/products/OrganizeMenu';
 import MenuItemEditor, { type Recipe, type MenuSupply, type MenuProduct, type MenuCategory } from '@/components/products/MenuItemEditor';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
@@ -63,7 +64,7 @@ const CATEGORY_COLORS: { key: string; labelKey: ProductsKey; bg: string; text: s
   { key: 'rose', labelKey: 'colorRose', bg: 'bg-rose-100', text: 'text-rose-700' },
 ];
 
-type TabType = 'products' | 'categories' | 'addons';
+type TabType = 'products' | 'categories' | 'addons' | 'organize';
 
 function taxCategoryOptionLabel(tc: { label: string; rate_percent?: number | null }): string {
   return tc.rate_percent != null ? `${tc.label} (${tc.rate_percent}%)` : tc.label;
@@ -617,12 +618,21 @@ export default function ProductsPage() {
         <button onClick={() => setActiveTab('categories')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'categories' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
           <Folder size={16} /> {t('tabCategories')}
         </button>
+        {isOwnerOrManager && (
+          <button onClick={() => setActiveTab('organize')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'organize' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+            <FolderTree size={16} /> Organize menu
+          </button>
+        )}
         {isRestaurant && (
           <button onClick={() => setActiveTab('addons')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'addons' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             <Puzzle size={16} /> {t('tabAddonGroups')}
           </button>
         )}
       </div>
+
+      {activeTab === 'organize' && isOwnerOrManager && (
+        <OrganizeMenu categories={categories} products={products} onChanged={fetchData} />
+      )}
 
       {activeTab === 'products' && (
         <>
