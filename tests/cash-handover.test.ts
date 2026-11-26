@@ -409,6 +409,29 @@ async function main() {
   assert(!!db.prepare(`SELECT 1 FROM order_audit_log WHERE order_id = ? AND details_json LIKE '%all_free_bill%'`).get(freeOrderId), 'closing the all-free bill is in the order history');
   const closedTwice = await request(app).post(`/api/cash-handover/open-tickets/${freeOrderId}/close-free`).set('Authorization', A).send({ pin: '4321' });
   assert(closedTwice.status === 409, 'a closed ticket cannot be closed twice');
+  // A $0 bill that was never marked paid (everything voided before the bill) is all-free too.
+  const ut = now();
+  const unpaidZeroIds: number[] = [];
+  for (let n = 0; n < 6; n++) {
+    const oid = Number(db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at) VALUES (?, 'cashier-a', 'dine_in', 'served', 0, 0, ?, ?)`).run(`T-ZERO-${n}`, ut, ut).lastInsertRowid);
+    db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at) VALUES (?, ?, 0, 0, 0, 0, 'unpaid', '[]', ?, ?)`)
+      .run(`B-ZERO-${n}`, oid, ut, ut);
+    unpaidZeroIds.push(oid);
+  }
+  const listedZero = await request(app).get('/api/cash-handover/open-tickets').set('Authorization', A);
+  assert(unpaidZeroIds.every((id) => listedZero.body.tickets.some((t: { order_id: number; all_free: number }) => t.order_id === id && t.all_free === 1)), 'an unpaid $0 bill counts as all-free (manager closes it)');
+  let allClosed = true;
+  for (const id of unpaidZeroIds) {
+    const r = await request(app).post(`/api/cash-handover/open-tickets/${id}/close-free`).set('Authorization', A).send({ pin: '4321', reason: 'Wrong table, all removed' });
+    if (r.status !== 200) allClosed = false;
+  }
+  assert(allClosed, 'six correct manager PINs in a row are not locked out (only wrong PINs count)');
+  const zeroBill = db.prepare(`SELECT payment_status, paid_at FROM bills WHERE order_id = ?`).get(unpaidZeroIds[0]) as { payment_status: string; paid_at: string | null };
+  assert(zeroBill.payment_status === 'paid' && !!zeroBill.paid_at, 'closing a $0 bill settles it with no payment');
+  assert(!!db.prepare(`SELECT 1 FROM order_audit_log WHERE order_id = ? AND details_json LIKE '%Wrong table, all removed%'`).get(unpaidZeroIds[0]), 'the note is kept in the order history');
+  const paidLines = db.prepare(`SELECT payment_details FROM bills WHERE order_id = ?`).get(unpaidZeroIds[0]) as { payment_details: string };
+  assert(paidLines.payment_details === '[]', 'no fake $1 payment is recorded');
+
   const { isLateCloseAt } = handover;
   assert(isLateCloseAt(22, '22') && isLateCloseAt(23, null) && isLateCloseAt(3, '22'), 'after 22:00 and before 05:00 is the last close of the night');
   assert(!isLateCloseAt(21, '22') && !isLateCloseAt(10, null) && !isLateCloseAt(23, 'off'), 'earlier in the day, or with the rule off, tickets can be passed on');

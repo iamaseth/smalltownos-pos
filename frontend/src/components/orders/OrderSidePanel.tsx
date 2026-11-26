@@ -13,7 +13,7 @@ interface Detail {
 
 const REMOVED = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
 const COMP_LABEL: Record<string, string> = {
-  entertainer: 'Entertainer', event_person: 'Event person drinks', owner_comp: 'Owner comp (Thida)', complaint: 'Complaint', wrong_item: 'Wrong item', staff_meal: 'Staff meal', friends_owner: 'Friends / owner', too_slow: 'Too slow', other: 'Other',
+  entertainer: 'Entertainer', event: 'Event (included free)', event_person: 'Event person drinks', owner_comp: 'Owner comp (Thida)', complaint: 'Complaint', wrong_item: 'Wrong item', staff_meal: 'Staff meal', friends_owner: 'Friends / owner', too_slow: 'Too slow', other: 'Other',
 };
 const money = (n: number) => `$${Number(n || 0).toFixed(2)}`;
 

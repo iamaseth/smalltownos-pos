@@ -392,6 +392,10 @@ function checkPinRateLimit(key: string): boolean {
   return true;
 }
 
+function clearPinAttempts(key: string): void {
+  pinAttempts.delete(key);
+}
+
 export function resetPinRateLimitForTests(): void {
   pinAttempts.clear();
 }
@@ -2421,6 +2425,7 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       if (!user) {
         return res.status(403).json({ error: 'Invalid manager PIN' });
       }
+      clearPinAttempts(rateLimitKey);
       approver = user;
     }
 
