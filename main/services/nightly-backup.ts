@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { createBackup, getBackupDirectory, isDatabaseMaintenanceActive } from '../db';
 import { tenantTimezone } from '../routes/cash-closures';
+import { copyBackupToFolder } from './backup-folder';
 
 const CHECK_EVERY_MS = 10 * 60 * 1000;
 const KEEP = 14;
@@ -49,6 +50,8 @@ export async function runNightlyBackupIfDue(at = new Date()): Promise<string | n
       try { fs.unlinkSync(path.join(dir, name)); } catch (error) { console.error('[NightlyBackup] Could not remove', name, error); }
     }
     console.log('[NightlyBackup] Saved', target);
+    // BackStreet: also put a copy in the backup folder (e.g. Google Drive) when one is set.
+    copyBackupToFolder(target);
     return target;
   } catch (error) {
     console.error('[NightlyBackup] Failed:', error);

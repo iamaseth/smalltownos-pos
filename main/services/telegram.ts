@@ -281,6 +281,28 @@ function localNow(at: Date): { date: string; time: string; weekday: number } {
   return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}`, weekday };
 }
 
+function escapeAlertHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * BackStreet: a short warning (e.g. "backup copy failed") to everyone who gets the daily
+ * report, i.e. owners and managers. Sent once per dedupe key.
+ */
+export function enqueueAlert(title: string, text: string, dedupeBase: string, db: Db = getDatabase()): number {
+  if (!isEnabled(db) || !botToken()) return 0;
+  const recipients = listRecipients(db).filter((r) => r.is_active && r.reports.includes('daily'));
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO telegram_deliveries (recipient_id, chat_id, report_type, dedupe_key, title, params, status, attempts, next_attempt_at, created_at)
+    VALUES (?, ?, 'alert', ?, ?, ?, 'pending', 0, ?, ?)
+  `);
+  let queued = 0;
+  const timestamp = now();
+  for (const r of recipients) queued += insert.run(r.id, r.chat_id, `${dedupeBase}|${r.chat_id}`, title, JSON.stringify({ title, text }), timestamp, timestamp).changes;
+  if (queued) scheduleProcessing();
+  return queued;
+}
+
 export function enqueueReport(reportType: TelegramReportType, params: Record<string, unknown>, dedupeBase: string, title: string, db: Db = getDatabase()): number {
   if (!isEnabled(db) || !botToken()) return 0;
   const recipients = listRecipients(db).filter((r) => r.is_active && r.reports.includes(reportType));
@@ -307,6 +329,7 @@ function buildReport(db: Db, reportType: string, params: Record<string, unknown>
     case 'purchasing': return reports.buildPurchasingReport(db, String(params.startDate), String(params.endDate), options);
     case 'period': return reports.buildPeriodReport(db, String(params.startDate), String(params.endDate), options);
     case 'test': return { title: 'Test message', attachments: [], html: '<b>Test message</b>\nTelegram reports are connected to the POS.' };
+    case 'alert': return { title: String(params.title || 'POS alert'), attachments: [], html: `<b>${escapeAlertHtml(String(params.title || 'POS alert'))}</b>\n${escapeAlertHtml(String(params.text || ''))}` };
     case 'printout': return buildPrintout(params);
     default: throw new Error(`unknown report type ${reportType}`);
   }
