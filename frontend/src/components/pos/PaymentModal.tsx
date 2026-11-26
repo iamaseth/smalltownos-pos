@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { X, Wallet, Sparkles, User, Percent, Send, Check, Gift } from 'lucide-react';
-import { toneStyle } from '@/components/pos/BillItemActions';
+import { toneStyle } from '@/lib/action-tones';
 import { Button } from '@/components/ui/button';
 import CouponPicker from '@/components/pos/CouponPicker';
 import FreeBillPanel from '@/components/pos/FreeBillPanel';
