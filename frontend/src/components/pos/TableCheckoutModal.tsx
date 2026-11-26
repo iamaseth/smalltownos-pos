@@ -307,6 +307,7 @@ export default function TableCheckoutModal({
       await api.patch(`/orders/${order.id}/items/${discountTarget.item.id}/discount`, {
         discount_type: input.type,
         discount_value: input.value,
+        discount_reason: input.value > 0 ? input.reason : undefined,
         override_pin: input.pin,
       });
     }
@@ -523,6 +524,7 @@ export default function TableCheckoutModal({
         canClear={discountTarget.kind === 'order' && Number(order.discount_amount) > 0}
         onClose={() => setDiscountTarget(null)}
         onApply={applyDiscount}
+        free={discountTarget.kind === 'order' && canEditOrder ? { orderId: Number(order.id), total: Number(order.total), paidAmount: 0, onClosed: () => { onTablesChanged?.(); onClose(); } } : undefined}
       />
     )}
     {removingId != null && (
