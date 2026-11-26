@@ -1,16 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import toast from 'react-hot-toast';
 import { Gift, X } from 'lucide-react';
 import api from '@/lib/api';
 import type { Bill, Order } from '@/lib/types';
 
-/** Same reasons as Free in Orders (server: COMP_REASONS). */
+/**
+ * Whole-bill Free: five short words for staff (keys are the server's COMP_REASONS).
+ * Free on one item in Orders still offers the full list.
+ */
 const COMP_REASONS: [string, string][] = [
-  ['entertainer', 'Entertainer / band drink'], ['event', 'Event (included free)'], ['event_person', 'Event person drinks'], ['owner_comp', 'Owner (free)'],
-  ['complaint', 'Customer complaint'], ['wrong_item', 'Wrong item'], ['staff_meal', 'Staff meal'],
-  ['friends_owner', 'Friends / owner'], ['too_slow', 'Took too long'], ['other', 'Other'],
+  ['entertainer', 'Artist'], ['event', 'Event'], ['owner_comp', 'Owner'], ['complaint', 'Complaint'], ['other', 'Other'],
 ];
 const REMOVED = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
 
@@ -72,9 +73,14 @@ export default function FreeBillPanel({ bill, offerFree, onClosed, startOpen = f
   };
 
   const pinInput = (
-    <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} maxLength={6}
-      placeholder="Manager PIN" aria-label="Manager PIN"
-      className="min-h-11 w-full rounded-lg border border-neutral-600 bg-neutral-950 px-3 py-2 text-base text-white outline-none focus:ring-2 focus:ring-red-400" />
+    <label className="block space-y-1">
+      <span className="block text-sm font-bold text-amber-100">Manager PIN</span>
+      {/* Plain text box drawn as dots (not a password field), so the browser does not fill a saved login here. */}
+      <input type="text" inputMode="numeric" name="free-manager-pin" autoComplete="one-time-code" value={pin}
+        onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} maxLength={6}
+        placeholder="PIN" aria-label="Manager PIN" style={{ WebkitTextSecurity: 'disc' } as unknown as CSSProperties}
+        className="min-h-11 w-full rounded-lg border border-neutral-600 bg-neutral-950 px-3 py-2 text-base text-white outline-none focus:ring-2 focus:ring-red-400" />
+    </label>
   );
 
   if (zero && !startOpen) return null;
@@ -91,25 +97,28 @@ export default function FreeBillPanel({ bill, offerFree, onClosed, startOpen = f
   return (
     <div data-testid="free-bill-panel" className="space-y-2 rounded-2xl border-2 border-amber-500 bg-amber-950/40 p-3 text-white">
       <div className="flex items-center justify-between">
-        <p className="flex items-center gap-2 text-base font-black"><Gift size={18} /> Make the whole bill free</p>
+        <p className="flex items-center gap-2 text-base font-black"><Gift size={18} /> Free bill</p>
         <button type="button" aria-label="Close" onClick={() => { setOpen(false); setPin(''); onCancel?.(); }} className="rounded-lg p-1.5 hover:bg-neutral-800"><X size={16} /></button>
       </div>
-      <p className="text-sm text-amber-100">{zero ? 'Nothing is left to pay. Choose why, and a manager closes the bill.' : 'Every item is marked Free with this reason, then the bill closes. A manager must approve.'}</p>
+      <p className="text-sm text-amber-100">{zero ? 'Pay $0. Pick why. Manager PIN.' : 'Pick why. Manager PIN.'}</p>
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
         {COMP_REASONS.map(([key, label]) => (
           <button key={key} type="button" aria-pressed={reason === key} onClick={() => setReason(key)}
-            className={`min-h-11 rounded-lg border px-2 text-sm font-semibold ${reason === key ? 'border-amber-400 bg-amber-500 text-black' : 'border-neutral-600 hover:bg-neutral-800'}`}>
+            className={`min-h-14 rounded-lg border px-2 text-lg font-bold ${reason === key ? 'border-amber-400 bg-amber-500 text-black' : 'border-neutral-600 hover:bg-neutral-800'}`}>
             {label}
           </button>
         ))}
       </div>
-      <input type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200}
-        placeholder={reason === 'other' ? 'Say why (required for Other)' : 'Note (optional), e.g. who it was for'}
-        className="min-h-11 w-full rounded-lg border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white outline-none" />
+      <label className="block space-y-1">
+        <span className="block text-sm font-bold text-amber-100">{reason === 'other' ? 'Why? (must write)' : 'Note'}</span>
+        <input type="text" name="free-note" autoComplete="off" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200}
+          placeholder={reason === 'other' ? 'Why?' : 'Name'}
+          className="min-h-11 w-full rounded-lg border border-neutral-600 bg-neutral-950 px-3 py-2 text-sm text-white outline-none" />
+      </label>
       {pinInput}
       <button type="button" disabled={busy || !reason || !pin || (reason === 'other' && !note.trim())} onClick={() => void makeFree()}
         className="min-h-14 w-full rounded-2xl bg-amber-500 text-xl font-black text-black hover:bg-amber-400 disabled:opacity-50">
-        {busy ? 'Working…' : zero ? 'Close bill (everything is free)' : 'Make free and close bill'}
+        {busy ? '…' : !reason ? 'Pick why' : reason === 'other' && !note.trim() ? 'Write why' : !pin ? 'Type PIN' : zero ? 'Close bill' : 'Free + close'}
       </button>
     </div>
   );
