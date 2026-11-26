@@ -369,9 +369,10 @@ function parseAmountPair(raw: unknown, label: string): { usd_cents: number; khr_
 
 /* ── ticket handover snapshot ─────────────────────────────────────────── */
 
-// A bill that reached $0 because every item was made free (or voided) is marked paid by
-// itself, but its order stays open. Those must be closed with a manager PIN, never passed on.
-const ALL_FREE_SQL = `(b.payment_status = 'paid' AND COALESCE(b.paid_amount, 0) = 0 AND COALESCE(b.total, 0) <= 0)`;
+// A bill at $0 because every item was made free (or voided). Nothing can be paid on it (it may or
+// may not have been marked paid by itself), but its order stays open. Those must be closed with a
+// manager PIN, never passed on.
+const ALL_FREE_SQL = `(COALESCE(b.total, 0) <= 0 AND COALESCE(b.paid_amount, 0) = 0 AND b.payment_status NOT IN ('refunded', 'partially_refunded'))`;
 
 export function openTickets(db: Db) {
   return db.prepare(`
@@ -417,12 +418,14 @@ export function isLateClose(): boolean {
 function approverByPin(db: Db, req: AuthedRequest, pin: unknown, ownerOnly: boolean, purpose: string): { id: string; name: string } {
   if (typeof pin !== 'string' || !pin.trim()) throw httpError(ownerOnly ? 'Owner PIN required' : 'Manager PIN required', 400);
   const clientIp = pinClientKey(req);
-  const { checkPinRateLimit } = require('./orders') as typeof import('./orders');
-  if (!checkPinRateLimit(`pin:${clientIp}:${purpose}`)) throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429);
+  const { checkPinRateLimit, clearPinAttempts } = require('./orders') as typeof import('./orders');
+  const limitKey = `pin:${clientIp}:${purpose}`;
+  if (!checkPinRateLimit(limitKey)) throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429);
   const users = db.prepare('SELECT id, name, role, pin_hash FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL').all() as { id: string; name: string; role: string; pin_hash: string }[];
   const allowed = (u: { id: string; role: string }) => (ownerOnly ? u.role === 'owner' : isApprover(db, u.id, 'comp'));
   const match = users.find((u) => allowed(u) && verifyPin(u.pin_hash, pin.trim()));
   if (!match) throw httpError(ownerOnly ? 'Invalid owner PIN' : 'Invalid manager PIN', 403);
+  clearPinAttempts(limitKey);
   return { id: match.id, name: match.name };
 }
 
@@ -1227,7 +1230,13 @@ router.post('/open-tickets/:orderId/close-free', requirePermission('cash.shifts.
       if (!ticket) throw httpError('This ticket is no longer open', 409);
       if (Number(ticket.all_free) !== 1) throw httpError('This ticket still has something to pay', 409);
       const approver = approverByPin(db, req, (req.body || {}).pin, false, 'close-free-ticket');
+      const rawReason = (req.body || {}).reason;
+      const reason = typeof rawReason === 'string' ? rawReason.trim().slice(0, 200) : '';
       const at = now();
+      // Nothing was paid: mark the $0 bills settled so they don't show as unpaid anywhere.
+      db.prepare(`UPDATE bills SET payment_status = 'paid', paid_at = COALESCE(paid_at, ?), balance = 0, updated_at = ?
+        WHERE order_id = ? AND COALESCE(total, 0) <= 0 AND COALESCE(paid_amount, 0) = 0 AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded')`)
+        .run(at, at, orderId);
       const order = db.prepare('SELECT id, status, table_id FROM orders WHERE id = ?').get(orderId) as { id: number; status: string; table_id: string | null };
       db.prepare(`UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?`).run(at, at, orderId);
       db.prepare(`UPDATE order_items SET status = 'served', updated_at = ? WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')`).run(at, orderId);
@@ -1237,7 +1246,7 @@ router.post('/open-tickets/:orderId/close-free', requirePermission('cash.shifts.
       }
       recordOrderAudit(db, {
         orderId: String(orderId), actorUserId: me.id, action: 'status_changed',
-        details: { from: order.status, to: 'completed', all_free_bill: true, approved_by: approver.id },
+        details: { from: order.status, to: 'completed', all_free_bill: true, approved_by: approver.id, ...(reason ? { reason } : {}) },
       });
       return { order_id: orderId, approved_by: approver.name };
     });

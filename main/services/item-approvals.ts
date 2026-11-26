@@ -7,10 +7,10 @@ import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 type Db = ReturnType<typeof getDatabase>;
 export type ItemAction = 'void' | 'comp';
 
-export const COMP_REASONS = ['entertainer', 'event_person', 'owner_comp', 'complaint', 'wrong_item', 'staff_meal', 'friends_owner', 'too_slow', 'other'] as const;
+export const COMP_REASONS = ['entertainer', 'event', 'event_person', 'owner_comp', 'complaint', 'wrong_item', 'staff_meal', 'friends_owner', 'too_slow', 'other'] as const;
 export const VOID_REASONS = ['wrong_item', 'customer_changed_mind', 'customer_left', 'duplicate', 'too_slow', 'other'] as const;
 export const REASON_LABELS: Record<string, string> = {
-  entertainer: 'Entertainer / band drink', event_person: 'Event person drinks', owner_comp: 'Owner comp (Thida)', complaint: 'Customer complaint', wrong_item: 'Wrong item', staff_meal: 'Staff meal',
+  entertainer: 'Entertainer / band drink', event: 'Event (included free)', event_person: 'Event person drinks', owner_comp: 'Owner (free)', complaint: 'Customer complaint', wrong_item: 'Wrong item', staff_meal: 'Staff meal',
   friends_owner: 'Friends / owner', too_slow: 'Took too long', customer_changed_mind: 'Customer changed mind',
   customer_left: 'Customer left', duplicate: 'Rung in twice', other: 'Other',
 };
@@ -51,11 +51,13 @@ export function isApprover(db: Db, userId: string | null | undefined, action: It
 
 export function approverByPin(db: Db, req: Request, pin: string, action: ItemAction): string {
   const clientIp = pinClientKey(req);
-  const { checkPinRateLimit } = require('../routes/orders') as typeof import('../routes/orders');
-  if (!checkPinRateLimit(`pin:${clientIp}:item-${action}`)) throw httpError(429, 'Too many PIN attempts. Try again in 15 minutes.');
+  const { checkPinRateLimit, clearPinAttempts } = require('../routes/orders') as typeof import('../routes/orders');
+  const limitKey = `pin:${clientIp}:item-${action}`;
+  if (!checkPinRateLimit(limitKey)) throw httpError(429, 'Too many PIN attempts. Try again in 15 minutes.');
   const managers = db.prepare('SELECT id, role, pin_hash FROM users WHERE pin_hash IS NOT NULL AND is_active = 1').all() as { id: string; role: string; pin_hash: string }[];
   const match = managers.find((u) => isApprover(db, u.id, action) && verifyPin(u.pin_hash, pin));
   if (!match) throw httpError(403, 'Invalid manager PIN');
+  clearPinAttempts(limitKey);
   return match.id;
 }
 

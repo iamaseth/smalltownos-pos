@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Wallet, Sparkles, User, Percent, Send, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import CouponPicker from '@/components/pos/CouponPicker';
+import FreeBillPanel, { isZeroBill } from '@/components/pos/FreeBillPanel';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill } from '@/lib/types';
@@ -290,6 +291,11 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     const rawVal = customVal !== undefined ? customVal : parseFloat(discountValue);
     if (customVal === undefined && (isNaN(rawVal) || rawVal < 0)) {
       toast.error(t('discountInvalid'));
+      return;
+    }
+    // Rule: every discount says why (removing one doesn't need a reason).
+    if (rawVal > 0 && !discountReason.trim()) {
+      toast.error('Add the reason for this discount');
       return;
     }
     const val = discountType === 'amount'
@@ -815,6 +821,11 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
               <button type="button" onClick={() => setExtraPanel((open) => open === 'details' ? null : 'details')} aria-expanded={extraPanel === 'details'} className={secondaryChip(extraPanel === 'details')}>Bill details</button>
             </div>
 
+            {!bill.split_group_id && !isZeroBill(bill) && (
+              <FreeBillPanel bill={bill} onClosed={onPaid}
+                offerFree={!(Number(bill.paid_amount) > 0) && !(Number(bill.discount_amount) > 0)} />
+            )}
+
             {!bill.split_group_id && discountMode !== 'none' && (
               <div className="overflow-hidden rounded-xl">
                 {showDiscount && (
@@ -859,7 +870,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                       type="text"
                       value={discountReason}
                       onChange={(e) => setDiscountReason(e.target.value)}
-                      placeholder={t('discountReasonPlaceholder')}
+                      placeholder="Reason (required): who it's for and why"
                       className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                     />
                     {discountRequiresApproval && parseFloat(discountValue) > 0 && (

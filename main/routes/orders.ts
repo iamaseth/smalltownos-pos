@@ -117,6 +117,11 @@ export function resetPinRateLimitForTests(): void {
   pinAttempts.clear();
 }
 
+/** A correct PIN clears that key's count, so only wrong PINs lead to a lockout. */
+export function clearPinAttempts(key: string): void {
+  pinAttempts.delete(key);
+}
+
 function syncCustomerTagCounts(db: any, customerId: string, items: { product_id: string; quantity: number }[]) {
   const row = db.prepare('SELECT tag_counts FROM customers WHERE id = ?').get(customerId) as any;
   if (!row) return;
@@ -1438,6 +1443,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         if (!user) {
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
+        clearPinAttempts(rateLimitKey);
         approvedByUserId = user.id;
       }
     }
@@ -1732,6 +1738,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
       if (!user) {
         return res.status(403).json({ error: 'Invalid manager PIN' });
       }
+      clearPinAttempts(rateLimitKey);
       approvedByUserId = user.id;
     }
 
