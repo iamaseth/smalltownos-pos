@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Wallet, Sparkles, User, Percent, Send, Check } from 'lucide-react';
+import { X, Wallet, Sparkles, User, Percent, Send, Check, Gift } from 'lucide-react';
+import { toneStyle } from '@/components/pos/BillItemActions';
 import { Button } from '@/components/ui/button';
 import CouponPicker from '@/components/pos/CouponPicker';
-import FreeBillPanel, { isZeroBill } from '@/components/pos/FreeBillPanel';
+import FreeBillPanel from '@/components/pos/FreeBillPanel';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill } from '@/lib/types';
@@ -103,6 +104,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   }, [bill.id]);
   const [justPaid, setJustPaid] = useState(false);
   const [extraPanel, setExtraPanel] = useState<'details' | null>(null);
+  // BackStreet: Free (whole bill) panel, opened from the Discount | Free pair.
+  const [showFree, setShowFree] = useState(false);
   const [tenderIndex, setTenderIndex] = useState<number | null>(null);
   const [keypadCurrency, setKeypadCurrency] = useState<'USD' | 'KHR'>('USD');
   const [sendingWa, setSendingWa] = useState(false);
@@ -819,20 +822,36 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
               <CouponPicker bill={bill} money={(value) => currencyFmt(value)} onBillUpdate={onBillUpdate} />
             )}
 
-            {/* Less common actions */}
+            {/* BackStreet: Discount and Free side by side, like the table popup. Free only while
+                nothing is paid and no discount is on the bill. */}
+            {(() => {
+              const canDiscountHere = !bill.split_group_id && discountMode !== 'none' && !String(bill.discount_reason || '').startsWith('Coupon ');
+              const canFreeHere = !bill.split_group_id && !(Number(bill.paid_amount) > 0) && !(Number(bill.discount_amount) > 0);
+              if (!canDiscountHere && !canFreeHere) return null;
+              return (
+                <div className="grid grid-cols-2 gap-2">
+                  {canDiscountHere ? (
+                    <button type="button" onClick={() => { setShowFree(false); setShowDiscount((open) => !open); }} aria-expanded={showDiscount}
+                      style={toneStyle('discount')} className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border-2 px-3 text-base font-bold hover:brightness-125 ${showDiscount ? 'ring-2 ring-offset-1 ring-purple-400' : ''}`}>
+                      <Percent size={16} />
+                      {Number(bill.discount_amount) > 0 ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}` : t('discount')}
+                    </button>
+                  ) : <span />}
+                  {canFreeHere ? (
+                    <button type="button" onClick={() => { setShowDiscount(false); setShowFree((open) => !open); }} aria-expanded={showFree}
+                      style={toneStyle('free')} className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border-2 px-3 text-base font-bold hover:brightness-125 ${showFree ? 'ring-2 ring-offset-1 ring-pink-400' : ''}`}>
+                      <Gift size={16} /> Free
+                    </button>
+                  ) : <span />}
+                </div>
+              );
+            })()}
             <div className="flex flex-wrap gap-2.5">
-              {!bill.split_group_id && discountMode !== 'none' && !String(bill.discount_reason || '').startsWith('Coupon ') && (
-                <button type="button" onClick={() => setShowDiscount((open) => !open)} aria-expanded={showDiscount} className={secondaryChip(showDiscount)}>
-                  <Percent size={16} />
-                  {Number(bill.discount_amount) > 0 ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}` : t('discount')}
-                </button>
-              )}
               <button type="button" onClick={() => setExtraPanel((open) => open === 'details' ? null : 'details')} aria-expanded={extraPanel === 'details'} className={secondaryChip(extraPanel === 'details')}>Bill details</button>
             </div>
 
-            {!bill.split_group_id && !isZeroBill(bill) && (
-              <FreeBillPanel bill={bill} onClosed={onPaid}
-                offerFree={!(Number(bill.paid_amount) > 0) && !(Number(bill.discount_amount) > 0)} />
+            {showFree && !bill.split_group_id && (
+              <FreeBillPanel startOpen offerFree bill={bill} onCancel={() => setShowFree(false)} onClosed={onPaid} />
             )}
 
             {!bill.split_group_id && discountMode !== 'none' && (
