@@ -1,6 +1,7 @@
 /**
- * BackStreet: the table popup's Discount bill offers Free (whole bill, reason + manager PIN)
- * next to Percent / Amount, and every discount needs a reason.
+ * BackStreet: the table popup shows Discount and Free side by side (sharing the old
+ * Discount bill spot), Free closes the whole bill with a reason + manager PIN, and every
+ * discount needs a reason.
  * Run: npx ts-node --transpile-only -P tests/tsconfig.json tests/table-discount-free.test.ts
  */
 import assert from 'node:assert/strict';
@@ -17,13 +18,16 @@ const orders = read('main/routes/orders.ts');
 let passed = 0;
 const ok = (cond: boolean, msg: string) => { assert.ok(cond, msg); passed += 1; console.log(`  ✓ ${msg}`); };
 
-ok(dialog.includes('Free (whole bill)') && dialog.includes('<FreeBillPanel'), 'Discount bill shows a Free choice that opens the Free panel');
+const pairAt = table.indexOf("style={toneStyle('discount')}");
+ok(pairAt > 0 && table.indexOf("style={toneStyle('free')}") > pairAt && table.indexOf("style={toneStyle('free')}") - pairAt < 600, 'Discount and Free sit side by side on the table popup');
+ok(table.lastIndexOf('<div className="grid grid-cols-2 gap-2">', pairAt) > table.indexOf("style={toneStyle('move')}"), 'they share the old Discount bill spot, so the popup keeps its layout');
+ok(/freeOpen && order && \([\s\S]{0,400}<FreeBillPanel startOpen/.test(table) && table.includes('setFreeOpen(true)'), 'Free opens the Free panel straight away');
+ok(!/free=\{discountTarget/.test(table), 'Free is not repeated inside the Discount box');
 ok(/!clear && !reason\.trim\(\)/.test(dialog) && dialog.includes("'Add the reason for this discount'"), 'a discount cannot be applied without a reason');
 ok(!dialog.includes('Reason (optional)'), 'the reason box no longer says optional');
-ok(/free=\{discountTarget\.kind === 'order'/.test(table), 'Free is offered for the whole bill only, not for one item');
 ok(/discount_reason: input\.value > 0 \? input\.reason/.test(table.slice(table.indexOf('/items/${discountTarget.item.id}/discount'))), 'item discounts send their reason too');
 ok(panel.indexOf("api.post('/bills/generate'") > panel.indexOf('/comp`') && panel.indexOf("api.post('/bills/generate'") < panel.indexOf('await closeFree('), 'Free makes the bill before closing it (the table popup has none yet)');
-ok(panel.includes('if (zero && !startOpen) return null;') && panel.includes('Close bill (everything is free)'), 'an already-$0 table can be closed from Discount bill → Free');
+ok(panel.includes('if (zero && !startOpen) return null;') && panel.includes('Close bill (everything is free)'), 'an already-$0 table can be closed with Free');
 ok(/action: 'item_discount_applied', details: \{[^}]*discount_reason/.test(orders), 'the item discount reason is saved in the order history');
 
 console.log(`table-discount-free: ${passed} passed`);
