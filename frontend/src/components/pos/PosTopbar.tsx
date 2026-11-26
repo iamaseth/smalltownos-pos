@@ -8,7 +8,7 @@ import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown, UserRound, LogOut, Star, ArrowUpDown, Image as ImageIcon, Zap, Check, Search, Printer } from 'lucide-react';
+import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock, Menu, ChevronDown, UserRound, LogOut, Star, ArrowUpDown, Image as ImageIcon, Zap, Check, Search, Printer, TrendingUp } from 'lucide-react';
 import { usePosViewStore } from '@/store/pos-view';
 import { useRegisterOperator } from '@/hooks/register-operator-context';
 import type { Table } from '@/lib/types';
@@ -130,6 +130,9 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
               {canArrange && <button type="button" onClick={() => {setActionsOpen(false);view.setArranging(true);}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><ArrowUpDown size={16}/>Arrange products</button>}
               <button type="button" onClick={() => {setActionsOpen(false);view.setCatalogView('photo');}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><ImageIcon size={16}/>Photo view{view.catalogView === 'photo' && <Check size={16} className="ms-auto text-emerald-400"/>}</button>
               <button type="button" onClick={() => {setActionsOpen(false);view.setCatalogView('compact');}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><Zap size={16}/>Quick-tap view{view.catalogView === 'compact' && <Check size={16} className="ms-auto text-emerald-400"/>}</button>
+              <p className="mb-1 mt-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Menu order</p>
+              <button type="button" onClick={() => {setActionsOpen(false);view.setMenuOrder('popular');}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><TrendingUp size={16}/>Popular first{view.menuOrder === 'popular' && <Check size={16} className="ms-auto text-emerald-400"/>}</button>
+              <button type="button" onClick={() => {setActionsOpen(false);view.setMenuOrder('manual');}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><ArrowUpDown size={16}/>My order{view.menuOrder === 'manual' && <Check size={16} className="ms-auto text-emerald-400"/>}</button>
             </div>
             <div className="border-t border-slate-700 pt-2"><PrinterStatus /></div>
             <button type="button" onClick={() => {setActionsOpen(false);setPrinterOpen(true);}} className="flex w-full items-center gap-2 rounded-lg p-2 text-start text-sm hover:bg-slate-700"><Printer size={16}/>Printer settings</button>

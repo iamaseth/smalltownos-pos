@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import { getMenuPopularity } from '../services/menu-popularity';
+import { tenantTimezone } from './cash-closures';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { isBlockedSsrfTarget } from '../middleware/security';
 import { requirePermission } from '../services/authorization';
@@ -630,6 +632,17 @@ router.get('/:id/image', asyncHandler(async (req: Request, res: Response) => {
     res.status(500).json({ error: "Internal server error" });
   }
 }));
+
+// BackStreet: quantity sold per item over the last 30 days, worked out once a week, for the
+// "popular first" menu order on the POS.
+router.get('/popularity', requirePermission('catalog.view'), (_req: Request, res: Response) => {
+  try {
+    res.json(getMenuPopularity(getDatabase(), new Date(), tenantTimezone()));
+  } catch (error) {
+    console.error('[Products] popularity error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
