@@ -29,6 +29,9 @@ const EXPORT_SETTINGS_REDACT = new Set([
   'cloud_deletion_status_token',
   // Redact legacy error strings from exported settings.
   'cloud_last_error',
+  // BackStreet: where this computer saves its nightly copies. Never carried in or out by
+  // export/import, so an imported file can't redirect backups and a copy (demo) doesn't inherit it.
+  'backup_copy_folder',
 ]);
 
 // User columns stripped from export — hashes must never leave the server.
@@ -377,6 +380,8 @@ router.post('/import', requirePermission('database.manage'),
             EXPORT_SETTINGS_REDACT.has(String(row.key)) &&
             row.value === '[REDACTED]'
           ) continue;
+          // BackStreet: an imported file can never set where backups are copied.
+          if (tableName === 'settings' && String(row.key) === 'backup_copy_folder') continue;
 
           if (tableName === 'customers' && row.phone) {
             const parsed = parsePhoneE164(String(row.phone), tenantCountry);

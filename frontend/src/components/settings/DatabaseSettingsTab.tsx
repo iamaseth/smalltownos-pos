@@ -37,6 +37,7 @@ import {
 import { useFormatDate } from '@/hooks/useFormatDate';
 import api from '@/lib/api';
 import { ClearTestSalesCard } from './ClearTestSalesCard';
+import { BackupFolderCard } from './BackupFolderCard';
 import toast from 'react-hot-toast';
 
 export type BackupInfo = {
@@ -107,6 +108,7 @@ export type PinGate =
   | { mode: 'restore-google-drive'; payload: { fileId: string; sha256: string } }
   | { mode: 'delete-backup'; payload: { fileName: string } }
   | { mode: 'download-backup'; payload: { fileName: string } }
+  | { mode: 'save-backup-folder'; payload: { folder: string } }
   | { mode: 'delete-cloud' }
   | { mode: 'cancel-cloud-deletion' }
   | null;
@@ -133,6 +135,9 @@ export interface DatabaseSettingsTabProps {
   onRestoreFromHistory: (backup: BackupInfo) => void;
   onDeleteBackup: (backup: BackupInfo) => void;
   onDownloadBackup?: (backup: BackupInfo) => void;
+  /** BackStreet: save the nightly backup copy folder (opens the Master PIN prompt). */
+  onSaveBackupFolder?: (folder: string) => void;
+  backupFolderVersion?: number;
   onConnectGoogleDrive: () => void;
   onDisconnectGoogleDrive: () => void;
   onCreateGoogleDriveDestination?: () => void;
@@ -204,6 +209,8 @@ export function DatabaseSettingsTab({
   onRestoreFromHistory,
   onDeleteBackup,
   onDownloadBackup,
+  onSaveBackupFolder,
+  backupFolderVersion,
   onConnectGoogleDrive,
   onDisconnectGoogleDrive,
   onUpdateGoogleDrivePrefs,
@@ -302,6 +309,10 @@ export function DatabaseSettingsTab({
             </button>
           </div>
         </div>
+
+        {isOwner && onSaveBackupFolder && (
+          <BackupFolderCard onSave={onSaveBackupFolder} version={backupFolderVersion} />
+        )}
 
         {/* Backup History */}
         <div className="bg-card rounded-xl border border-border p-6">

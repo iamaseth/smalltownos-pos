@@ -407,6 +407,7 @@ export default function SettingsPage() {
 
   // Unified PIN gate: 'set' opens the set/change-PIN dialog; 'backup'/'backup-custom'/
   // 'import'/'restore' open a verify prompt and, on success, run the pending action.
+  const [backupFolderVersion, setBackupFolderVersion] = useState(0);
   const [pinGate, setPinGate] = useState<PinGate>(() => searchParams?.get('action') === 'master-pin' ? { mode: 'set' } : null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   // Starts true until the Data tab performs its first load.
@@ -591,6 +592,19 @@ export default function SettingsPage() {
         }
       } catch {
         return { success: false, error: t('googleDriveRestoreFailed') };
+      }
+    }
+
+    if (pinGate.mode === 'save-backup-folder') {
+      try {
+        await api.post('/db-tools/backup-folder', { folder: pinGate.payload.folder, master_pin: pin });
+        toast.success(pinGate.payload.folder ? 'Backup folder saved' : 'Backup folder turned off');
+        setBackupFolderVersion((v) => v + 1);
+        setPinGate(null);
+        return { success: true };
+      } catch (error) {
+        const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
+        return { success: false, error: message || 'Could not save the backup folder' };
       }
     }
 
@@ -4058,6 +4072,8 @@ export default function SettingsPage() {
             onRestoreFromHistory={handleRestoreFromHistory}
             onDeleteBackup={handleDeleteBackup}
             onDownloadBackup={handleDownloadBackup}
+            onSaveBackupFolder={(folder) => setPinGate({ mode: 'save-backup-folder', payload: { folder } })}
+            backupFolderVersion={backupFolderVersion}
             onConnectGoogleDrive={connectGoogleDrive}
             onDisconnectGoogleDrive={disconnectGoogleDrive}
             onCreateGoogleDriveDestination={createGoogleDriveDestination}
@@ -4611,6 +4627,7 @@ export default function SettingsPage() {
           : pinGate?.mode === 'import' ? t('confirmImportTitle')
           : pinGate?.mode === 'restore' ? t('confirmRestoreTitle')
           : pinGate?.mode === 'download-backup' ? 'Download backup'
+          : pinGate?.mode === 'save-backup-folder' ? 'Change backup folder'
           : pinGate?.mode === 'restore-google-drive' ? t('googleDriveRestoreTitle')
           : pinGate?.mode === 'delete-cloud' ? t('cloudConfirmDeletion')
           : pinGate?.mode === 'cancel-cloud-deletion' ? t('cloudCancelDeletionTitle')

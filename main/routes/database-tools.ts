@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { resetDatabaseWithBackup, clearTestSalesWithBackup, getTestSalesCounts, resetDatabaseForCurrencyChange, getCurrencyResetImpact, listBackups, deleteBackup, getCurrentSchemaVersion } from '../db';
+import { resetDatabaseWithBackup, clearTestSalesWithBackup, getTestSalesCounts, resetDatabaseForCurrencyChange, getCurrencyResetImpact, listBackups, deleteBackup, getCurrentSchemaVersion, upsertSettings } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from '../middleware/security';
 import { requirePermission } from '../services/authorization';
 import { requireMasterPin } from '../middleware/master-pin';
@@ -11,6 +11,7 @@ import {
 import { clearJWTSecretCache } from '../security/jwt-secret';
 import { getHttpRequestSignal } from '../shutdown';
 import { googleDrive } from '../services/google-drive';
+import { BACKUP_FOLDER_SETTING, backupFolderAvailable, checkBackupFolder, copyBackupToFolder, getBackupFolderStatus } from '../services/backup-folder';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
 
 const router = Router();
@@ -82,6 +83,41 @@ router.post('/backups/:fileName/download', requirePermission('database.manage'),
     console.error('[DB Tools] download backup error:', error);
     res.status(500).json({ error: 'Download failed' });
   }
+});
+
+// BackStreet: also save nightly backups into a folder on this computer (e.g. Google Drive).
+router.get('/backup-folder', requirePermission('database.manage'), (_req: Request, res: Response) => {
+  res.json(getBackupFolderStatus());
+});
+
+router.post('/backup-folder/test', requirePermission('database.manage'), (req: Request, res: Response) => {
+  const problem = checkBackupFolder(String(req.body?.folder ?? ''));
+  res.json({ ok: !problem, error: problem });
+});
+
+// Changing where every nightly copy of the whole database goes needs the Master PIN.
+router.post('/backup-folder', requirePermission('database.manage'), requireMasterPin, (req: Request, res: Response) => {
+  const folder = String(req.body?.folder ?? '').trim();
+  if (folder) {
+    const problem = checkBackupFolder(folder);
+    if (problem) return res.status(400).json({ error: problem });
+  }
+  upsertSettings({ [BACKUP_FOLDER_SETTING]: folder, backup_copy_last_error: '', backup_copy_fail_count: '0' });
+  console.log('[BackupFolder] Folder', folder ? `set to ${folder}` : 'cleared');
+  res.json(getBackupFolderStatus());
+});
+
+// Copy the newest backup now, to check the whole path works without waiting for the night.
+router.post('/backup-folder/copy-now', requirePermission('database.manage'), (_req: Request, res: Response) => {
+  if (!backupFolderAvailable()) return res.status(409).json({ error: 'Available when the POS runs on a computer in the restaurant' });
+  const status = getBackupFolderStatus();
+  if (!status.folder) return res.status(400).json({ error: 'Set a backup folder first' });
+  const newest = listBackups().sort((a, b) => a.createdAt.localeCompare(b.createdAt)).pop();
+  if (!newest) return res.status(404).json({ error: 'No backup yet. Create one first.' });
+  const copied = copyBackupToFolder(newest.path);
+  const after = getBackupFolderStatus();
+  if (!copied) return res.status(500).json({ error: after.lastError || 'Copy failed', status: after });
+  res.json(after);
 });
 
 router.get('/master-pin/status', requirePermission('database.manage'), (_req: Request, res: Response) => {
