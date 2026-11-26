@@ -12,6 +12,7 @@ import {
   type PrintData,
   type PrintDocument,
 } from '@print/document';
+import { withFreeReason } from '@print/free-reason';
 import { defaultPrintLanguagePolicy, resolveReceiptLanguages } from '@print/policy';
 import type { PrintLanguageCode, ReceiptLanguagePolicy, ResolvedPrintLanguages } from '@print/types';
 import { createTranslator } from 'use-intl/core';
@@ -167,7 +168,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
             quantity: addonQty,
           };
         }),
-        specialInstructions: String(item?.special_instructions ?? ''),
+        specialInstructions: withFreeReason(item?.special_instructions ?? '', (item as { comp_reason?: unknown } | undefined)?.comp_reason),
       })),
     },
     bill: {

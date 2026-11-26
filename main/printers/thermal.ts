@@ -23,6 +23,7 @@ import { sendEvent } from '../services/telemetry';
 import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
 import { printLabel } from '../print/print-labels.generated';
+import { freeReasonText } from '../../shared/print/free-reason';
 import type { PrintConceptId } from '../../shared/print/concepts';
 import {
   declaredTemplateChargeRows,
@@ -1585,6 +1586,8 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
       if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
         pushWrapped(lines, '  ' + normalize(printLabel(lang, 'print.note')) + ': ' + item.special_instructions, cols, lang, capabilities);
       }
+      const freeLine = freeReasonText(item.comp_reason);
+      if (freeLine) pushWrapped(lines, '  ' + freeLine, cols, lang, capabilities);
     }
   }
 
