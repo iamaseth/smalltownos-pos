@@ -28,12 +28,26 @@ ok(/!clear && !reason\.trim\(\)/.test(dialog) && dialog.includes("'Add the reaso
 ok(!dialog.includes('Reason (optional)'), 'the reason box no longer says optional');
 ok(/discount_reason: input\.value > 0 \? input\.reason/.test(table.slice(table.indexOf('/items/${discountTarget.item.id}/discount'))), 'item discounts send their reason too');
 ok(panel.indexOf("api.post('/bills/generate'") > panel.indexOf('/comp`') && panel.indexOf("api.post('/bills/generate'") < panel.indexOf('await closeFree('), 'Free makes the bill before closing it (the table popup has none yet)');
-ok(panel.includes('if (zero && !startOpen) return null;') && panel.includes('Close bill (everything is free)'), 'an already-$0 table can be closed with Free');
+ok(panel.includes('if (zero && !startOpen) return null;') && panel.includes("'Close bill'"), 'an already-$0 table can be closed with Free');
 ok(/action: 'item_discount_applied', details: \{[^}]*discount_reason/.test(orders), 'the item discount reason is saved in the order history');
 
 const payDisc = pay.indexOf("style={toneStyle('discount')}");
 ok(payDisc > 0 && pay.indexOf("style={toneStyle('free')}") > payDisc && pay.indexOf("style={toneStyle('free')}") - payDisc < 900, 'the payment screen shows Discount and Free side by side, same colours as the table popup');
 ok(/const canFreeHere = !bill\.split_group_id && !\(Number\(bill\.paid_amount\) > 0\) && !\(Number\(bill\.discount_amount\) > 0\)/.test(pay), 'Free shows on the payment screen only while nothing is paid and no discount is on');
 ok(/showFree && !bill\.split_group_id && \(\s*<FreeBillPanel startOpen/.test(pay), 'Free on the payment screen opens the Free panel straight away');
+
+// The browser must not fill a saved login into the note / PIN boxes, and both boxes are labelled.
+ok(panel.includes('>Manager PIN</span>'), 'Free panel: the PIN box has a visible label');
+ok(dialog.includes('Manager PIN (approves this)'), 'Discount box: the PIN box has a visible label');
+for (const [name, src] of [['Free panel', panel], ['Discount box', dialog]] as const) {
+  ok(!/type="password"/.test(src) && src.includes('autoComplete="one-time-code"') && src.includes("WebkitTextSecurity: 'disc'"), `${name}: the PIN box shows dots but is not a password field, so no saved login is filled in`);
+}
+ok(/name="free-note" autoComplete="off"/.test(panel), 'Free panel: the note box is not autofilled');
+ok(/name="discount-reason" autoComplete="off"/.test(dialog), 'Discount box: the reason box is not autofilled');
+ok(panel.includes("'Pick why'") && panel.includes("'Type PIN'"), 'Free panel: the button says what is still missing');
+const reasons = panel.slice(panel.indexOf('const COMP_REASONS'), panel.indexOf('];', panel.indexOf('const COMP_REASONS')));
+ok(['Artist', 'Event', 'Owner', 'Complaint', 'Other'].every((w) => reasons.includes(`'${w}'`)) && (reasons.match(/\['/g) || []).length === 5, 'Free panel: five short reasons (Artist, Event, Owner, Complaint, Other)');
+const serverReasons = read('main/services/item-approvals.ts');
+ok(['entertainer', 'event', 'owner_comp', 'complaint', 'other'].every((k) => reasons.includes(`['${k}'`) && serverReasons.includes(`'${k}'`)), 'Free panel: each reason is one the server accepts');
 
 console.log(`table-discount-free: ${passed} passed`);

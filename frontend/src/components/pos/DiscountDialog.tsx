@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Delete, Gift, X } from 'lucide-react';
 import FreeBillPanel from '@/components/pos/FreeBillPanel';
 import toast from 'react-hot-toast';
@@ -164,12 +164,20 @@ export default function DiscountDialog({ title, subtitle, baseAmount, canClear, 
             className="flex h-14 items-center justify-center rounded-xl border border-border bg-card active:bg-muted"><Delete size={22} /></button>
         </div>
 
-        <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason (required): who it's for and why" maxLength={120}
-          className="mb-3 h-11 w-full rounded-lg border border-border bg-background px-3 text-base" />
+        <label className="mb-3 block space-y-1">
+          <span className="block text-sm font-semibold text-foreground">Reason (required)</span>
+          <input name="discount-reason" autoComplete="off" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Who it's for and why" maxLength={120}
+            className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base" />
+        </label>
 
         {requiresApproval && (
-          <input value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ''))} placeholder="Manager PIN" type="password" inputMode="numeric" autoComplete="off" maxLength={6}
-            className="mb-3 h-11 w-full rounded-lg border border-border bg-background px-3 text-base" />
+          <label className="mb-3 block space-y-1">
+            <span className="block text-sm font-semibold text-foreground">Manager PIN (approves this)</span>
+            {/* Plain text box drawn as dots (not a password field), so the browser does not fill a saved login here. */}
+            <input name="discount-manager-pin" value={pin} onChange={(event) => setPin(event.target.value.replace(/\D/g, ''))} placeholder="Type the manager's PIN"
+              type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} aria-label="Manager PIN" style={{ WebkitTextSecurity: 'disc' } as unknown as CSSProperties}
+              className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base" />
+          </label>
         )}
 
         <div className="flex gap-2">
