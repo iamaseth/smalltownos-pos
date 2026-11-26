@@ -110,6 +110,21 @@ export function exchangeRate(): number {
   return intSetting('usd_khr_exchange_rate', 4100);
 }
 
+/**
+ * BackStreet: the rate a shift is counted at is the one saved with its opening count, so a
+ * rate change in Settings during a shift doesn't make up a difference that isn't real.
+ * Falls back to today's rate for shifts opened without a count.
+ */
+export function shiftRate(db: Db, sessionId: number | null | undefined): number {
+  if (!sessionId) return exchangeRate();
+  const row = db.prepare(`
+    SELECT c.rate_khr_per_usd AS rate FROM cash_sessions s JOIN cash_counts c ON c.id = s.opening_count_id
+    WHERE s.id = ?
+  `).get(sessionId) as { rate: number } | undefined;
+  const rate = Number(row?.rate);
+  return Number.isFinite(rate) && rate > 0 ? Math.round(rate) : exchangeRate();
+}
+
 function parseId(raw: unknown, label: string): number {
   const id = Number(raw);
   if (!Number.isSafeInteger(id) || id <= 0) throw httpError(`Invalid ${label}`, 400);
@@ -171,7 +186,7 @@ export interface ExpectedByCurrency {
  * Card, ABA, Acleda and other non-cash methods never touch the drawer.
  */
 export function expectedByCurrency(db: Db, session: SessionRow, end: string): ExpectedByCurrency {
-  const rate = exchangeRate();
+  const rate = shiftRate(db, session.id);
   const start = session.opened_at;
   const lines = db.prepare(`
     WITH payment_lines AS (
@@ -315,7 +330,7 @@ function createReconciliation(db: Db, session: SessionRow, cutoff: string): Reco
     INSERT INTO cash_reconciliations (session_id, cutoff_at, rate_khr_per_usd, expected_usd_cents, expected_khr_riel,
       expected_combined_usd_cents, untracked_cash_lines, status, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_count', ?)
-  `).run(session.id, cutoff, exchangeRate(), expected.expected_usd_cents, expected.expected_khr_riel,
+  `).run(session.id, cutoff, shiftRate(db, session.id), expected.expected_usd_cents, expected.expected_khr_riel,
     expected.expected_combined_usd_cents, expected.untracked_cash_lines, now());
   return db.prepare(`SELECT * FROM cash_reconciliations WHERE session_id = ?`).get(session.id) as ReconciliationRow;
 }
@@ -521,7 +536,7 @@ router.post('/sessions/:id/closing-count', requirePermission('cash.shifts.close'
     const db = getDatabase();
     const me = actor(req);
     const sessionId = parseId(req.params.id, 'session id');
-    const totals = normalizeCashCount((req.body || {}).count, exchangeRate());
+    const totals = normalizeCashCount((req.body || {}).count, shiftRate(db, sessionId));
     const floatOut = (req.body || {}).float_out == null ? null : parseAmountPair((req.body || {}).float_out, 'float_out');
     if (floatOut) {
       totals.usd_cents += floatOut.usd_cents;
@@ -614,7 +629,7 @@ router.post('/sessions/:id/handover-now', requirePermission('cash.shifts.close')
     const db = getDatabase();
     const me = actor(req);
     const sessionId = parseId(req.params.id, 'session id');
-    const declared = normalizeCashCount((req.body || {}).float_left, exchangeRate());
+    const declared = normalizeCashCount((req.body || {}).float_left, shiftRate(db, sessionId));
     const result = withTxn(() => {
       const session = loadSession(db, sessionId);
       if (session.status !== 'open') throw httpError('Shift is already closed', 409);
@@ -702,7 +717,7 @@ router.post('/sessions/:id/takings-count', requirePermission('cash.shifts.close'
     const db = getDatabase();
     const me = actor(req);
     const sessionId = parseId(req.params.id, 'session id');
-    const totals = normalizeCashCount((req.body || {}).count, exchangeRate());
+    const totals = normalizeCashCount((req.body || {}).count, shiftRate(db, sessionId));
     const explanation = optionalText((req.body || {}).explanation);
     const result = withTxn(() => {
       const session = loadSession(db, sessionId);
@@ -1175,7 +1190,7 @@ router.post('/sessions/:id/close-preview', requirePermission('cash.shifts.close'
   try {
     const db = getDatabase();
     const session = openShift(db, parseId(req.params.id, 'session id'));
-    const rate = exchangeRate();
+    const rate = shiftRate(db, session.id);
     const takings = normalizeCashCount((req.body || {}).count, rate);
     const floatOut = parseAmountPair((req.body || {}).float_out, 'float_out');
     const end = now();

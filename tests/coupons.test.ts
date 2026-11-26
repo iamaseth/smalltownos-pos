@@ -118,6 +118,27 @@ async function main(): Promise<void> {
     assertEqual(removed.status, 200, 'coupon removed');
     assertEqual(Number(removed.data.bill.discount_amount), 0, 'discount is gone after removing the coupon');
 
+    console.log('\n─── coupon is re-checked when the bill changes ───');
+    const createTwoEggs = await api(baseUrl, '/api/orders', { method: 'POST', headers: A, body: { type: 'takeaway', items: [
+      { product_id: 'prod-eggs', quantity: 1 }, { product_id: 'prod-eggs', quantity: 1, special_instructions: 'no salt' }, { product_id: 'prod-cola', quantity: 1 },
+    ] } });
+    const changing = createTwoEggs.data.order;
+    const changingBill = (await api(baseUrl, '/api/bills/generate', { method: 'POST', headers: A, body: { order_id: changing.id } })).data.bill;
+    const onChanging = await apply(changingBill.id, { coupon_id: breakfast.id, paper_confirmed: true });
+    assert(Math.abs(Number(onChanging.data.bill.discount_amount) - 2) < 0.001, 'coupon gives $2 on two breakfast items');
+    const eggLines = changing.items.filter((i: any) => i.product_id === 'prod-eggs');
+    const cancel1 = await api(baseUrl, `/api/orders/${changing.id}/items/${eggLines[0].id}/cancel`, { method: 'PATCH', headers: A, body: { reason: 'customer_changed_mind' } });
+    assertEqual(cancel1.status, 200, 'one breakfast item removed');
+    const reopened = await api(baseUrl, '/api/bills/generate', { method: 'POST', headers: A, body: { order_id: changing.id } });
+    assert(Math.abs(Number(reopened.data.bill.discount_amount) - 1) < 0.001, `coupon drops to $1 with one breakfast item left (got ${reopened.data.bill.discount_amount})`);
+    assert(!!db.prepare(`SELECT 1 FROM order_audit_log WHERE order_id = ? AND action = 'coupon_rechecked'`).get(changing.id), 'the change is in the order history');
+    const cancel2 = await api(baseUrl, `/api/orders/${changing.id}/items/${eggLines[1].id}/cancel`, { method: 'PATCH', headers: A, body: { reason: 'customer_changed_mind' } });
+    assertEqual(cancel2.status, 200, 'last breakfast item removed');
+    const payStale = await api(baseUrl, `/api/bills/${changingBill.id}/payments`, { method: 'POST', headers: A, body: { payments: [{ method: 'cash', amount: 1 }] } });
+    assertEqual(payStale.status, 409, 'payment is stopped when the coupon no longer applies, so the cashier sees the new total');
+    assertEqual(Number(payStale.data.bill.discount_amount), 0, 'the coupon came off: no breakfast items left');
+    assertEqual(payStale.data.bill.discount_reason ?? null, null, 'the bill no longer shows the coupon');
+
     const manualBill = await newBill([{ product_id: 'prod-eggs', quantity: 1 }]);
     const manualOk = await api(baseUrl, `/api/bills/${manualBill.billId}/applyDiscount`, { method: 'POST', headers: A, body: { type: 'percentage', value: 5 } });
     assertEqual(manualOk.status, 200, 'manual discount on another bill');

@@ -1169,9 +1169,15 @@ router.patch('/:id/status', orderWriteRateLimit, requirePermission('orders.statu
       const billRows = db.prepare('SELECT payment_status, paid_amount, balance FROM bills WHERE order_id = ?').all(req.params.id) as any[];
       const hasCollectedFunds = billRows.some((bill) => Number(bill.paid_amount || 0) > 0 && bill.payment_status !== 'refunded');
       const settledStatuses = ['paid', 'refunded', 'partially_refunded'];
+      // BackStreet: a $0 bill that was never settled also needs a manager PIN to complete,
+      // so nobody can zero a bill and close it without the Free button or Close shift.
+      const hasActiveItems = db.prepare(
+        "SELECT 1 FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded') LIMIT 1",
+      ).get(req.params.id) !== undefined;
       const hasUnsettledBalance = billRows.length === 0
-        ? Number(currentOrder.total || 0) > 0
-        : billRows.some((bill) => !settledStatuses.includes(bill.payment_status) && Number(bill.balance || 0) > 0);
+        ? Number(currentOrder.total || 0) > 0 || hasActiveItems
+        : billRows.some((bill) => !settledStatuses.includes(bill.payment_status)
+          && (Number(bill.balance || 0) > 0 || (hasActiveItems && Number(bill.paid_amount || 0) <= 0)));
       const cancelInProgress = (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
       const cancelWithFunds = status === 'cancelled' && hasCollectedFunds;
       const completeUnsettled = status === 'completed' && hasUnsettledBalance;
