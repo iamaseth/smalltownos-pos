@@ -1346,6 +1346,16 @@ export default function POSPage() {
       if (table) setCheckoutTable(table);
       else void handlePayTab(pendingOrder);
     },
+    onSplitBill: () => {
+      if (!pendingOrder?.table_id) return;
+      if (cart.items.length > 0) {
+        toast.error('Send the new items before splitting the bill.');
+        return;
+      }
+      const table = tables.find((tb) => tb.id === pendingOrder.table_id);
+      if (table) setCheckoutTable(table);
+      else toast.error('Table not found. Refresh tables and try again.');
+    },
     onShowTabs: () => { void refreshOpenTabs(); void refreshTables(); setShowOpenTabs(true); },
     openTabCount: openTabs.length + tables.filter((tb) => tb.status === 'occupied' && (tb.current_order || tb.activeOrder)).length,
     onEditItem: setEditingCartItem,
