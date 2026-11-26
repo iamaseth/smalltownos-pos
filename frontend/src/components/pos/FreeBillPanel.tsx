@@ -8,7 +8,7 @@ import type { Bill, Order } from '@/lib/types';
 
 /** Same reasons as Free in Orders (server: COMP_REASONS). */
 const COMP_REASONS: [string, string][] = [
-  ['entertainer', 'Entertainer / band drink'], ['event', 'Event (included free)'], ['event_person', 'Event person drinks'], ['owner_comp', 'Owner comp'],
+  ['entertainer', 'Entertainer / band drink'], ['event', 'Event (included free)'], ['event_person', 'Event person drinks'], ['owner_comp', 'Owner (free)'],
   ['complaint', 'Customer complaint'], ['wrong_item', 'Wrong item'], ['staff_meal', 'Staff meal'],
   ['friends_owner', 'Friends / owner'], ['too_slow', 'Took too long'], ['other', 'Other'],
 ];
@@ -76,7 +76,7 @@ export default function FreeBillPanel({ bill, offerFree, onClosed }: {
     return (
       <button type="button" onClick={() => setOpen(true)}
         className="inline-flex min-h-11 items-center gap-2 rounded-xl border-2 border-neutral-600 px-4 text-base font-bold text-white hover:bg-neutral-800">
-        <Gift size={16} /> Free (comp)
+        <Gift size={16} /> Free
       </button>
     );
   }

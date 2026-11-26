@@ -15,7 +15,7 @@ interface Config {
 }
 
 const REASONS: Record<Action, [string, string][]> = {
-  comp: [['entertainer', '🎤 Entertainer / band drink'], ['event', 'Event (included free)'], ['event_person', 'Event person drinks'], ['owner_comp', 'Owner comp (Thida)'], ['complaint', 'Customer complaint'], ['wrong_item', 'Wrong item'], ['staff_meal', 'Staff meal'], ['friends_owner', 'Friends / owner'], ['too_slow', 'Took too long'], ['other', 'Other']],
+  comp: [['entertainer', '🎤 Entertainer / band drink'], ['event', 'Event (included free)'], ['event_person', 'Event person drinks'], ['owner_comp', 'Owner (free)'], ['complaint', 'Customer complaint'], ['wrong_item', 'Wrong item'], ['staff_meal', 'Staff meal'], ['friends_owner', 'Friends / owner'], ['too_slow', 'Took too long'], ['other', 'Other']],
   void: [['wrong_item', 'Wrong item'], ['customer_changed_mind', 'Customer changed mind'], ['customer_left', 'Customer left'], ['duplicate', 'Rung in twice'], ['too_slow', 'Took too long'], ['other', 'Other']],
 };
 const REMOVED = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
