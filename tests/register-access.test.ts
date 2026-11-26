@@ -49,6 +49,8 @@ async function run() {
 
     const bad = await request(app).post('/api/register-access/unlock').set(manager.authHeader).send({ pin: '9999' });
     if (bad.status !== 401) throw new Error('Incorrect staff PIN should be rejected');
+    // BackStreet: the lock screen tells a wrong PIN apart from an expired login by this exact message.
+    if (bad.body?.error !== 'Invalid PIN') throw new Error('A wrong staff PIN must answer "Invalid PIN" so the device stays signed in');
 
     const unlocked = await request(app).post('/api/register-access/unlock').set(manager.authHeader).send({ pin: '4321' });
     if (unlocked.status !== 200 || unlocked.body.operator?.id !== 'cashier-pin-1') throw new Error('Correct staff PIN should create cashier session');

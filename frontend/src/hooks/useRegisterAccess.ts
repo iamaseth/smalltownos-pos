@@ -152,12 +152,22 @@ export function useRegisterAccess(onRegister: boolean) {
       setLocked(false);
       setError('');
       return true;
-    } catch {
+    } catch (err) {
+      const response = (err as { response?: { status?: number; data?: { error?: string } } })?.response;
+      // BackStreet: a wrong PIN is just a wrong PIN. Say so plainly and keep the device signed in.
+      if (response?.status === 401 && response.data?.error === 'Invalid PIN') {
+        setError('Wrong PIN. Try again.');
+        return false;
+      }
+      if (response?.status === 429) {
+        setError('Too many wrong PINs. Wait 15 minutes, or ask a manager.');
+        return false;
+      }
       // If the PIN endpoint succeeded but auth-context refresh failed, revoke
       // the just-created token before restoring the original account.
       await api.post('/register-access/lock').catch(() => {});
       await restoreAppUser();
-      setError('PIN verification failed or employee session could not be started');
+      setError(response?.data?.error || 'PIN verification failed or employee session could not be started');
       return false;
     } finally {
       switching.current = false;
