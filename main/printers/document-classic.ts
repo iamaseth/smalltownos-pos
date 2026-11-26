@@ -1,6 +1,7 @@
 /** PrintDocument v1 classic thermal receipt renderer; maps print blocks to ESC/POS token lines. */
 
 import { parseDbTimestamp } from '../db';
+import { withFreeReason } from '../../shared/print/free-reason';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import {
@@ -118,7 +119,7 @@ export function buildBillPrintData(order: any, bill: any, business: any, isRepri
             quantity: addonQuantity,
           };
         }),
-        specialInstructions: String(item?.special_instructions ?? ''),
+        specialInstructions: withFreeReason(item?.special_instructions ?? '', item?.comp_reason),
       })),
     },
     bill: {
