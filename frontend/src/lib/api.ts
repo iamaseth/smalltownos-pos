@@ -73,7 +73,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
+    // BackStreet: a wrong PIN on the register lock screen answers 401 "Invalid PIN".
+    // That is a wrong PIN, not an expired login, so it must never sign the device out.
+    const requestUrl = String(error.config?.url || '');
+    const isPinCheck = requestUrl.endsWith('/register-access/unlock');
+    if (error.response?.status === 401 && typeof window !== 'undefined' && !isPinCheck) {
       if (registerSessionToken || (error.config && sentWithRegisterSession.has(error.config))) {
         if (registerSessionToken) {
           registerSessionToken = null;

@@ -269,7 +269,7 @@
     "test:migration-v101-category-hierarchy": "node tests/run-electron-node-test.cjs tests/migration-v101-category-hierarchy.test.ts",
     "test:migration-v102-category-taxonomy": "node tests/run-electron-node-test.cjs tests/migration-v102-category-taxonomy.test.ts",
     "test:migration-registry": "node tests/run-electron-node-test.cjs tests/migration-registry.test.ts",
-    "test:register-access": "node tests/run-electron-node-test.cjs tests/register-access.test.ts && node tests/run-electron-node-test.cjs tests/register-session.test.ts"
+    "test:register-access": "node tests/run-electron-node-test.cjs tests/register-access.test.ts && node tests/run-electron-node-test.cjs tests/register-session.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/wrong-pin-no-logout.test.ts"
   },
   "author": {
     "name": "Flo",
