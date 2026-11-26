@@ -18,8 +18,10 @@ function errorText(error: unknown, fallback: string): string {
   return (error as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
 }
 
+type FreeTarget = Pick<Bill, 'order_id' | 'total' | 'paid_amount'>;
+
 /** True when the bill has nothing left to pay because everything is free or removed. */
-export function isZeroBill(bill: Bill): boolean {
+export function isZeroBill(bill: FreeTarget): boolean {
   return Number(bill.total) <= 0 && !(Number(bill.paid_amount) > 0);
 }
 
@@ -27,13 +29,17 @@ export function isZeroBill(bill: Bill): boolean {
  * Free (comp): make the whole bill free with a reason and a manager PIN. Every item is marked
  * Free (recorded like Free in Orders), then the bill closes with no payment recorded.
  */
-export default function FreeBillPanel({ bill, offerFree, onClosed }: {
-  bill: Bill;
+export default function FreeBillPanel({ bill, offerFree, onClosed, startOpen = false, onCancel }: {
+  /** A bill, or (from the table popup) the order's id and total before a bill exists. */
+  bill: FreeTarget;
   offerFree: boolean;
   onClosed: () => void;
+  /** BackStreet: shown already open (inside Discount bill → Free); also closes a bill that is already $0. */
+  startOpen?: boolean;
+  onCancel?: () => void;
 }) {
   const zero = isZeroBill(bill);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
   const [pin, setPin] = useState('');
@@ -55,6 +61,8 @@ export default function FreeBillPanel({ bill, offerFree, onClosed }: {
       for (const item of items) {
         await api.patch(`/orders/${bill.order_id}/items/${item.id}/comp`, { reason, note: note.trim() || undefined, override_pin: pin });
       }
+      // The table popup has no bill yet: make it now so the $0 bill can be closed and settled.
+      await api.post('/bills/generate', { order_id: bill.order_id });
       const label = COMP_REASONS.find(([key]) => key === reason)?.[1] ?? reason;
       await closeFree(note.trim() ? `${label}: ${note.trim()}` : label);
     } catch (error) {
@@ -69,7 +77,7 @@ export default function FreeBillPanel({ bill, offerFree, onClosed }: {
       className="min-h-11 w-full rounded-lg border border-neutral-600 bg-neutral-950 px-3 py-2 text-base text-white outline-none focus:ring-2 focus:ring-red-400" />
   );
 
-  if (zero) return null;
+  if (zero && !startOpen) return null;
 
   if (!offerFree) return null;
   if (!open) {
@@ -84,9 +92,9 @@ export default function FreeBillPanel({ bill, offerFree, onClosed }: {
     <div data-testid="free-bill-panel" className="space-y-2 rounded-2xl border-2 border-amber-500 bg-amber-950/40 p-3 text-white">
       <div className="flex items-center justify-between">
         <p className="flex items-center gap-2 text-base font-black"><Gift size={18} /> Make the whole bill free</p>
-        <button type="button" aria-label="Close" onClick={() => { setOpen(false); setPin(''); }} className="rounded-lg p-1.5 hover:bg-neutral-800"><X size={16} /></button>
+        <button type="button" aria-label="Close" onClick={() => { setOpen(false); setPin(''); onCancel?.(); }} className="rounded-lg p-1.5 hover:bg-neutral-800"><X size={16} /></button>
       </div>
-      <p className="text-sm text-amber-100">Every item is marked Free with this reason, then the bill closes. A manager must approve.</p>
+      <p className="text-sm text-amber-100">{zero ? 'Nothing is left to pay. Choose why, and a manager closes the bill.' : 'Every item is marked Free with this reason, then the bill closes. A manager must approve.'}</p>
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
         {COMP_REASONS.map(([key, label]) => (
           <button key={key} type="button" aria-pressed={reason === key} onClick={() => setReason(key)}
@@ -101,7 +109,7 @@ export default function FreeBillPanel({ bill, offerFree, onClosed }: {
       {pinInput}
       <button type="button" disabled={busy || !reason || !pin || (reason === 'other' && !note.trim())} onClick={() => void makeFree()}
         className="min-h-14 w-full rounded-2xl bg-amber-500 text-xl font-black text-black hover:bg-amber-400 disabled:opacity-50">
-        {busy ? 'Working…' : 'Make free and close bill'}
+        {busy ? 'Working…' : zero ? 'Close bill (everything is free)' : 'Make free and close bill'}
       </button>
     </div>
   );

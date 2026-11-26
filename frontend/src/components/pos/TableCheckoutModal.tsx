@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import type { Table, Order, Bill, OrderItem } from '@/lib/types';
 import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
 import DiscountDialog, { type DiscountInput } from '@/components/pos/DiscountDialog';
+import FreeBillPanel from '@/components/pos/FreeBillPanel';
 import { useAuthStore } from '@/store/auth';
 import { tenantCan } from '@/lib/permissions';
 import { VoidCompDialog } from '@/components/orders/VoidCompDialog';
@@ -52,6 +53,7 @@ export default function TableCheckoutModal({
   const { currentTenant } = useAuthStore();
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
   const canDiscount = tenantCan(currentTenant, 'orders.discount.apply');
+  const [freeOpen, setFreeOpen] = useState(false);
   const [discountTarget, setDiscountTarget] = useState<{ kind: 'order' } | { kind: 'item'; item: OrderItem } | null>(null);
   const [printingBill, setPrintingBill] = useState(false);
   const [removingId, setRemovingId] = useState<number | string | null>(null);
@@ -307,6 +309,7 @@ export default function TableCheckoutModal({
       await api.patch(`/orders/${order.id}/items/${discountTarget.item.id}/discount`, {
         discount_type: input.type,
         discount_value: input.value,
+        discount_reason: input.value > 0 ? input.reason : undefined,
         override_pin: input.pin,
       });
     }
@@ -470,10 +473,17 @@ export default function TableCheckoutModal({
                   <ArrowLeftRight strokeWidth={2.25} className="me-2 size-7" />Move table
                 </Button>
               )}
-              {canDiscount && canEditOrder && (
-                <Button variant="outline" size="lg" style={toneStyle('discount')} className="h-14 border-2 text-lg font-bold hover:brightness-125" onClick={() => setDiscountTarget({ kind: 'order' })}>
-                  <BadgePercent strokeWidth={2.25} className="me-2 size-7" />{Number(order.discount_amount) > 0 ? 'Change discount' : 'Discount bill'}
-                </Button>
+              {canEditOrder && (
+                <div className="grid grid-cols-2 gap-2">
+                  {canDiscount ? (
+                    <Button variant="outline" size="lg" style={toneStyle('discount')} className="h-14 border-2 px-2 text-base font-bold hover:brightness-125" onClick={() => setDiscountTarget({ kind: 'order' })}>
+                      <BadgePercent strokeWidth={2.25} className="me-1.5 size-6 shrink-0" />{Number(order.discount_amount) > 0 ? 'Change' : 'Discount'}
+                    </Button>
+                  ) : <span />}
+                  <Button variant="outline" size="lg" style={toneStyle('free')} className="h-14 border-2 px-2 text-base font-bold hover:brightness-125" onClick={() => setFreeOpen(true)}>
+                    <Gift strokeWidth={2.25} className="me-1.5 size-6 shrink-0" />Free
+                  </Button>
+                </div>
               )}
               {cartItemCount === 0 && (
                 <Button variant="outline" size="lg" style={toneStyle('add')} className="h-14 border-2 text-lg font-bold hover:brightness-125" onClick={() => onAddItems(table, order)}>
@@ -515,6 +525,14 @@ export default function TableCheckoutModal({
         </div>
       </div>
     </div>
+    {freeOpen && order && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={() => setFreeOpen(false)}>
+        <div className="max-h-[94vh] w-full max-w-md overflow-y-auto rounded-2xl bg-neutral-900 p-3" onClick={(e) => e.stopPropagation()}>
+          <FreeBillPanel startOpen offerFree bill={{ order_id: Number(order.id), total: Number(order.total), paid_amount: 0 }}
+            onCancel={() => setFreeOpen(false)} onClosed={() => { setFreeOpen(false); onTablesChanged?.(); onClose(); }} />
+        </div>
+      </div>
+    )}
     {discountTarget && (
       <DiscountDialog
         title={discountTarget.kind === 'order' ? 'Discount whole bill' : `Discount ${discountTarget.item.product_name}`}

@@ -1776,7 +1776,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
     const updatedItem = applyItemDiscountAmount(
       db, order, item,
       (itemBaseTotal) => (discount_type === 'percentage' ? (itemBaseTotal * discount_value) / 100 : discount_value),
-      { actorUserId: (req as any).user.userId, action: 'item_discount_applied', details: { discount_type, discount_value, ...(approvedByUserId && { approved_by: approvedByUserId }) } },
+      { actorUserId: (req as any).user.userId, action: 'item_discount_applied', details: { discount_type, discount_value, ...(typeof req.body?.discount_reason === 'string' && req.body.discount_reason.trim() && { reason: req.body.discount_reason.trim().slice(0, 200) }), ...(approvedByUserId && { approved_by: approvedByUserId }) } },
     );
 
     res.json({ item: updatedItem });

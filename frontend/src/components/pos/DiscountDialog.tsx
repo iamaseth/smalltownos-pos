@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Delete, X } from 'lucide-react';
+import { Delete, Gift, X } from 'lucide-react';
+import FreeBillPanel from '@/components/pos/FreeBillPanel';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -28,12 +29,15 @@ interface Props {
   canClear?: boolean;
   onClose: () => void;
   onApply: (input: DiscountInput) => Promise<void>;
+  /** BackStreet: offer Free (whole bill, reason + manager PIN) next to Percent / Amount. */
+  free?: { orderId: number; total: number; paidAmount: number; onClosed: () => void };
 }
 
 const PERCENT_CHIPS = [5, 10, 15, 20];
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0'];
 
-export default function DiscountDialog({ title, subtitle, baseAmount, canClear, onClose, onApply }: Props) {
+export default function DiscountDialog({ title, subtitle, baseAmount, canClear, onClose, onApply, free }: Props) {
+  const [freeOpen, setFreeOpen] = useState(false);
   const fmt = useFormatCurrency();
   const { toStored } = useCurrencyUnitAdapter();
   const [mode, setMode] = useState<DiscountMode>('percentage');
@@ -70,6 +74,10 @@ export default function DiscountDialog({ title, subtitle, baseAmount, canClear, 
       toast.error('Enter a discount');
       return;
     }
+    if (!clear && !reason.trim()) {
+      toast.error('Add the reason for this discount');
+      return;
+    }
     if (!clear && requiresApproval && !pin) {
       toast.error('Manager PIN required');
       return;
@@ -87,11 +95,24 @@ export default function DiscountDialog({ title, subtitle, baseAmount, canClear, 
     }
   };
 
+  const freeChoice = free && (
+    <button type="button" aria-pressed={freeOpen} onClick={() => setFreeOpen((v) => !v)}
+      className={`mb-3 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border-2 text-base font-bold ${freeOpen ? 'border-amber-500 bg-amber-500 text-black' : 'border-amber-500 text-amber-600'}`}>
+      <Gift size={18} /> Free (whole bill)
+    </button>
+  );
+  const freePanel = free && freeOpen && (
+    <FreeBillPanel startOpen offerFree bill={{ order_id: free.orderId, total: free.total, paid_amount: free.paidAmount }}
+      onCancel={() => setFreeOpen(false)} onClosed={() => { onClose(); free.onClosed(); }} />
+  );
+
   if (mode === 'none') {
     return (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
         <div className="w-full max-w-sm rounded-2xl bg-card p-6 text-center">
           <p className="mb-4 text-base text-foreground">Discounts are turned off in Settings.</p>
+          {freeChoice}
+          {freePanel && <div className="mb-3 text-start">{freePanel}</div>}
           <button type="button" onClick={onClose} className="h-12 w-full rounded-xl border border-border text-base font-medium">Close</button>
         </div>
       </div>
@@ -109,6 +130,8 @@ export default function DiscountDialog({ title, subtitle, baseAmount, canClear, 
           <button type="button" onClick={onClose} aria-label="Close" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted"><X size={20} /></button>
         </div>
 
+        {freeChoice}
+        {freePanel ? freePanel : (<>
         {mode === 'both' && (
           <div className="mb-3 flex rounded-xl border border-border p-1">
             {(['percentage', 'amount'] as const).map((option) => (
@@ -141,7 +164,7 @@ export default function DiscountDialog({ title, subtitle, baseAmount, canClear, 
             className="flex h-14 items-center justify-center rounded-xl border border-border bg-card active:bg-muted"><Delete size={22} /></button>
         </div>
 
-        <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason (optional)" maxLength={120}
+        <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Reason (required): who it's for and why" maxLength={120}
           className="mb-3 h-11 w-full rounded-lg border border-border bg-background px-3 text-base" />
 
         {requiresApproval && (
@@ -155,6 +178,7 @@ export default function DiscountDialog({ title, subtitle, baseAmount, canClear, 
           )}
           <button type="button" disabled={busy} onClick={() => apply(false)} className="h-14 flex-1 rounded-xl bg-brand text-lg font-semibold text-white disabled:opacity-50">{busy ? '…' : 'Apply discount'}</button>
         </div>
+        </>)}
       </div>
     </div>
   );
