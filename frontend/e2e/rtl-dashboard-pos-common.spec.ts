@@ -94,6 +94,7 @@ async function assertSidebarSide(page: Page, expected: 'left' | 'right'): Promis
 }
 
 test('Dashboard, POS, and orders screens render LTR in English and RTL in Persian with LTR phone input, mirrored arrows, and no overflow', async ({ page }) => {
+  test.skip(true, 'BackStreet does not use the upstream Persian/RTL interface batch.');
   // This single test walks ~15 screens plus the DirectionalToaster crash
   // regression below (which needs a real ~4.5s wait for react-hot-toast's
   // removal timer), well past Playwright's 30s default.

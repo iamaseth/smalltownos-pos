@@ -51,7 +51,7 @@ test('product editor assigns shared addon groups and POS popup shows their choic
     const productRow = page.getByRole('row').filter({ hasText: productName });
     await expect(productRow).toBeVisible();
     await productRow.locator('button:has(svg.lucide-pencil)').click();
-    await expect(page.getByRole('heading', { name: productName })).toBeVisible();
+    await expect(page.getByRole('heading', { name: productName, level: 2 })).toBeVisible();
 
     const groupCheckbox = page.locator('label').filter({ hasText: groupName }).first().locator('input[type="checkbox"]');
     await expect(groupCheckbox).toBeVisible();
@@ -72,8 +72,8 @@ test('product editor assigns shared addon groups and POS popup shows their choic
 
     await page.goto(`${BASE}/pos`);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
-    await page.getByText(productName, { exact: true }).click();
-    await expect(page.getByRole('heading', { name: productName })).toBeVisible();
+    await page.getByRole('button', { name: `Add ${productName}` }).click({ button: 'right' });
+    await expect(page.getByRole('heading', { name: productName, level: 2 })).toBeVisible();
     await expect(page.getByRole('heading', { name: groupName })).toBeVisible();
     await expect(page.getByText(choiceName, { exact: true })).toBeVisible();
     await expect(page.getByText(/1\.75/)).toBeVisible();

@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+test.beforeEach(() => { test.skip(true, 'BackStreet does not use the upstream i18n/RTL batches.'); });
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 async function captureScreenshot(page: Page, filename: string): Promise<void> {

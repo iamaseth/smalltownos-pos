@@ -143,28 +143,8 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
     const settingsClearedScreenshot = path.join(EVIDENCE_DIR, '09-settings-business-phone-cleared.png');
     await page.screenshot({ path: settingsClearedScreenshot });
 
-    // ── 3. WhatsApp Blocklist: normalizes entered phone with tenant country ──
-    await page.goto(`${BASE}/whatsapp`);
-    await page.waitForLoadState('networkidle');
+});
 
-    // WhatsApp blocklist form inputs
-    const blockPhoneInput = page.locator('input[placeholder*="+66" i], input[inputmode="tel"], input[placeholder*="+CC" i]').first();
-    await expect(blockPhoneInput).toBeVisible();
-
-    await blockPhoneInput.fill('0812345678');
-    const blockReasonInput = page.locator('input[placeholder*="reason" i], input[placeholder*="Reason" i]').first();
-    if (await blockReasonInput.count() > 0) {
-      await blockReasonInput.fill('Spam / Marketing bot');
-    }
-
-    const blockFormScreenshot = path.join(EVIDENCE_DIR, '10-whatsapp-blocklist-form.png');
-    await page.screenshot({ path: blockFormScreenshot });
-
-    const blockCta = page.getByRole('button', { name: /^Add$/i }).first();
-    await blockCta.click();
-
-    // Verify normalized E.164 phone appears in blocklist table
-    await expect(page.locator('table')).toContainText('+66812345678');
-    const whatsappBlocklistScreenshot = path.join(EVIDENCE_DIR, '11-whatsapp-blocklist-normalized.png');
-    await page.screenshot({ path: whatsappBlocklistScreenshot });
+test('WhatsApp blocklist normalizes entered phone with tenant country', async () => {
+  test.skip(true, 'BackStreet does not use the upstream WhatsApp integration.');
 });
