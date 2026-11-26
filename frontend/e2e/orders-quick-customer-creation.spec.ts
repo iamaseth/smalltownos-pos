@@ -30,6 +30,7 @@ test('Orders page creates a customer and links it to an active order', async ({ 
   await page.waitForURL('**/pos/**', { timeout: 20000 });
 
   await page.goto(`${BASE}/orders`);
+  await page.getByRole('button', { name: 'Cards', exact: true }).click();
   const orderCard = page.locator('div.bg-card.rounded-xl').filter({ hasText: `#${order.order_number}` }).first();
   await expect(orderCard).toBeVisible();
 

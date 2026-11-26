@@ -12,12 +12,12 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
 
   await page.getByTestId('pos-product-card').click();
   await expect(page.getByTestId('pos-product-qty')).toHaveText('1');
-  await page.getByRole('button', { name: 'Place Order' }).click();
+  await page.getByRole('button', { name: 'Pay ฿60.00' }).click();
 
   await expect(page.getByRole('button', { name: 'Tax ฿4.20' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeVisible();
   await expect(page.getByText('Round off', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Cash', exact: true }).click();
+  await page.getByRole('button', { name: 'Exact in USD' }).click();
   await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeEnabled();
 
   const orderResponse = page.waitForResponse((response) => {
@@ -59,9 +59,9 @@ test('prepaid checkout never reports success when the payment response is partia
 
   await page.getByTestId('pos-product-card').click();
   await expect(page.getByTestId('pos-product-qty')).toHaveText('1');
-  await page.getByRole('button', { name: 'Place Order' }).click();
+  await page.getByRole('button', { name: 'Pay ฿60.00' }).click();
   await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeVisible();
-  await page.getByRole('button', { name: 'Cash', exact: true }).click();
+  await page.getByRole('button', { name: 'Exact in USD' }).click();
   await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeEnabled();
 
   let paymentBatchRequests = 0;
@@ -85,5 +85,5 @@ test('prepaid checkout never reports success when the payment response is partia
   await expect(page.getByText(/Payment incomplete/)).toBeVisible();
   expect(paymentBatchRequests).toBe(1);
   await expect(page.getByText(/Order #ORD-\d+-\d+ paid!/)).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Place Order' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Pay ฿60.00' })).toBeEnabled();
 });

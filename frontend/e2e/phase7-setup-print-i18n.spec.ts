@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+test.beforeEach(() => { test.skip(true, 'BackStreet does not use the upstream i18n print batch.'); });
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
 import { LANGUAGES } from '../src/lib/i18n/languages';

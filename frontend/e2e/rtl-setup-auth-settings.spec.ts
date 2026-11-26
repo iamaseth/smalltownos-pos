@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+test.beforeEach(() => { test.skip(true, 'BackStreet does not use the upstream Persian/RTL interface batch.'); });
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
