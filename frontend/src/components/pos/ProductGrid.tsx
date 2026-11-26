@@ -124,7 +124,16 @@ export default function ProductGrid({
 }: Props) {
   const cart = useCartStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const { arranging, setArranging, editingFavorites, setEditingFavorites, catalogView, subcategoriesOpen, setSubcategoriesOpen } = usePosViewStore();
+  const { arranging, setArranging, editingFavorites, setEditingFavorites, catalogView, subcategoriesOpen, setSubcategoriesOpen, menuOrder, setMenuOrder } = usePosViewStore();
+  // BackStreet: quantity sold per item over the last 30 days (worked out weekly on the server).
+  const [popularity, setPopularity] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let alive = true;
+    api.get<{ sold?: Record<string, number> }>('/products/popularity')
+      .then(({ data }) => { if (alive) setPopularity(data?.sold || {}); })
+      .catch(() => { /* keep the A-Z / arranged order */ });
+    return () => { alive = false; };
+  }, []);
   const [saving, setSaving] = useState(false);
   const [ids, setIds] = useState<string[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -276,8 +285,13 @@ export default function ProductGrid({
       : selectedSubcategoryTree?.has(String(p.category_id)) === true;
     return matchCat && matchSub;
   });
+  const byPopularity = menuOrder === 'popular' && !arranging;
   const ordered = [...filtered].sort((a,b) => {
     if (searching) return menuSearchScore(b.name, query) - menuSearchScore(a.name, query) || a.name.localeCompare(b.name);
+    if (byPopularity) {
+      const diff = (popularity[String(b.id)] || 0) - (popularity[String(a.id)] || 0);
+      if (diff !== 0) return diff;
+    }
     return (a.sort_order ?? 0)-(b.sort_order ?? 0) || a.name.localeCompare(b.name);
   });
   const displayed = arranging && ids.length > 0 ? [...ordered].sort((a,b) => ids.indexOf(String(a.id))-ids.indexOf(String(b.id))) : ordered;
@@ -289,7 +303,8 @@ export default function ProductGrid({
       setIds([]);
       await onOrderSaved?.();
       setArranging(false);
-      toast.success('Menu order saved');
+      setMenuOrder('manual');
+      toast.success('Menu order saved. This tablet now uses My order.');
     } catch { toast.error('Could not save order. Refresh and retry.'); }
     finally { setSaving(false); }
   };
