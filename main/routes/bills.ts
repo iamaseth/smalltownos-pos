@@ -27,6 +27,7 @@ import {
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
+import { COUPON_REASON_PREFIX, couponDiscountFor, isCouponReason, readCoupons } from '../services/coupons';
 import { sendEvent } from '../services/telemetry';
 import {
   getCurrencyFractionDigits,
@@ -615,6 +616,9 @@ router.post('/generate', requirePermission('bills.generate'), (req: Request, res
       return { bill: newBill, isNew: true };
     });
 
+    const actor = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    const rechecked = withTxn(() => refreshBillCoupon(db, Number(result.bill.id), actor));
+    if (rechecked) result.bill = rechecked as typeof result.bill;
     notifyOrderUpdated();
     const orderWithItems = getOrderWithItems(db, order_id, Number(result.bill.id));
     res.status(result.isNew ? 201 : 200).json({ bill: { ...result.bill, order: orderWithItems } });
@@ -2258,6 +2262,11 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
     }
 
     const db = getDatabase();
+    const couponChanged = withTxn(() => refreshBillCoupon(db, req.params.id as string, String((req as any).user?.userId || '')));
+    if (couponChanged) {
+      notifyOrderUpdated();
+      return res.status(409).json({ error: 'The bill changed, so the coupon was updated. Check the new total and take payment again.', bill: couponChanged });
+    }
     const requestHash = paymentRequestHash(req.params.id as string, payments, bodyCustomerId);
     const result = withTxn(() => applyPaymentBatch(
       db, req.params.id as string, payments, bodyCustomerId, false,
@@ -2541,5 +2550,42 @@ router.get('/:id/print-history', requirePermission('bills.read'), (req: Request,
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+/**
+ * BackStreet: re-check a coupon against the bill as it is now. Items can be removed or
+ * made free after a coupon went on, so the money off is worked out again before payment.
+ * Returns the updated bill when the coupon changed or came off, otherwise null.
+ */
+export function refreshBillCoupon(db: ReturnType<typeof getDatabase>, billId: number | string, actorUserId: string): Record<string, unknown> | null {
+  const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as (DiscountableBill & {
+    discount_amount: number | null; discount_reason: string | null; payment_status: string; split_group_id: unknown;
+  }) | undefined;
+  if (!bill || !isCouponReason(bill.discount_reason) || !(Number(bill.discount_amount) > 0)) return null;
+  if (bill.payment_status !== 'unpaid' || Number(bill.paid_amount || 0) > 0 || bill.split_group_id) return null;
+  const code = String(bill.discount_reason).slice(COUPON_REASON_PREFIX.length).split(' · ')[0].trim();
+  const coupon = readCoupons().find((c) => c.code === code);
+  if (!coupon) return null; // coupon deleted from Settings: keep what the cashier applied
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as object | undefined;
+  if (!order) return null;
+  const result = couponDiscountFor(db, coupon, { id: bill.id, order_id: bill.order_id, subtotal: Number(bill.subtotal || 0) });
+  const oldAmount = Number(bill.discount_amount);
+  if (!('amount' in result)) {
+    const updated = writeBillDiscount(db, bill, order, 0, 'percentage', 0, null);
+    recordOrderAudit(db, {
+      orderId: String(bill.order_id), actorUserId, action: 'coupon_removed',
+      details: { bill_id: bill.id, reason: bill.discount_reason, automatic: true, why: result.reason, old_amount: oldAmount },
+    });
+    return updated;
+  }
+  if (Math.abs(result.amount - oldAmount) < 0.005) return null;
+  const updated = coupon.kind === 'percent_bill'
+    ? writeBillDiscount(db, bill, order, result.amount, 'percentage', coupon.value, bill.discount_reason)
+    : writeBillDiscount(db, bill, order, result.amount, 'amount', result.amount, bill.discount_reason);
+  recordOrderAudit(db, {
+    orderId: String(bill.order_id), actorUserId, action: 'coupon_rechecked',
+    details: { bill_id: bill.id, coupon: coupon.code, old_amount: oldAmount, new_amount: result.amount },
+  });
+  return updated;
+}
 
 export const billRoutes = router;

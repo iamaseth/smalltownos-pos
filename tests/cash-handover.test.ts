@@ -432,6 +432,19 @@ async function main() {
   const paidLines = db.prepare(`SELECT payment_details FROM bills WHERE order_id = ?`).get(unpaidZeroIds[0]) as { payment_details: string };
   assert(paidLines.payment_details === '[]', 'no fake $1 payment is recorded');
 
+  console.log('Section 10: a shift keeps the exchange rate it opened with');
+  const rateBefore = handover.shiftRate(db, s10);
+  db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('usd_khr_exchange_rate', '4000', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(now());
+  assert(handover.exchangeRate() === 4000, "today's rate changed in Settings to 4,000");
+  assert(handover.shiftRate(db, s10) === rateBefore && rateBefore === 4100, `the open shift still counts at its own rate (${handover.shiftRate(db, s10)})`);
+  const s10row = db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(s10);
+  const s10expected = handover.expectedByCurrency(db, s10row, now());
+  assert(s10expected.expected_combined_usd_cents === s10expected.expected_usd_cents + Math.round((s10expected.expected_khr_riel * 100) / 4100),
+    'expected cash is combined at the shift rate, so no fake difference appears');
+  assert(handover.shiftRate(db, null) === 4000, 'a shift without an opening count uses today\'s rate');
+  db.prepare(`UPDATE settings SET value = '4100' WHERE key = 'usd_khr_exchange_rate'`).run();
+
   const { isLateCloseAt } = handover;
   assert(isLateCloseAt(22, '22') && isLateCloseAt(23, null) && isLateCloseAt(3, '22'), 'after 22:00 and before 05:00 is the last close of the night');
   assert(!isLateCloseAt(21, '22') && !isLateCloseAt(10, null) && !isLateCloseAt(23, 'off'), 'earlier in the day, or with the rule off, tickets can be passed on');

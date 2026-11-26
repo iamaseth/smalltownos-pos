@@ -66,6 +66,15 @@ async function main() {
     await post(`/api/bills/${paidBill.id}/payments`, { payments: [{ method: 'card', amount: Number(paidBill.total) }] });
     const afterPay = await api(baseUrl, `/api/orders/${paid.id}`, { headers: authHeader });
     assertEqualOrThrow(afterPay.data.order.status, 'completed', 'a fully paid order still completes by itself');
+    // BackStreet: a bill zeroed out (e.g. price set to $0) cannot be completed without a PIN.
+    const zeroed = await makeOrder('zeroed');
+    const zeroBill = (await post('/api/bills/generate', { order_id: zeroed.id })).data.bill;
+    db.prepare('UPDATE bills SET subtotal = 0, total = 0, balance = 0 WHERE id = ?').run(zeroBill.id);
+    db.prepare('UPDATE orders SET total = 0 WHERE id = ?').run(zeroed.id);
+    const zeroNoPin = await patchStatus(zeroed.id, { status: 'completed' });
+    assertEqualOrThrow(zeroNoPin.status, 400, 'completing a $0 unsettled bill without a PIN is refused');
+    const zeroPin = await patchStatus(zeroed.id, { status: 'completed', override_pin: PIN });
+    assertEqualOrThrow(zeroPin.status, 200, 'completing a $0 unsettled bill works with the manager PIN');
     console.log('order-status-payment-guard: all checks passed');
   } finally {
     server.close();

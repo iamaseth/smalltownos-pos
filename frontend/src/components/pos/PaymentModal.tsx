@@ -461,7 +461,16 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       }
       if (exactAmount === null && change > 0) setJustPaid(true);
       else onPaid();
-    } catch {
+    } catch (err) {
+      // BackStreet: the server re-checked the coupon and changed the bill. Show the new
+      // total and ask the cashier to take payment again.
+      const response = (err as { response?: { status?: number; data?: { error?: string; bill?: Bill } } })?.response;
+      if (response?.status === 409 && response.data?.bill) {
+        idempotencyKeyRef.current = null;
+        if (onBillUpdate) onBillUpdate(response.data.bill);
+        toast.error(response.data.error || t('paymentFailed'));
+        return;
+      }
       toast.error(t('paymentFailed'));
     } finally {
       setProcessing(false);

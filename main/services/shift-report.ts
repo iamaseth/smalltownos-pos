@@ -1,6 +1,6 @@
 import { dayBoundsInTimezone, getDatabase, getSettingValue, now, tenantBusinessDayStartTime } from '../db';
 import { tenantTimezone } from '../routes/cash-closures';
-import { exchangeRate, expectedByCurrency, MATCH_TOLERANCE_USD_CENTS } from '../routes/cash-handover';
+import { expectedByCurrency, MATCH_TOLERANCE_USD_CENTS, shiftRate } from '../routes/cash-handover';
 import type {
   DailyReportData, ReportAdjustmentRow, ReportDayCash, ReportDiscountRow, ReportOrderRow, ReportPaymentRow, ReportQtyRow, ReportSales, ReportShiftRow, ReportSpentRow, ReportTableRow, ShiftReportData,
 } from '../../shared/print/shift-report-text';
@@ -407,7 +407,7 @@ export function buildShiftReport(sessionId: number): ShiftReportData {
   const expected = closing && rec?.expected_usd_cents != null
     ? { expected_usd_cents: Number(rec.expected_usd_cents), expected_khr_riel: Number(rec.expected_khr_riel || 0), untracked_cash_lines: Number(rec.untracked_cash_lines || 0) }
     : expectedByCurrency(db, session as never, end);
-  const rate = rec?.rate_khr_per_usd ? Number(rec.rate_khr_per_usd) : exchangeRate();
+  const rate = rec?.rate_khr_per_usd ? Number(rec.rate_khr_per_usd) : shiftRate(db, session.id);
   const movements = movementTotals(db, session.id);
   const opening = session.opening_count_id
     ? db.prepare(`SELECT usd_cents, khr_riel FROM cash_counts WHERE id = ?`).get(session.opening_count_id) as { usd_cents: number; khr_riel: number } | undefined
