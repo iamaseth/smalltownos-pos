@@ -141,7 +141,7 @@ test('postpaid: no order is sent and the storage problem is reported when every 
 
     await loginAndOpenPos(page);
     await addProductToCart(page);
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
 
     // The toast and the support panel both carry the actionable reason, and the
     // support-ticket flow stays reachable for the local storage problem.
@@ -172,7 +172,7 @@ test('postpaid: a sessionStorage fallback keeps the retry key across a reload wi
 
     await loginAndOpenPos(page);
     await addProductToCart(page);
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
     // The rejection is classified as a server failure, not as a local storage
     // failure, and it is attributed to the order (not printer) support flow.
     await expect(page.getByRole('status')).toContainText('Failed to place order');
@@ -185,7 +185,7 @@ test('postpaid: a sessionStorage fallback keeps the retry key across a reload wi
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
 
     await addProductToCart(page);
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(page.getByText(/Order #.+ placed!/)).toBeVisible();
 
     expect(orderRequests).toHaveLength(2);
@@ -208,7 +208,7 @@ test('postpaid: a confirmed sale whose cleanup is blocked never reuses the compl
 
     await loginAndOpenPos(page);
     await addProductToCart(page);
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(page.getByText(/Order #.+ placed!/)).toBeVisible();
     expect(orderRequests).toHaveLength(1);
 
@@ -218,7 +218,7 @@ test('postpaid: a confirmed sale whose cleanup is blocked never reuses the compl
     await page.reload();
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
     await addProductToCart(page);
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect(page.getByText(/Order #.+ placed!/)).toBeVisible();
 
     expect(orderRequests).toHaveLength(2);
@@ -241,9 +241,9 @@ test('prepaid: losing the retry state after the order was created replays that o
 
     await loginAndOpenPos(page);
     await addProductToCart(page);
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: /^Pay / }).click();
     await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
-    await page.getByRole('button', { name: 'Cash', exact: true }).click();
+    await page.getByRole('button', { name: 'Exact in USD' }).click();
     const confirmPayment = page.getByRole('button', { name: /Confirm Payment/ });
     await expect(confirmPayment).toBeEnabled();
     await confirmPayment.click();
@@ -260,9 +260,9 @@ test('prepaid: losing the retry state after the order was created replays that o
     // The retry replays the same order under the original key and completes the
     // payment, so the customer is charged once for one order.
     await addProductToCart(page);
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: /^Pay / }).click();
     await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
-    await page.getByRole('button', { name: 'Cash', exact: true }).click();
+    await page.getByRole('button', { name: 'Exact in USD' }).click();
     const retryConfirm = page.getByRole('button', { name: /Confirm Payment/ });
     await expect(retryConfirm).toBeEnabled();
     await retryConfirm.click();
@@ -291,10 +291,10 @@ test('prepaid: no order is sent and the storage problem is reported when every a
 
     await loginAndOpenPos(page);
     await addProductToCart(page);
-    await page.getByRole('button', { name: 'Place Order' }).click();
+    await page.getByRole('button', { name: /^Pay / }).click();
     // The confirm button stays disabled until the server preview resolves.
     await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
-    await page.getByRole('button', { name: 'Cash', exact: true }).click();
+    await page.getByRole('button', { name: 'Exact in USD' }).click();
     const confirmPayment = page.getByRole('button', { name: /Confirm Payment/ });
     await expect(confirmPayment).toBeEnabled();
     await confirmPayment.click();

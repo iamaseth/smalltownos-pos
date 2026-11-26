@@ -104,16 +104,17 @@ test('adding an item to an occupied table only prints the newly appended item on
 
     // Add a second item to the cart, then send it to the already-occupied table.
     await page.getByTestId('pos-product-card').click();
-    await page.getByRole('button', { name: 'Place Order' }).click();
-
+    await page.getByRole('button', { name: 'Table', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Select Table' })).toBeVisible();
+    const listView = page.getByRole('button', { name: 'List', exact: true });
+    if (await listView.count()) await listView.click();
     await page.getByText(tableNumber, { exact: true }).click();
 
-    await expect(page.getByRole('button', { name: /Add 1 item to order/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Add to ${tableNumber}` })).toBeVisible();
     const kotResponse = page.waitForResponse((response) =>
       response.url().includes('/api/printers/print-kot')
     );
-    await page.getByRole('button', { name: /Add 1 item to order/i }).click();
+    await page.getByRole('button', { name: `Add to ${tableNumber}` }).click();
     await kotResponse;
 
     await expect(page.getByText(/Items added to order/)).toBeVisible();
