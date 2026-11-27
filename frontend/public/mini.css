@@ -75,3 +75,15 @@ button[disabled] { opacity: 0.5; }
 .top .txt { min-width: 0; line-height: 1.2; }
 .top .nm { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .top button small { font-size: 15px; color: #fcd34d; font-weight: bold; margin-top: 2px; }
+
+/* Phones: bill lines large enough to read at arm's length. */
+#app.phone .items { font-size: 26px; font-weight: 600; line-height: 1.45; }
+#app.phone .items .row { padding: 8px 0; }
+#app.phone .total { font-size: 32px; font-weight: bold; }
+#app.phone .sub { font-size: 19px; }
+#app.phone .floors button { font-size: 19px; padding: 10px 16px; }
+#app.phone .status { font-size: 15px; }
+#app.phone .label { font-size: 20px; }
+#app.phone .top button { font-size: 17px; padding: 6px; }
+#app.phone .top .pic { flex-basis: 56px; width: 56px; height: 56px; }
+#app.phone .top button small { font-size: 18px; }
