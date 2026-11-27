@@ -25,6 +25,7 @@ import { staffRoutes } from './staff';
 import { scheduleRoutes } from './schedule';
 import { itemApprovalRoutes } from './item-approvals';
 import { specialPriceRoutes } from './special-prices';
+import { miniAdminRoutes, miniDeviceRoutes } from './mini';
 import { specialItemRoutes } from './special-items';
 import { couponRoutes } from './coupons';
 import { registerAccessRoutes } from './register-access';
@@ -106,6 +107,9 @@ export function registerRoutes(app: Express): void {
   app.use('/api/schedule', scheduleRoutes);
   app.use('/api/item-approvals', itemApprovalRoutes);
   app.use('/api/special-prices', specialPriceRoutes);
+  // BackStreet: the Register iPad (device token, see server.ts requireAuth) and its staff settings.
+  app.use('/api/mini', miniDeviceRoutes);
+  app.use('/api/register-devices', miniAdminRoutes);
   app.use('/api/special-items', specialItemRoutes);
   app.use('/api/coupons', couponRoutes);
   app.use('/api/settings', settingsRoutes);

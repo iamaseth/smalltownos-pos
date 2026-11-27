@@ -6,7 +6,7 @@
  * connects the USB printer, prints a test, lists kitchen tickets and receipts that
  * did not print (Retry / Dismiss) and shows diagnostics.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Printer, AlertTriangle, CheckCircle2, RefreshCw, X } from 'lucide-react';
 import api from '@/lib/api';
@@ -21,6 +21,9 @@ interface Job {
   last_error_code: string | null; last_error: string | null; updated_at: string;
   payload: { billId?: number; isReprint?: boolean; orderId?: number; stationName?: string | null; items?: OrderItem[] | null };
 }
+
+const RELAY_KEY = 'bs_prints_for_register';
+interface RelayRequest { id: string; kind: 'receipt' | 'kot'; label: string; payload: { billId?: number; orderId?: number; itemIds?: number[] } }
 
 /** ESC/POS test slip: init, centered bold title, lines, feed and partial cut. 80 mm = 48 chars (Font A). */
 function testSlipBytes(): Uint8Array {
@@ -49,6 +52,54 @@ export default function PrintCenter({ open, onOpenChange: setOpen }: { open: boo
   const [failed, setFailedJobs] = useState<Job[]>([]);
   const [recent, setRecent] = useState<Job[]>([]);
   const [busy, setBusy] = useState(false);
+  // BackStreet: this computer prints what the Register iPad asks for (bills and kitchen/bar tickets).
+  const [relayOn, setRelayOn] = useState(false);
+  const relayRunning = useRef(false);
+  useEffect(() => {
+    queueMicrotask(() => { try { setRelayOn(localStorage.getItem(RELAY_KEY) === '1'); } catch { /* storage unavailable */ } });
+  }, []);
+  const toggleRelay = () => {
+    const next = !relayOn;
+    setRelayOn(next);
+    try { localStorage.setItem(RELAY_KEY, next ? '1' : '0'); } catch { /* storage unavailable */ }
+    toast.success(next ? 'This computer now prints for the Register iPad' : 'Stopped printing for the Register iPad');
+  };
+  useEffect(() => {
+    if (!relayOn || !tenant) return;
+    let active = true;
+    const tick = async () => {
+      if (relayRunning.current) return;
+      relayRunning.current = true;
+      try {
+        const { data } = await api.get('/register-devices/print-queue');
+        for (const request of (data.requests || []) as RelayRequest[]) {
+          if (!active) break;
+          try { await api.post(`/register-devices/print-queue/${request.id}/claim`, { device: 'till' }); } catch { continue; }
+          try {
+            if (request.kind === 'receipt' && request.payload.billId) {
+              const res = await api.get(`/bills/${request.payload.billId}`);
+              await printBill(res.data.bill as Bill, tenant);
+            } else if (request.kind === 'kot' && request.payload.orderId) {
+              const res = await api.get(`/orders/${request.payload.orderId}`);
+              const order = res.data.order as Order;
+              const wanted = new Set((request.payload.itemIds || []).map(Number));
+              const items = (order.items || []).filter((i) => wanted.has(Number(i.id)));
+              if (items.length) await printKot({ ...order, items }, { items });
+            }
+          } catch (error) {
+            // A failed print is listed under "Not printed" with Retry, like any other.
+            if (!(error instanceof PrintSkippedError)) toast.error(`Register iPad: ${request.label} did not print`);
+          } finally {
+            try { await api.post(`/register-devices/print-queue/${request.id}/done`); } catch { /* it is offered again in a minute */ }
+          }
+        }
+      } catch { /* offline or no permission: try again next tick */ }
+      finally { relayRunning.current = false; }
+    };
+    void tick();
+    const timer = setInterval(() => { void tick(); }, 3000);
+    return () => { active = false; clearInterval(timer); };
+  }, [relayOn, tenant, printBill, printKot]);
 
   const loadJobs = useCallback(async (withRecent: boolean) => {
     try {
@@ -194,6 +245,15 @@ export default function PrintCenter({ open, onOpenChange: setOpen }: { open: boo
                 ))}
               </div>
             </div>
+
+            <button type="button" role="switch" aria-checked={relayOn} onClick={toggleRelay} data-testid="register-relay-toggle"
+              className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-start ${relayOn ? 'border-emerald-500 bg-emerald-950/40' : 'border-slate-600'}`}>
+              <span>
+                <span className="block font-semibold">Print for the Register iPad</span>
+                <span className="block text-xs text-slate-300">Turn on only on the computer with the printer</span>
+              </span>
+              <span className={`font-extrabold ${relayOn ? 'text-emerald-400' : 'text-slate-400'}`}>{relayOn ? 'ON' : 'OFF'}</span>
+            </button>
 
             <details className="text-xs text-slate-300">
               <summary className="cursor-pointer font-semibold text-slate-100">Diagnostics</summary>

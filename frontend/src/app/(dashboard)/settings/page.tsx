@@ -32,6 +32,7 @@ import { TelegramReportsCard } from '@/components/settings/TelegramReportsCard';
 import { VoidCompSettingsCard } from '@/components/settings/VoidCompSettingsCard';
 import { SpecialPricesCard } from '@/components/settings/SpecialPricesCard';
 import { SpecialItemsCard } from '@/components/settings/SpecialItemsCard';
+import { RegisterDevicesCard } from '@/components/settings/RegisterDevicesCard';
 import { CouponsCard } from '@/components/settings/CouponsCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
@@ -2961,6 +2962,9 @@ export default function SettingsPage() {
             {canManageSpecialPrices && (
               <SettingsNavItem label="Coupons" value="coupons" active={activeTab} onClick={handleSettingsTabChange} />
             )}
+            {canManageSpecialPrices && (
+              <SettingsNavItem label="Register iPad" value="register-ipad" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
 
             {/* Integrations group (formerly "Data") */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
@@ -3790,6 +3794,14 @@ export default function SettingsPage() {
           <TabsContent value="coupons">
             <SettingsTabShell>
               <CouponsCard />
+            </SettingsTabShell>
+          </TabsContent>
+        )}
+
+        {canManageSpecialPrices && (
+          <TabsContent value="register-ipad">
+            <SettingsTabShell>
+              <RegisterDevicesCard />
             </SettingsTabShell>
           </TabsContent>
         )}
