@@ -91,14 +91,14 @@ async function main(): Promise<void> {
     assert(b1 && b1.floor === 'Down' && Number(b1.position_x) === 20, 'tables come with their floor-plan positions');
     const open = floor.data.orders.find((o: any) => o.id === orderId);
     assert(open && open.table_id === 'tbl-b1' && open.items.some((i: any) => i.name === 'Draft beer' && Number(i.quantity) === 3), 'open bills list their items');
-    assertEqual(floor.data.top.length, 5, 'five best-sellers are offered');
+    assertEqual(floor.data.top.length, 6, 'six best-sellers are offered');
 
     console.log('\n─── adding a best-seller ───');
     db.prepare(`DELETE FROM settings WHERE key = 'menu_popularity'`).run();
     const top = topItems(db).map((p: any) => p.id);
     assert(top[0] === 'p-draft', 'the best-seller (Draft beer) is first');
     const notTop = await api(baseUrl, `/api/mini/orders/${orderId}/items`, { method: 'POST', headers: D, body: { product_id: names.map((n) => n[0]).find((id) => !top.includes(id)) } });
-    assertEqual(notTop.status, 400, 'only the 5 best-sellers can be added');
+    assertEqual(notTop.status, 400, 'only the 6 best-sellers can be added');
     const add = await api(baseUrl, `/api/mini/orders/${orderId}/items`, { method: 'POST', headers: { ...D, 'Idempotency-Key': 'tap-1' }, body: { product_id: 'p-draft' } });
     assert(add.status === 200 && add.data.added === 'Draft beer', `Draft beer added (${add.status} ${add.data.error || ''})`);
     const lines = db.prepare(`SELECT id, quantity FROM order_items WHERE order_id = ? AND product_id = 'p-draft' ORDER BY id`).all(orderId) as any[];
