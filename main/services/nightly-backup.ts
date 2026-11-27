@@ -9,6 +9,7 @@ import path from 'path';
 import { createBackup, getBackupDirectory, isDatabaseMaintenanceActive } from '../db';
 import { tenantTimezone } from '../routes/cash-closures';
 import { copyBackupToFolder } from './backup-folder';
+import { sendBackupToDrive } from './backup-drive';
 
 const CHECK_EVERY_MS = 10 * 60 * 1000;
 const KEEP = 7;
@@ -83,6 +84,9 @@ export async function runNightlyBackupIfDue(at = new Date()): Promise<string | n
     console.log('[NightlyBackup] Saved', target);
     // BackStreet: also put a copy in the backup folder (e.g. Google Drive) when one is set.
     copyBackupToFolder(target);
+    // BackStreet: and send it to the owner's Google Drive when Railway has the Drive login set.
+    // Runs in the background; it records its own result and never fails the nightly backup.
+    void sendBackupToDrive(target, { nightly: true });
     return target;
   } catch (error) {
     console.error('[NightlyBackup] Failed:', error);
