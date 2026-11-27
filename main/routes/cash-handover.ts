@@ -1224,9 +1224,12 @@ router.get('/open-tickets', requirePermission('cash.shifts.view'), (req: AuthedR
   try {
     const db = getDatabase();
     const me = actor(req);
-    // People who can take over tickets: active staff allowed to open a shift, except the one closing.
+    // People who can take over tickets: active staff allowed to open a shift, except the cashier
+    // whose shift is closing. That is the shift's opener, not whoever is signed in on the till:
+    // the till may still be signed in as someone else, and they must stay in the list.
+    const shiftOwner = getOpenSession(db)?.opened_by ?? me.id;
     const staff = (db.prepare(`SELECT id, name FROM users WHERE is_active = 1 ORDER BY name COLLATE NOCASE`).all() as { id: string; name: string }[])
-      .filter((u) => u.id !== me.id && hasPermission(u.id, 'cash.shifts.open'));
+      .filter((u) => u.id !== shiftOwner && hasPermission(u.id, 'cash.shifts.open'));
     res.json({ tickets: openTickets(db), late_close: isLateClose(), staff });
   } catch (error) { sendError(res, error, 'Failed to read open tickets'); }
 });

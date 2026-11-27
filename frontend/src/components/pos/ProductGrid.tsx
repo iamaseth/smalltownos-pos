@@ -318,10 +318,8 @@ export default function ProductGrid({
     const timer = setTimeout(() => {
       try {
         const saved = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
-        if (Array.isArray(saved) && saved.length) {
-          setFavorites(saved.map(String));
-          setFavoritesOnly(true);
-        }
+        // Old pins are kept but the menu no longer opens on them: it opens on All, most popular first.
+        if (Array.isArray(saved) && saved.length) setFavorites(saved.map(String));
       } catch {}
     }, 0);
     return () => clearTimeout(timer);
@@ -403,10 +401,15 @@ export default function ProductGrid({
         </div>
         <nav aria-label="Menu categories" className="flex flex-wrap gap-1.5 py-0.5 mb-1">
           {searchPill}
-          <button type="button" aria-pressed={favoritesOnly}
-            onClick={() => { closeSearch(); setFavoritesOnly(!favoritesOnly); setSelectedCategory(null); setSelectedSubcategory(null); setArranging(false); }}
-            className="inline-flex h-12 flex-auto items-center justify-center gap-1.5 rounded-xl border-2 px-3 text-base font-extrabold uppercase transition-transform active:scale-95"
-            style={(() => { const t = pastelTone('#CA8A04'); return { borderColor: t.edge, backgroundColor: favoritesOnly ? t.edge : t.soft, color: favoritesOnly ? '#ffffff' : t.ink }; })()}><Star size={18} />FAV</button>
+          {(() => {
+            // ALL: every item, most popular first (the menu opens here). Replaces the old FAV button.
+            const allOn = !favoritesOnly && !selectedCategory && !searching;
+            const t = pastelTone('#334155');
+            return <button type="button" aria-pressed={allOn} data-testid="menu-all"
+              onClick={() => { closeSearch(); setFavoritesOnly(false); setSelectedCategory(null); setSelectedSubcategory(null); setArranging(false); }}
+              className="inline-flex h-12 flex-auto items-center justify-center gap-1.5 rounded-xl border-2 px-3 text-base font-extrabold uppercase transition-transform active:scale-95"
+              style={{ borderColor: t.edge, backgroundColor: allOn ? t.edge : t.soft, color: allOn ? '#ffffff' : t.ink }}><span aria-hidden="true" className="text-xl leading-none">▦</span>ALL</button>;
+          })()}
           {visibleCategories.map(cat => {
             const selected = !favoritesOnly && selectedCategory === cat.id && scoped;
             const tone = pastelTone(categoryColor(cat.color));
@@ -498,7 +501,7 @@ export default function ProductGrid({
                   onContextMenu={(event) => { event.preventDefault(); cancelPress(); if (!arranging) onProductClick(product); }}
                   className="absolute inset-0 z-0 w-full h-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl" />
                 {inCartQty > 0 && <span data-testid="pos-product-qty" aria-label={`${inCartQty} in order`} className={`pos-qty-badge pointer-events-none absolute -top-0.5 z-[12] grid h-10 min-w-10 place-items-center px-2 text-xl font-black ${catalogView === 'photo' ? '-start-0.5 rounded-ss-xl rounded-ee-xl' : '-end-0.5 rounded-se-xl rounded-es-xl'}`}>{inCartQty}</span>}
-                {(editingFavorites || favorites.includes(String(product.id))) && (
+                {editingFavorites && (
                   <Star aria-hidden size={18} className={`pointer-events-none absolute bottom-2.5 end-2.5 z-[2] ${favorites.includes(String(product.id)) ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
                 )}
                 <div className={`pointer-events-none relative z-[1] ${catalogView === 'photo' ? 'p-2 min-h-0' : 'p-3 min-h-[104px]'} flex flex-col flex-1 justify-start`}><div className="mb-1 flex items-start justify-between gap-1 pe-10 empty:hidden">

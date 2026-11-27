@@ -42,8 +42,11 @@ ok(dialog.includes('Manager PIN (approves this)'), 'Discount box: the PIN box ha
 for (const [name, src] of [['Free panel', panel], ['Discount box', dialog]] as const) {
   ok(!/type="password"/.test(src) && src.includes('autoComplete="one-time-code"') && src.includes("WebkitTextSecurity: 'disc'"), `${name}: the PIN box shows dots but is not a password field, so no saved login is filled in`);
 }
-ok(/name="free-note" autoComplete="off"/.test(panel), 'Free panel: the note box is not autofilled');
-ok(/name="discount-reason" autoComplete="off"/.test(dialog), 'Discount box: the reason box is not autofilled');
+// Chrome ignores autoComplete="off" and put the saved login email into a text box next to the PIN.
+// So the only text box beside the PIN is a textarea (never filled with logins).
+ok(!/<input type="text" name="free-note"/.test(panel) && /reason === 'other' && \(\s*<label[\s\S]{0,200}<textarea name="free-why"/.test(panel), 'Free panel: no note box next to the PIN; only Other asks why, in a box Chrome never fills');
+ok(/const why = reason === 'other' \? note\.trim\(\) : ''/.test(panel), 'Free panel: words are only sent for Other');
+ok(/<textarea name="discount-reason" autoComplete="off"/.test(dialog), 'Discount box: the reason box is never filled with a saved login');
 ok(panel.includes("'Pick why'") && panel.includes("'Type PIN'"), 'Free panel: the button says what is still missing');
 const reasons = panel.slice(panel.indexOf('const COMP_REASONS'), panel.indexOf('];', panel.indexOf('const COMP_REASONS')));
 ok(['Artist', 'Event', 'Owner', 'Complaint', 'Other'].every((w) => reasons.includes(`'${w}'`)) && (reasons.match(/\['/g) || []).length === 5, 'Free panel: five short reasons (Artist, Event, Owner, Complaint, Other)');

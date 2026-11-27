@@ -311,6 +311,11 @@ async function main() {
   const ticketsList = await request(app).get('/api/cash-handover/open-tickets').set('Authorization', A);
   assert(ticketsList.status === 200 && ticketsList.body.staff.some((u: { id: string }) => u.id === 'cashier-b')
     && !ticketsList.body.staff.some((u: { id: string }) => u.id === 'cashier-a'), 'the pass-to list shows other staff, not the closer');
+  // The till may still be signed in as someone else (e.g. last night's cashier) while A's shift
+  // is open: the list must hide A (the shift's cashier) and still show the signed-in person.
+  const viaOther = await request(app).get('/api/cash-handover/open-tickets').set('Authorization', B);
+  assert(viaOther.status === 200 && !viaOther.body.staff.some((u: { id: string }) => u.id === 'cashier-a')
+    && viaOther.body.staff.some((u: { id: string }) => u.id === 'cashier-b'), 'the pass-to list hides the shift cashier, not whoever is signed in on the till');
   const passClose = await request(app).post(`/api/cash-handover/sessions/${s8}/closing-count`).set('Authorization', A)
     .send({ count: { method: 'manual', usd_cents: 0, khr_riel: 0 }, float_out: { usd_cents: 5000, khr_riel: 0 }, pass_open_tickets: true, pass_to_user_id: 'cashier-b', device: 'pos' });
   assert(passClose.status === 200, `close with bills passed on succeeds (${passClose.status} ${passClose.body.error || ''})`);

@@ -9,6 +9,13 @@ export { REGISTER_IDLE_TIMEOUT_MS };
  * Staff PIN access for every staff page except the kitchen display. One PIN unlock lasts
  * across pages and reloads until 5 minutes without activity, then the PIN screen returns.
  */
+/** Ask the till to log the current staff member out (e.g. right after their shift closes),
+ *  so the next cashier logs in with their own PIN. */
+export const REGISTER_LOCK_EVENT = 'flo:register-lock';
+export function requestRegisterLock(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(REGISTER_LOCK_EVENT));
+}
+
 export function useRegisterAccess(onRegister: boolean) {
   // null = not known yet. The lock only applies once staff PINs exist.
   const [pinLockEnabled, setPinLockEnabled] = useState<boolean | null>(null);
@@ -128,6 +135,13 @@ export function useRegisterAccess(onRegister: boolean) {
     window.addEventListener('flo:register-session-expired', expired);
     return () => window.removeEventListener('flo:register-session-expired', expired);
   }, [enabled, restoreAppUser]);
+
+  useEffect(() => {
+    // Listen whenever there is someone signed in on the till, even if the PIN policy is still loading.
+    const lockNow = () => { void lock(); };
+    window.addEventListener(REGISTER_LOCK_EVENT, lockNow);
+    return () => window.removeEventListener(REGISTER_LOCK_EVENT, lockNow);
+  }, [lock]);
 
   // Leaving the POS always restores the original email/password identity.
   const unlock = useCallback(async (pin: string) => {
