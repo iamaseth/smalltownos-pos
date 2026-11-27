@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Register">
+<title>BackStreet Register</title>
+<link rel="stylesheet" href="/mini.css">
+</head>
+<body>
+<div id="connect" class="screen hidden">
+  <h1>Register iPad</h1>
+  <p>This iPad is not connected yet.</p>
+  <p>On the main computer open <b>Settings → Register iPad</b>, press <b>Add this iPad</b>, and open the link it shows on this iPad.</p>
+</div>
+<div id="app" class="hidden">
+  <header>
+    <div id="floors" class="floors"></div>
+    <div id="status" class="status">…</div>
+  </header>
+  <main>
+    <section id="map" class="map"></section>
+    <aside id="panel" class="panel">
+      <p class="hint">Tap a table</p>
+    </aside>
+  </main>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script src="/mini.js"></script>
+</body>
+</html>

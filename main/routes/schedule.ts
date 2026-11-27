@@ -134,7 +134,7 @@ router.get('/', requirePermission('schedule.view'), (req: Request, res: Response
     const staff = db.prepare(`
       SELECT u.id, u.name, u.role, u.schedule_only, st.target_days_per_week, st.job_label
       FROM users u LEFT JOIN staff_schedule_settings st ON st.user_id = u.id
-      WHERE u.is_active = 1 ORDER BY u.name
+      WHERE u.is_active = 1 AND u.id != 'register-ipad' ORDER BY u.name
     `).all();
     res.json({ shifts, shift_types: shiftTypes, staff, timezone: tenantTimezone(), can_manage: canManage });
   } catch (error) { send(res, error, 'Could not load the staff schedule'); }
