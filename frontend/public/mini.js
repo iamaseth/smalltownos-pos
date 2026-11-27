@@ -186,7 +186,12 @@
       b.appendChild(pic);
       var txt = el('span', 'txt');
       txt.appendChild(el('span', 'nm', p.name));
-      txt.appendChild(el('small', '', '+ ' + money(p.price)));
+      var price = el('small', '', '+ ' + money(p.price));
+      if (p.special && Number(p.normal_price) > Number(p.price)) {
+        price.appendChild(el('s', 'was', money(p.normal_price)));
+        txt.appendChild(el('span', 'deal', p.special));
+      }
+      txt.appendChild(price);
       b.appendChild(txt);
       b.disabled = state.busy;
       b.onclick = function () { addItem(order, p); };

@@ -128,6 +128,22 @@ async function main(): Promise<void> {
     const after = await api(baseUrl, '/api/register-devices/print-queue', { headers: A });
     assert(!after.data.requests.some((r: any) => r.id === kot.id), 'a printed ticket leaves the queue');
 
+    console.log('\n─── Happy Hour ───');
+    db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('special_price_events', ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify([{ id: 'hh', name: 'Happy Hour', enabled: true, mode: 'weekly',
+      days: [0, 1, 2, 3, 4, 5, 6], date: null, start: '00:00', end: '00:00', items: [{ product_id: 'p-draft', price: 0.5 }],
+      show_banner: true, show_on_buttons: true, manual_until: new Date(Date.now() + 3600000).toISOString() }]));
+    const hhFloor = await api(baseUrl, '/api/mini/floor', { headers: D });
+    const hhDraft = hhFloor.data.top.find((p: any) => p.id === 'p-draft');
+    assert(hhDraft && hhDraft.price === 0.5 && hhDraft.normal_price === 1 && hhDraft.special === 'Happy Hour', 'the button shows the Happy Hour price');
+    const hhAdd = await api(baseUrl, `/api/mini/orders/${orderId}/items`, { method: 'POST', headers: { ...D, 'Idempotency-Key': 'tap-hh' }, body: { product_id: 'p-draft' } });
+    assertEqual(hhAdd.status, 200, 'a Happy Hour beer is added');
+    const hhLine = db.prepare(`SELECT unit_price, product_name FROM order_items WHERE order_id = ? AND product_id = 'p-draft' ORDER BY id DESC`).get(orderId) as any;
+    assert(Number(hhLine.unit_price) === 0.5 && /Happy Hour/.test(hhLine.product_name), `the bill charges the Happy Hour price (${hhLine.unit_price} ${hhLine.product_name})`);
+    db.prepare(`DELETE FROM settings WHERE key = 'special_price_events'`).run();
+    const hhAfter = await api(baseUrl, '/api/mini/floor', { headers: D });
+    assert(hhAfter.data.top.find((p: any) => p.id === 'p-draft').price === 1 && !hhAfter.data.top.find((p: any) => p.id === 'p-draft').special, 'after Happy Hour the normal price is back');
+
     console.log('\n─── limits ───');
     const noTable = await api(baseUrl, '/api/orders', { method: 'POST', headers: A, body: { type: 'takeaway', items: [{ product_id: 'p-draft', quantity: 1 }] } });
     const takeaway = await api(baseUrl, `/api/mini/orders/${noTable.data.order.id}/items`, { method: 'POST', headers: D, body: { product_id: 'p-draft' } });
