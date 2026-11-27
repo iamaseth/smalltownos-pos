@@ -79,7 +79,7 @@ async function run() {
     resetRegisterSessionsForTests();
     closeDatabase();
     Module._load = originalLoad;
-    fs.rmSync(testDir, { recursive: true, force: true });
+    try { fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* Windows may still hold the test database open; leave the temp folder */ }
   }
 }
 

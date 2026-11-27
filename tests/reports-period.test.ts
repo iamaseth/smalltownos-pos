@@ -214,7 +214,7 @@ async function main() {
     console.log('\nAll reports-period checks passed');
   } finally {
     closeDatabase();
-    fs.rmSync(testDir, { recursive: true, force: true });
+    try { fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* Windows may still hold the test database open; leave the temp folder */ }
   }
 }
 
