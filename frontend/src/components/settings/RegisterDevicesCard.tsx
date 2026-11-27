@@ -3,7 +3,7 @@
 /**
  * BackStreet: connect the Register iPad (the small screen next to the till). "Add this iPad" makes
  * a private link; open it once on the iPad and it stays connected. Remove a device to cut it off.
- * The iPad can only see open tables, print a bill and add one of the 5 best-sellers.
+ * The iPad can only see open tables, print a bill and add one of the 6 best-sellers.
  */
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';

@@ -1,7 +1,7 @@
 /*
  * BackStreet Register iPad. Plain JavaScript (no build step) so it runs on old iPads (iPadOS 15).
  * Shows the floor plan with open tables; tap a table to see its items, print its bill, or add one
- * of the 5 best-sellers (a kitchen/bar ticket prints at the till). Uses the device link from
+ * of the 6 best-sellers (a kitchen/bar ticket prints at the till). Uses the device link from
  * Settings → Register iPad; the token is kept on this iPad only.
  */
 (function () {
@@ -107,6 +107,11 @@
     var phone = isPhone();
     map.className = phone ? 'map grid' : 'map';
     var list = state.data.tables.filter(function (t) { return (t.floor || 'Floor') === state.floor; });
+    // Phones have little room: show only tables with an open bill.
+    if (phone) {
+      list = list.filter(function (t) { return ordersFor(t.id).length > 0; });
+      if (!list.length) { map.appendChild(el('p', 'hint', 'No open tables on this floor')); return; }
+    }
     (phone ? sortTables(list) : list).forEach(function (t) {
       var open = ordersFor(t.id);
       var total = open.reduce(function (sum, o) { return sum + Number(o.total || 0); }, 0);
@@ -175,8 +180,14 @@
     panel.appendChild(el('div', 'label', 'Add one'));
     var top = el('div', 'top');
     (state.data.top || []).forEach(function (p) {
-      var b = el('button', '', '+ ' + p.name);
-      b.appendChild(el('small', '', money(p.price)));
+      var b = el('button', '');
+      var pic = el('span', 'pic', p.has_image ? '' : '+');
+      if (p.has_image) pic.style.backgroundImage = 'url(/api/products/' + encodeURIComponent(p.id) + '/image?t=' + encodeURIComponent(p.v || '') + ')';
+      b.appendChild(pic);
+      var txt = el('span', 'txt');
+      txt.appendChild(el('span', 'nm', p.name));
+      txt.appendChild(el('small', '', '+ ' + money(p.price)));
+      b.appendChild(txt);
       b.disabled = state.busy;
       b.onclick = function () { addItem(order, p); };
       top.appendChild(b);

@@ -3,7 +3,7 @@
  *
  * - miniDeviceRoutes (/api/mini): used by the iPad page (/mini.html). Skips the normal staff login
  *   (see requireAuth in server.ts) and checks the device token on every request instead. It can
- *   only: read the floor (tables, open bills, the 5 best-sellers), add one best-seller to an open
+ *   only: read the floor (tables, open bills, the 6 best-sellers), add one best-seller to an open
  *   order (prints a kitchen/bar ticket) and print a table's bill. The work itself goes through the
  *   normal order and bill routes as the "Register iPad" staff account, so prices, taxes, shift
  *   rules and the order history are exactly the same as on the till.
@@ -26,7 +26,7 @@ import {
 } from '../services/mini-register';
 
 const REMOVED_ITEM = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
-const TOP_COUNT = 5;
+const TOP_COUNT = 6;
 
 function fail(res: Response, error: unknown) {
   const statusCode = (error as { statusCode?: number }).statusCode;
@@ -49,20 +49,22 @@ device.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-/** The 5 best-selling items of the last 30 days that are on the menu now (menu order if nothing sold yet). */
-export function topItems(db: ReturnType<typeof getDatabase> = getDatabase()): { id: string; name: string; price: number }[] {
+/** The 6 best-selling items of the last 30 days that are on the menu now (menu order if nothing sold yet). */
+export function topItems(db: ReturnType<typeof getDatabase> = getDatabase()): { id: string; name: string; price: number; has_image: boolean; v: string }[] {
   const products = db.prepare(`
-    SELECT p.id, p.name, p.price, p.tags, p.sort_order FROM products p
+    SELECT p.id, p.name, p.price, p.tags, p.sort_order, p.updated_at,
+      CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
+    FROM products p
     LEFT JOIN categories c ON c.id = p.category_id
     WHERE p.is_active = 1 AND p.deleted_at IS NULL AND (c.id IS NULL OR (c.is_active = 1 AND c.deleted_at IS NULL))
-  `).all() as { id: string; name: string; price: number; tags: string | null; sort_order: number }[];
+  `).all() as { id: string; name: string; price: number; tags: string | null; sort_order: number; updated_at: string | null; has_image: number }[];
   const sellable = products.filter((p) => !isSpecialItemProduct(p));
   let sold: Record<string, number> = {};
   try { sold = getMenuPopularity(db, new Date(), tenantTimezone()).sold || {}; } catch { /* menu order below */ }
   return sellable
     .sort((a, b) => (sold[b.id] || 0) - (sold[a.id] || 0) || (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
     .slice(0, TOP_COUNT)
-    .map((p) => ({ id: p.id, name: p.name, price: Number(p.price) }));
+    .map((p) => ({ id: p.id, name: p.name, price: Number(p.price), has_image: p.has_image === 1, v: p.updated_at || '' }));
 }
 
 function floor() {
@@ -124,7 +126,7 @@ device.post('/orders/:orderId/items', async (req: Request, res: Response) => {
     const productId = String(req.body?.product_id ?? '');
     const top = topItems();
     const item = top.find((p) => String(p.id) === productId);
-    if (!item) throw Object.assign(new Error('Only the 5 best-sellers can be added here'), { statusCode: 400 });
+    if (!item) throw Object.assign(new Error('Only the 6 best-sellers can be added here'), { statusCode: 400 });
     const key = String(req.get('Idempotency-Key') || '').slice(0, 100) || randomUUID();
     const result = await asRegister('POST', `/orders/${order.id}/items`, { items: [{ product_id: item.id, quantity: 1 }] }, `mini:${key}`);
     if (result.status >= 400) {
