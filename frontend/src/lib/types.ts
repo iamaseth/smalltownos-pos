@@ -75,6 +75,8 @@ export interface Product {
   special_normal_price?: number;
   special_event?: string;
   special_show?: boolean;
+  /** BackStreet: a Special item's typed name and price (cart only). */
+  special_custom?: { name: string; price: number };
   category_id: string | null;
   name: string;
   sku: string | null;

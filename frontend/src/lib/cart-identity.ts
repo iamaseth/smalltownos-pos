@@ -1,4 +1,5 @@
 import type { Addon, CartItem } from './types';
+import { cartProductKey } from './special-items';
 
 /** Serializes cart identity into a typed, sorted canonical representation. */
 function canonicalize(value: unknown): string {
@@ -57,7 +58,7 @@ export function generateCartItemId(productId: number | string, addons: Addon[], 
 export function normalizeCartItems(items: CartItem[]): CartItem[] {
   const normalized: CartItem[] = [];
   for (const item of items) {
-    const id = generateCartItemId(item.product.id, item.addons || [], item.special_instructions || '');
+    const id = generateCartItemId(cartProductKey(item.product), item.addons || [], item.special_instructions || '');
     const existing = normalized.find((candidate) => candidate.id === id);
     if (existing) {
       existing.quantity += item.quantity;

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { specialItemFields } from '@/lib/special-items';
 import api from '@/lib/api';
 import type { CartItem } from '@/lib/types';
 
@@ -110,6 +111,7 @@ export function useTaxPreview(
         const payload = {
           items: items.map((item) => ({
             product_id: item.product.id,
+            ...specialItemFields(item.product),
             quantity: item.quantity,
             addons: item.addons.map((a) => ({ price: Number(a.price), quantity: Number(a.quantity) || 1 })),
             discount_amount: 0,

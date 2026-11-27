@@ -25,6 +25,7 @@ import { staffRoutes } from './staff';
 import { scheduleRoutes } from './schedule';
 import { itemApprovalRoutes } from './item-approvals';
 import { specialPriceRoutes } from './special-prices';
+import { specialItemRoutes } from './special-items';
 import { couponRoutes } from './coupons';
 import { registerAccessRoutes } from './register-access';
 import { settingsRoutes } from './settings';
@@ -105,6 +106,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/schedule', scheduleRoutes);
   app.use('/api/item-approvals', itemApprovalRoutes);
   app.use('/api/special-prices', specialPriceRoutes);
+  app.use('/api/special-items', specialItemRoutes);
   app.use('/api/coupons', couponRoutes);
   app.use('/api/settings', settingsRoutes);
   app.use('/api/payment-methods', paymentMethodRoutes);

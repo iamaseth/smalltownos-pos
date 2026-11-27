@@ -1,6 +1,7 @@
 'use client';
 
 import axios, { AxiosInstance } from 'axios';
+import { isSpecialItemProduct } from '@/lib/special-items';
 import toast from 'react-hot-toast';
 import { Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, RefreshCw, Search, Send, ShoppingCart, Smartphone, SquarePen, Trash2, UserRound } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/drawer';
@@ -128,7 +129,7 @@ export default function ServerStandalonePage() {
       api.get('/api/tables', { params: { active: 'true' } }),
     ]);
     setCategories(categoriesRes.data.categories || []);
-    setProducts(productsRes.data.products || []);
+    setProducts(((productsRes.data.products || []) as Product[]).filter((p) => !isSpecialItemProduct(p)));
     const loadedTables = tablesRes.data.tables || [];
     setTables(loadedTables);
     if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
@@ -188,7 +189,7 @@ export default function ServerStandalonePage() {
     ]).then(([categoriesRes, productsRes, tablesRes]) => {
       if (cancelled) return;
       setCategories(categoriesRes.data.categories || []);
-      setProducts(productsRes.data.products || []);
+      setProducts(((productsRes.data.products || []) as Product[]).filter((p) => !isSpecialItemProduct(p)));
       const loadedTables = tablesRes.data.tables || [];
       setTables(loadedTables);
       if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);

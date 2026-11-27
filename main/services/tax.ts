@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { isSpecialItemProduct } from './special-items';
 import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencyMinorUnitFactor, resolveTenantCurrency, type TaxIdFormat } from '../countries';
@@ -737,7 +738,11 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         continue;
       }
 
-      const unitPrice = parseFloat(product.price) || 0;
+      // BackStreet: a Special item is previewed at the price the cashier typed (the order itself re-checks it).
+      const typedPrice = Number(itemData.custom_price);
+      const unitPrice = isSpecialItemProduct(product) && Number.isFinite(typedPrice) && typedPrice > 0
+        ? typedPrice
+        : parseFloat(product.price) || 0;
       const rawQty = Number(itemData.quantity);
       const quantity = Number.isFinite(rawQty) && rawQty > 0 ? rawQty : 1;
       const rawDisc = Number(itemData.discount_amount);

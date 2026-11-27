@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { SpecialItemDialog } from './SpecialItemDialog';
+import type { SpecialItemsConfig } from '@/lib/special-items';
 import toast from 'react-hot-toast';
 import { Search, Keyboard, X, Star, ChevronUp, ChevronDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
@@ -100,6 +102,9 @@ const getCoarsePointer = () => window.matchMedia('(pointer: coarse)').matches;
 
 
 interface Props {
+  /** BackStreet: shows the Special button when set up and this person may add specials. */
+  specialItems?: SpecialItemsConfig | null;
+  onAddSpecial?: (station: 'kitchen' | 'bar', name: string, price: number) => void;
   categories: Category[];
   products: Product[];
   selectedCategory: string | null;
@@ -121,7 +126,9 @@ const MOVE_TOLERANCE_PX = 8;
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
   search, setSearch, onProductClick, onQuickAdd, canArrange = false, onOrderSaved, searchOpen, setSearchOpen,
+  specialItems = null, onAddSpecial,
 }: Props) {
+  const [specialOpen, setSpecialOpen] = useState(false);
   const cart = useCartStore();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { arranging, setArranging, editingFavorites, setEditingFavorites, catalogView, subcategoriesOpen, setSubcategoriesOpen, menuOrder, setMenuOrder } = usePosViewStore();
@@ -424,6 +431,12 @@ export default function ProductGrid({
               className={`inline-flex h-12 flex-auto items-center justify-center gap-1.5 rounded-xl border-2 px-3 text-base font-extrabold uppercase transition-[filter,transform] active:scale-95 ${selected ? 'shadow-md' : 'hover:brightness-95'}`}
               style={{ borderColor: tone.edge, backgroundColor: selected ? tone.edge : tone.soft, color: selected ? '#ffffff' : tone.ink }}><span aria-hidden="true" className="text-xl leading-none">{cat.icon || '▦'}</span>{cat.name}</button>;
           })}
+          {specialItems && onAddSpecial && (
+            <button type="button" data-testid="menu-special" onClick={() => { closeSearch(); setArranging(false); setSpecialOpen(true); }}
+              className="inline-flex h-12 flex-auto items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-orange-400 px-3 text-base font-extrabold uppercase text-orange-200 transition-transform hover:bg-orange-950/40 active:scale-95">
+              <span aria-hidden="true" className="text-xl leading-none">+</span>Special
+            </button>
+          )}
         </nav>
         {selectedCategory && subcategoryNames.length > 0 && !favoritesOnly && scoped && (
           <nav aria-label="Subcategory buttons" className="flex gap-2 overflow-x-auto py-1">
@@ -610,6 +623,9 @@ export default function ProductGrid({
       )}
       </div>
       {keyboardOpen && <OnScreenKeyboard value={search} onChange={setSearch} onClose={() => setKeyboardOpen(false)} />}
+      {specialOpen && specialItems && onAddSpecial && (
+        <SpecialItemDialog config={specialItems} onAdd={onAddSpecial} onClose={() => setSpecialOpen(false)} />
+      )}
     </div>
   );
 }
