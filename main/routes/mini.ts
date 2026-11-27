@@ -20,6 +20,7 @@ import { getServerPort } from '../server-state';
 import { tenantTimezone } from './cash-closures';
 import { getMenuPopularity } from '../services/menu-popularity';
 import { isSpecialItemProduct } from '../services/special-items';
+import { activeSpecialPrices, readSpecialPriceEvents } from '../services/special-prices';
 import {
   MINI_DEVICE_USER_ID, authenticateDevice, claimPrint, createDevice, enqueuePrint, ensureDeviceUser,
   finishPrint, listDevices, removeDevice, waitingPrints,
@@ -49,8 +50,11 @@ device.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-/** The 6 best-selling items of the last 30 days that are on the menu now (menu order if nothing sold yet). */
-export function topItems(db: ReturnType<typeof getDatabase> = getDatabase()): { id: string; name: string; price: number; has_image: boolean; v: string }[] {
+/**
+ * The 6 best-selling items of the last 30 days that are on the menu now (menu order if nothing sold yet),
+ * with the price the till charges right now (Happy Hour and other special prices included).
+ */
+export function topItems(db: ReturnType<typeof getDatabase> = getDatabase(), at = new Date()): { id: string; name: string; price: number; normal_price: number; special: string | null; has_image: boolean; v: string }[] {
   const products = db.prepare(`
     SELECT p.id, p.name, p.price, p.tags, p.sort_order, p.updated_at,
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
@@ -59,12 +63,21 @@ export function topItems(db: ReturnType<typeof getDatabase> = getDatabase()): { 
     WHERE p.is_active = 1 AND p.deleted_at IS NULL AND (c.id IS NULL OR (c.is_active = 1 AND c.deleted_at IS NULL))
   `).all() as { id: string; name: string; price: number; tags: string | null; sort_order: number; updated_at: string | null; has_image: number }[];
   const sellable = products.filter((p) => !isSpecialItemProduct(p));
+  const normal = new Map(products.map((p) => [String(p.id), Number(p.price)]));
+  let specials = new Map<string, { price: number; eventName: string }>();
+  try { specials = activeSpecialPrices(readSpecialPriceEvents(), at, tenantTimezone(), (id) => normal.get(id) ?? null); } catch { /* normal prices */ }
   let sold: Record<string, number> = {};
   try { sold = getMenuPopularity(db, new Date(), tenantTimezone()).sold || {}; } catch { /* menu order below */ }
   return sellable
     .sort((a, b) => (sold[b.id] || 0) - (sold[a.id] || 0) || (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
     .slice(0, TOP_COUNT)
-    .map((p) => ({ id: p.id, name: p.name, price: Number(p.price), has_image: p.has_image === 1, v: p.updated_at || '' }));
+        .map((p) => {
+      const special = specials.get(String(p.id));
+      return {
+        id: p.id, name: p.name, price: special ? special.price : Number(p.price), normal_price: Number(p.price),
+        special: special ? special.eventName : null, has_image: p.has_image === 1, v: p.updated_at || '',
+      };
+    });
 }
 
 function floor() {
