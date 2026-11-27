@@ -55,7 +55,7 @@ async function main(): Promise<void> {
     assert(!isChunkLoadError(new Error('Invalid manager PIN')), 'other errors do not reload the page');
   } finally {
     closeDatabase();
-    fs.rmSync(testDir, { recursive: true, force: true });
+    try { fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* Windows may still hold the test database open; leave the temp folder */ }
   }
   const { passed, failed, total } = getResults();
   console.log(`\nResults: ${passed}/${total} passed, ${failed} failed`);

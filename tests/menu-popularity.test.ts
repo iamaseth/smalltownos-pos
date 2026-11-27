@@ -83,7 +83,7 @@ async function main() {
 
   console.log(`menu-popularity: ${passed} passed`);
   closeDatabase();
-  fs.rmSync(testDir, { recursive: true, force: true });
+  try { fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* Windows may still hold the test database open; leave the temp folder */ }
 }
 
 main().catch((error) => { console.error(error); process.exit(1); });
