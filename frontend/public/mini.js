@@ -157,7 +157,7 @@
       panel.appendChild(tabs);
     }
     var order = open.filter(function (o) { return String(o.id) === String(state.orderId); })[0];
-    panel.appendChild(el('div', 'sub', (order.guest_count ? order.guest_count + ' guests · ' : '') + '#' + order.order_number));
+    panel.appendChild(el('div', 'sub', (order.guest_count ? order.guest_count + (Number(order.guest_count) === 1 ? ' guest · ' : ' guests · ') : '') + '#' + order.order_number));
 
     var items = el('div', 'items');
     order.items.forEach(function (i) {
