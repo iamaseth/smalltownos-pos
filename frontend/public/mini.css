@@ -41,3 +41,16 @@ button[disabled] { opacity: 0.5; }
   .map { min-height: 46vh; }
   .panel { margin: 0 10px 10px; }
 }
+
+/* Phones: a grid of table buttons; a tapped table fills the screen. */
+.map.grid { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px; padding: 8px; min-height: 0; overflow-y: auto; }
+.map.grid .table { position: static; transform: none; flex: 1 1 28%; min-width: 0; min-height: 70px; font-size: 15px; }
+.back { font-size: 18px; font-weight: bold; padding: 10px 16px; border-radius: 10px; border: 1px solid #475569; background: #1f2937; color: #f8fafc; margin-bottom: 10px; }
+#app.phone main { flex-direction: column; }
+#app.phone .map { margin: 8px; flex: 1; }
+#app.phone .panel { display: none; }
+#app.phone.table-open .map { display: none; }
+#app.phone.table-open .panel { display: block; margin: 8px; flex: 1; }
+#app.phone header { padding: 8px; }
+#app.phone .floors button { font-size: 16px; padding: 8px 12px; }
+#app.phone .top button { flex: 1 1 100%; min-height: 56px; }

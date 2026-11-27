@@ -12,6 +12,16 @@
 
   var state = { data: null, floor: null, tableId: null, orderId: null, busy: false, loading: false, lastOk: 0 };
 
+  // Phones: tables as a grid of big buttons, and a tapped table opens full screen.
+  function isPhone() { return window.innerWidth < 700; }
+  function sortTables(list) {
+    return list.slice().sort(function (a, b) {
+      var oa = ordersFor(a.id).length ? 0 : 1; var ob = ordersFor(b.id).length ? 0 : 1;
+      if (oa !== ob) return oa - ob;
+      return String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+    });
+  }
+
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -94,14 +104,18 @@
   function renderMap() {
     var map = $('map');
     map.innerHTML = '';
-    state.data.tables.forEach(function (t) {
-      if ((t.floor || 'Floor') !== state.floor) return;
+    var phone = isPhone();
+    map.className = phone ? 'map grid' : 'map';
+    var list = state.data.tables.filter(function (t) { return (t.floor || 'Floor') === state.floor; });
+    (phone ? sortTables(list) : list).forEach(function (t) {
       var open = ordersFor(t.id);
       var total = open.reduce(function (sum, o) { return sum + Number(o.total || 0); }, 0);
       var cls = 'table' + (open.length ? ' open' : '') + (String(t.id) === String(state.tableId) ? ' sel' : '');
       var b = el('button', cls);
-      b.style.left = Math.min(95, Math.max(5, Number(t.position_x) || 50)) + '%';
-      b.style.top = Math.min(92, Math.max(8, Number(t.position_y) || 50)) + '%';
+      if (!phone) {
+        b.style.left = Math.min(95, Math.max(5, Number(t.position_x) || 50)) + '%';
+        b.style.top = Math.min(92, Math.max(8, Number(t.position_y) || 50)) + '%';
+      }
       b.appendChild(el('b', '', t.number));
       if (open.length) b.appendChild(el('span', 'amt', money(total)));
       b.onclick = function () {
@@ -120,6 +134,11 @@
     var table = state.data.tables.filter(function (t) { return String(t.id) === String(state.tableId); })[0];
     if (!table) { panel.appendChild(el('p', 'hint', 'Tap a table')); return; }
     var open = ordersFor(table.id);
+    if (isPhone()) {
+      var back = el('button', 'back', '\u2190 Tables');
+      back.onclick = function () { state.tableId = null; state.orderId = null; render(); window.scrollTo(0, 0); };
+      panel.appendChild(back);
+    }
     panel.appendChild(el('h2', '', table.number));
     if (!open.length) { panel.appendChild(el('p', 'hint', 'No open bill on this table')); return; }
     if (!open.some(function (o) { return String(o.id) === String(state.orderId); })) state.orderId = open[0].id;
@@ -167,6 +186,9 @@
 
   function render() {
     if (!state.data) return;
+    // On a phone the open table takes the whole screen; without one, only the tables show.
+    var app = $('app');
+    app.className = isPhone() ? (state.tableId ? 'phone table-open' : 'phone') : '';
     renderFloors();
     renderMap();
     renderPanel();
@@ -224,4 +246,5 @@
   setInterval(load, REFRESH_MS);
   setInterval(setStatus, 5000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
+  window.addEventListener('resize', function () { render(); });
 })();
