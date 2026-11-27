@@ -50,6 +50,8 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   if (req.method === 'POST' && (req.path === '/api/receipt-upload' || req.path === '/api/receipt-upload/')) { next(); return; }
   // BackStreet Register iPad: a device token, not a staff login. routes/mini.ts checks it on every request.
   if (req.path === '/api/mini' || req.path.startsWith('/api/mini/')) { next(); return; }
+  // BackStreet: the laptop's daily backup fetch carries its own key (see backup-pull.ts).
+  if (req.method === 'GET' && req.path === '/api/backup-pull/latest') { next(); return; }
   if (req.method === 'POST' && req.path === '/api/support-ticket/pre-login') { next(); return; }
   if (req.method === 'GET' && req.path === '/api/support-ticket/pre-login/profile') { next(); return; }
   if (req.method === 'GET' && /^\/api\/support-ticket\/pre-login\/[0-9a-f-]{36}\/status$/i.test(req.path)) { next(); return; }

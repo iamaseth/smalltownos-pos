@@ -1,5 +1,6 @@
 import { Express } from 'express';
 import { receiptUploadRoutes } from './receipt-upload';
+import { backupPullRoutes } from './backup-pull';
 import { authRoutes } from './auth';
 import { requireAnyPermission, requirePermission } from '../services/authorization';
 import { categoryRoutes } from './categories';
@@ -93,6 +94,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/cash-sessions', cashSessionRoutes);
   app.use('/api/cash-handover', cashHandoverRoutes);
   app.use('/api/receipt-upload', receiptUploadRoutes);
+  app.use('/api/backup-pull', backupPullRoutes);
   app.use('/api/print-jobs', printJobRoutes);
   app.use('/api/inventory', inventoryRoutes);
   app.use('/api/supplies', supplyRoutes);
