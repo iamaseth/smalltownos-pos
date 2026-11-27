@@ -21,8 +21,8 @@
   }
   function money(v) { return '$' + (Math.round(Number(v || 0) * 100) / 100).toFixed(2); }
   function randomKey() { return 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
-  function store(key, value) { try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch (e) { /* private mode */ } }
-  function read(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+  function store(key, value) { try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch (e) { void e; /* private mode */ } }
+  function read(key) { try { return localStorage.getItem(key); } catch (e) { void e; return null; } }
 
   // A new link from Settings arrives as /mini.html#t=TOKEN; keep it and tidy the address bar.
   (function takeTokenFromLink() {
@@ -56,7 +56,7 @@
       .then(function (res) {
         return res.text().then(function (text) {
           var data = {};
-          try { data = text ? JSON.parse(text) : {}; } catch (e) { data = {}; }
+          try { data = text ? JSON.parse(text) : {}; } catch (e) { void e; data = {}; }
           if (res.status === 401) { store(TOKEN_KEY, null); showConnect(); throw new Error(data.error || 'Not connected'); }
           if (!res.ok) throw new Error(data.error || ('Error ' + res.status));
           return data;
