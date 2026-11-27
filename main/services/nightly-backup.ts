@@ -1,7 +1,8 @@
 /**
  * Nightly backup: once a day, between 04:00 and 06:00 restaurant time, copy the database into the
- * backups folder as flo-backup-nightly-YYYY-MM-DD.db and keep the newest 14 nightly copies.
- * Manual and pre-update backups are never touched. Off with FLO_NIGHTLY_BACKUP=off.
+ * backups folder as flo-backup-nightly-YYYY-MM-DD.db. After a good nightly backup, old copies are
+ * removed so the disk does not fill up: keep the newest 7 nightly, 3 pre-update ("Auto") and
+ * 5 manual backups. Off with FLO_NIGHTLY_BACKUP=off.
  */
 import fs from 'fs';
 import path from 'path';
@@ -10,8 +11,11 @@ import { tenantTimezone } from '../routes/cash-closures';
 import { copyBackupToFolder } from './backup-folder';
 
 const CHECK_EVERY_MS = 10 * 60 * 1000;
-const KEEP = 14;
+const KEEP = 7;
+const KEEP_PRE_UPDATE = 3;
+const KEEP_MANUAL = 5;
 const NIGHTLY_RE = /^flo-backup-nightly-(\d{4}-\d{2}-\d{2})\.db$/;
+const BACKUP_RE = /^flo-backup-[\w.-]+\.db$/;
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -36,6 +40,33 @@ export function nightlyBackupsToPrune(existing: string[], keep = KEEP): string[]
   return nightly.slice(0, Math.max(0, nightly.length - keep));
 }
 
+export type BackupFile = { name: string; mtimeMs: number };
+
+/**
+ * Every backup file to remove: nightly beyond the newest 7 (by date in the name), pre-update
+ * ("-pre-v") beyond the newest 3 and manual beyond the newest 5 (by file time). Oldest first.
+ */
+export function backupsToPrune(files: BackupFile[], keep = { nightly: KEEP, preUpdate: KEEP_PRE_UPDATE, manual: KEEP_MANUAL }): string[] {
+  const backups = files.filter((f) => BACKUP_RE.test(f.name));
+  const oldestFirst = (list: BackupFile[]) => list.slice().sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name));
+  const beyond = (list: BackupFile[], n: number) => list.slice(0, Math.max(0, list.length - n)).map((f) => f.name);
+  const nightly = beyond(backups.filter((f) => NIGHTLY_RE.test(f.name)).sort((a, b) => a.name.localeCompare(b.name)), keep.nightly);
+  const preUpdate = beyond(oldestFirst(backups.filter((f) => !NIGHTLY_RE.test(f.name) && f.name.includes('-pre-v'))), keep.preUpdate);
+  const manual = beyond(oldestFirst(backups.filter((f) => !NIGHTLY_RE.test(f.name) && !f.name.includes('-pre-v'))), keep.manual);
+  return [...nightly, ...preUpdate, ...manual];
+}
+
+function backupFiles(dir: string): BackupFile[] {
+  const out: BackupFile[] = [];
+  for (const name of fs.readdirSync(dir)) {
+    try {
+      const stat = fs.lstatSync(path.join(dir, name));
+      if (stat.isFile()) out.push({ name, mtimeMs: stat.mtimeMs });
+    } catch { /* gone already */ }
+  }
+  return out;
+}
+
 export async function runNightlyBackupIfDue(at = new Date()): Promise<string | null> {
   if (running || isDatabaseMaintenanceActive()) return null;
   const dir = getBackupDirectory();
@@ -46,7 +77,7 @@ export async function runNightlyBackupIfDue(at = new Date()): Promise<string | n
   try {
     const target = path.join(dir, `flo-backup-nightly-${date}.db`);
     await createBackup(target);
-    for (const name of nightlyBackupsToPrune(fs.readdirSync(dir))) {
+    for (const name of backupsToPrune(backupFiles(dir))) {
       try { fs.unlinkSync(path.join(dir, name)); } catch (error) { console.error('[NightlyBackup] Could not remove', name, error); }
     }
     console.log('[NightlyBackup] Saved', target);
