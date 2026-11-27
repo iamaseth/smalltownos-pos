@@ -9,6 +9,8 @@ import { X } from 'lucide-react';
 import type { SpecialItemsConfig } from '@/lib/special-items';
 
 const MAX_NAME = 60;
+/** Fixed colours: the till's light theme recolours dark classes, which left black text on a black box. */
+const BOX = { backgroundColor: '#ffffff', color: '#0f172a', borderColor: '#94a3b8', caretColor: '#0f172a' } as const;
 
 export function SpecialItemDialog({ config, onAdd, onClose }: {
   config: SpecialItemsConfig;
@@ -43,16 +45,18 @@ export function SpecialItemDialog({ config, onAdd, onClose }: {
         <label className="block">
           <span className="mb-1 block text-base font-bold text-slate-200">What is it?</span>
           <textarea name="special-name" rows={1} autoFocus value={name} maxLength={MAX_NAME} autoComplete="off" data-1p-ignore data-lpignore="true"
+            style={BOX}
             onChange={(e) => { setName(e.target.value.replace(/\n/g, ' ')); setError(''); }}
             placeholder="Grilled river fish"
-            className="min-h-14 w-full resize-none rounded-lg border-2 border-slate-600 bg-slate-950 px-3 py-3 text-xl text-white outline-none focus:border-orange-400" />
+            className="min-h-14 w-full resize-none rounded-lg border-2 px-3 py-3 text-xl outline-none focus:border-orange-400" />
         </label>
         <label className="block">
           <span className="mb-1 block text-base font-bold text-slate-200">Price ($)</span>
           <input name="special-price" inputMode="decimal" value={price} autoComplete="off" data-1p-ignore data-lpignore="true"
+            style={BOX}
             onChange={(e) => { setPrice(e.target.value.replace(/[^\d.]/g, '')); setError(''); }}
             placeholder="0.00"
-            className="min-h-14 w-full rounded-lg border-2 border-slate-600 bg-slate-950 px-3 py-2 text-2xl font-bold tabular-nums text-white outline-none focus:border-orange-400" />
+            className="min-h-14 w-full rounded-lg border-2 px-3 py-2 text-2xl font-bold tabular-nums outline-none focus:border-orange-400" />
         </label>
         {stations.length > 1 && (
           <div>
