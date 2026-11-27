@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { isSpecialItemProduct, specialCartProduct, specialItemFields, type SpecialItemsConfig } from '@/lib/special-items';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
@@ -609,7 +610,23 @@ export default function POSPage() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, []);
 
-  const shownProducts = useMemo(() => products.map((p) => {
+  // BackStreet: Special items (cashier types the name and price). Off until set up in Settings.
+  const [specialItems, setSpecialItems] = useState<SpecialItemsConfig | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api.get<SpecialItemsConfig>('/special-items')
+      .then(({ data }) => { if (!cancelled) setSpecialItems(data); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+  const addSpecialItem = (station: 'kitchen' | 'bar', name: string, price: number) => {
+    const productId = specialItems?.[station]?.productId;
+    const hidden = products.find((p) => String(p.id) === String(productId));
+    if (!hidden) { toast.error('Special items are not set up. Ask the owner (Settings → Special items).'); return; }
+    cart.addItem(specialCartProduct(hidden, { name, price }), 1, [], '');
+  };
+
+  const shownProducts = useMemo(() => products.filter((p) => !isSpecialItemProduct(p)).map((p) => {
     const sp = specials.prices[String(p.id)];
     if (!sp) return p;
     const event = specials.active.find((a) => a.id === sp.eventId);
@@ -714,6 +731,7 @@ export default function POSPage() {
         // Add new items to an existing order with a durable retry key.
         const newItems = cart.items.map((item) => ({
           product_id: item.product.id,
+          ...specialItemFields(item.product),
           quantity: item.quantity,
           addons: item.addons.length > 0
             ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
@@ -758,6 +776,7 @@ export default function POSPage() {
           external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           items: cart.items.map((item) => ({
             product_id: item.product.id,
+            ...specialItemFields(item.product),
             quantity: item.quantity,
             addons: item.addons.length > 0
               ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
@@ -825,6 +844,7 @@ export default function POSPage() {
     setSubmitting(true);
     const orderItems = cart.items.map((item) => ({
       product_id: item.product.id,
+      ...specialItemFields(item.product),
       quantity: item.quantity,
       addons: item.addons.length > 0
         ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
@@ -1245,6 +1265,7 @@ export default function POSPage() {
     try {
       const items = cart.items.map((item) => ({
         product_id: item.product.id,
+        ...specialItemFields(item.product),
         quantity: item.quantity,
         addons: item.addons.length > 0
           ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
@@ -1488,6 +1509,8 @@ export default function POSPage() {
             onOrderSaved={async () => { const response = await api.get('/products?active=1'); setProducts((response.data.products as Product[]) || []); }}
             onProductClick={handleProductClick}
             onQuickAdd={handleQuickAdd}
+            specialItems={specialItems?.enabled && specialItems.can_add ? specialItems : null}
+            onAddSpecial={addSpecialItem}
           />
         </div>
 

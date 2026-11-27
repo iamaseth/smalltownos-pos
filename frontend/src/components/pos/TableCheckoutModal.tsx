@@ -202,7 +202,11 @@ export default function TableCheckoutModal({
     if (!order) return;
     try {
       const { data } = await api.post(`/orders/${order.id}/items`, {
-        items: [{ product_id: item.product_id, quantity: 1, addons: null, special_instructions: item.special_instructions || null }],
+        items: [{
+          product_id: item.product_id, quantity: 1, addons: null, special_instructions: item.special_instructions || null,
+          // A Special item repeats its own name and price; the server ignores these on normal items.
+          custom_name: item.product_name, custom_price: Number(item.unit_price),
+        }],
       }, { headers: { 'Idempotency-Key': crypto.randomUUID() } });
       const before = new Set((order.items || []).map((i) => Number(i.id)));
       const added = ((data.order as Order).items || []).filter((i) => !before.has(Number(i.id)));

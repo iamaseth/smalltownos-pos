@@ -57,6 +57,8 @@ export const PERMISSION_DEFINITIONS = [
   { id: 'orders.item.cancel', area: 'orders', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
   { id: 'orders.item.void', area: 'orders', defaultRoles: SALES, configurable: true, risk: 'sensitive' },
   { id: 'orders.item.restore', area: 'orders', defaultRoles: OWNER_MANAGER, configurable: true, risk: 'sensitive' },
+  /** BackStreet: type a Special item's name and price at the till. */
+  { id: 'orders.special-item', area: 'orders', defaultRoles: OWNER_MANAGER_CASHIER, configurable: true, risk: 'sensitive' },
   { id: 'held-orders.manage', area: 'orders', defaultRoles: SALES, configurable: true, risk: 'standard' },
 
   { id: 'tables.view', area: 'tables', defaultRoles: ALL_STAFF, configurable: true, risk: 'standard' },

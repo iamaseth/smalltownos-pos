@@ -31,6 +31,7 @@ import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TelegramReportsCard } from '@/components/settings/TelegramReportsCard';
 import { VoidCompSettingsCard } from '@/components/settings/VoidCompSettingsCard';
 import { SpecialPricesCard } from '@/components/settings/SpecialPricesCard';
+import { SpecialItemsCard } from '@/components/settings/SpecialItemsCard';
 import { CouponsCard } from '@/components/settings/CouponsCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
@@ -3780,6 +3781,7 @@ export default function SettingsPage() {
           <TabsContent value="special-prices">
             <SettingsTabShell>
               <SpecialPricesCard />
+              <SpecialItemsCard />
             </SettingsTabShell>
           </TabsContent>
         )}

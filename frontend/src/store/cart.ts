@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem } from '@/lib/types';
 import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
+import { cartProductKey } from '@/lib/special-items';
 
 export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
@@ -65,7 +66,7 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   addItem: (product, quantity = 1, addons = [], specialInstructions = '') => {
     const items = get().items;
-    const itemId = generateCartItemId(product.id, addons, specialInstructions);
+    const itemId = generateCartItemId(cartProductKey(product), addons, specialInstructions);
     const existing = items.find((i) => i.id === itemId);
 
     if (existing) {
@@ -86,7 +87,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     const target = items.find((i) => i.id === cartItemId);
     if (!target) return;
 
-    const newId = generateCartItemId(target.product.id, addons, specialInstructions);
+    const newId = generateCartItemId(cartProductKey(target.product), addons, specialInstructions);
     if (newId === cartItemId) {
       set({
         items: items.map((i) =>

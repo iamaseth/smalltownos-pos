@@ -26,6 +26,7 @@ import { COMP_REASONS, removalRequiresApproval, resolveApproval, withinChangeWin
 import { activeSpecialPrices, readSpecialPriceEvents } from '../services/special-prices';
 import { orderHasCoupon } from '../services/coupons';
 import { findDiscountApprover } from '../services/discount-approval';
+import { SPECIAL_ITEM_PERMISSION, specialItemOverride } from '../services/special-items';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency, syncUnpaidBillsForOrder } from './bills';
@@ -713,12 +714,16 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       `);
 
       const specials = currentSpecialPrices(db);
+      const specialItemsAdded: { name: string; price: number }[] = [];
       for (const item of items) {
         const product = getSellableProduct(db, item.product_id);
 
-        const special = specials.get(String(product.id));
-        const unitPrice = special ? special.price : parseFloat(product.price);
-        const itemName = special ? `${product.name} · ${special.eventName}` : product.name;
+        // BackStreet: a Special item carries the name and price the cashier typed.
+        const custom = specialItemOverride(product, item, () => hasPermission(authenticatedUserId, SPECIAL_ITEM_PERMISSION));
+        if (custom) specialItemsAdded.push(custom);
+        const special = custom ? undefined : specials.get(String(product.id));
+        const unitPrice = custom ? custom.price : special ? special.price : parseFloat(product.price);
+        const itemName = custom ? custom.name : special ? `${product.name} · ${special.eventName}` : product.name;
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.
         const itemDiscount = 0;
@@ -827,6 +832,9 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?").run(now(), table_id);
       }
 
+      if (specialItemsAdded.length) {
+        recordOrderAudit(db, { orderId: String(orderId), actorUserId: authenticatedUserId, action: 'special_items_added', details: { special_items: specialItemsAdded } });
+      }
       const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)) as any;
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
       const response = { order: Object.assign({}, order, { items: orderItems }) };
@@ -957,11 +965,15 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
 
       const insertedItemIds: (number | bigint)[] = [];
       const specials = currentSpecialPrices(db);
+      const specialItemsAdded: { name: string; price: number }[] = [];
       for (const item of items) {
         const product = getSellableProduct(db, item.product_id);
-        const special = specials.get(String(product.id));
-        const unitPrice = special ? special.price : parseFloat(product.price);
-        const itemName = special ? `${product.name} · ${special.eventName}` : product.name;
+        // BackStreet: a Special item carries the name and price the cashier typed.
+        const custom = specialItemOverride(product, item, () => hasPermission(idempotencyUserId, SPECIAL_ITEM_PERMISSION));
+        if (custom) specialItemsAdded.push(custom);
+        const special = custom ? undefined : specials.get(String(product.id));
+        const unitPrice = custom ? custom.price : special ? special.price : parseFloat(product.price);
+        const itemName = custom ? custom.name : special ? `${product.name} · ${special.eventName}` : product.name;
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.
         const itemDiscount = 0;
@@ -1077,7 +1089,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
           .run(subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, currentOrder.service_charge || 0, billRoundOff, now(), existingBill.id);
       }
 
-      recordOrderAudit(db, { orderId: req.params.id as string, actorUserId: idempotencyUserId, action: 'items_added', details: { item_ids: insertedItemIds } });
+      recordOrderAudit(db, { orderId: req.params.id as string, actorUserId: idempotencyUserId, action: 'items_added', details: { item_ids: insertedItemIds, ...(specialItemsAdded.length ? { special_items: specialItemsAdded } : {}) } });
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const updatedItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
