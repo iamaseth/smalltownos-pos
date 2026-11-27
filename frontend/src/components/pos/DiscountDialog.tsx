@@ -165,9 +165,11 @@ export default function DiscountDialog({ title, subtitle, baseAmount, canClear, 
         </div>
 
         <label className="mb-3 block space-y-1">
-          <span className="block text-sm font-semibold text-foreground">Reason (required)</span>
-          <input name="discount-reason" autoComplete="off" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Who it's for and why" maxLength={120}
-            className="h-11 w-full rounded-lg border border-border bg-background px-3 text-base" />
+          <span className="block text-lg font-bold text-foreground">Reason (required)</span>
+          {/* A textarea, not a text box: Chrome fills a saved login email into a text box next to a PIN. */}
+          <textarea name="discount-reason" autoComplete="off" rows={1} value={reason} onChange={(event) => setReason(event.target.value.replace(/\n/g, ' '))} placeholder="Who it's for and why" maxLength={120}
+            data-1p-ignore data-lpignore="true"
+            className="h-14 w-full resize-none rounded-lg border-2 border-border bg-background px-3 py-3 text-xl" />
         </label>
 
         {requiresApproval && (

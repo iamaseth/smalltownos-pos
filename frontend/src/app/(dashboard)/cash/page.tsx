@@ -14,6 +14,7 @@ import { ReportOutputButtons } from '@/components/reports/ReportOutputButtons';
 import { ShiftOrders } from '@/components/reports/OrderList';
 import { printReportReceipt } from '@/lib/printer/shift-report-print';
 import { PrintSkippedError } from '@/lib/printer/print-jobs';
+import { requestRegisterLock } from '@/hooks/useRegisterAccess';
 import type { ShiftReportData } from '@print/shift-report-text';
 
 interface Status {
@@ -697,6 +698,37 @@ function drawerCountPayload(cash: CashCountValue, float: CashCountValue) {
   return { method: 'manual' as const, usd_cents: a.usd + b.usd, khr_riel: a.khr + b.khr };
 }
 
+const USE_COUNTER_KEY = 'flo.close.useCounter';
+function readUseCounter(): boolean {
+  try { return typeof window === 'undefined' ? true : localStorage.getItem(USE_COUNTER_KEY) !== '0'; } catch { return true; }
+}
+
+/** USD and KHR boxes typed straight into a Step 2 line (counter switched off). */
+function TotalsInput({ label, value, onChange }: { label: string; value: CashCountValue; onChange: (v: CashCountValue) => void }) {
+  // A line filled by the counter shows its totals; typing turns it into a typed total.
+  const shown = value.method === 'manual' ? value : (() => {
+    const t = cashCountTotals(value, 4100);
+    return { ...value, manualUsd: t.usd ? String(t.usd / 100) : '', manualKhr: t.khr ? String(t.khr) : '' };
+  })();
+  const set = (patch: Partial<CashCountValue>) => onChange({ ...shown, ...patch, method: 'manual' });
+  return (
+    <div className="grid grid-cols-2 gap-2 border-b px-4 pb-3 ps-[3.75rem]">
+      <label className="block">
+        <span className="mb-1 block text-xs font-semibold uppercase text-emerald-700">{label} USD</span>
+        <input inputMode="decimal" value={shown.manualUsd} placeholder="0.00" aria-label={label + ' USD'}
+          onChange={(e) => set({ manualUsd: e.target.value.replace(/[^\d.]/g, '') })}
+          className="w-full rounded-lg border-2 border-emerald-300 bg-emerald-50 px-3 py-2 text-xl font-bold tabular-nums" />
+      </label>
+      <label className="block">
+        <span className="mb-1 block text-xs font-semibold uppercase text-orange-600">{label} KHR</span>
+        <input inputMode="numeric" value={shown.manualKhr} placeholder="0" aria-label={label + ' KHR'}
+          onChange={(e) => set({ manualKhr: e.target.value.replace(/\D/g, '') })}
+          className="w-full rounded-lg border-2 border-orange-300 bg-orange-50 px-3 py-2 text-xl font-bold tabular-nums" />
+      </label>
+    </div>
+  );
+}
+
 function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, onClosed }: {
   header: (t: string) => React.ReactNode;
   sessionId: number;
@@ -715,9 +747,12 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
   const [ownerPin, setOwnerPin] = useState('');
   const [freeId, setFreeId] = useState<number | null>(null);
   const [freePin, setFreePin] = useState('');
-  const [activeCounter, setActiveCounter] = useState<'cash' | 'float'>('cash');
-  const [floatCount, setFloatCount] = useState<CashCountValue>(emptyCashCount());
-  const [count, setCount] = useState<CashCountValue>(emptyCashCount());
+  // Counter ON: count notes on the right, then press "Use for Float" / "Use for Cash on hand".
+  // Counter OFF: type the totals straight into Step 2. Remembered on this device.
+  const [useCounter, setUseCounterState] = useState<boolean>(() => readUseCounter());
+  const [scratch, setScratch] = useState<CashCountValue>(emptyCashCount());
+  const [floatCount, setFloatCount] = useState<CashCountValue>(emptyCashCount('manual'));
+  const [count, setCount] = useState<CashCountValue>(emptyCashCount('manual'));
   const [spent, setSpent] = useState<SpentItem[]>([]);
   const [preview, setPreview] = useState<ClosePreview | null>(null);
   const [report, setReport] = useState<ShiftReportData | null>(null);
@@ -859,6 +894,9 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
         if (!(printError instanceof PrintSkippedError)) toast.error('The shift is closed, but the Z report did not print. Reprint it from Reports → Shifts.', { duration: 8000 });
       }
       onClosed();
+      // The shift is over: log this cashier out so the next one logs in with their own PIN.
+      toast('Logged out. Next cashier: log in with your PIN.', { icon: '🔒', duration: 6000 });
+      requestRegisterLock();
     } catch (error) {
       setOwnerPin('');
       toast.error(errorText(error, 'Could not close the shift'));
@@ -866,8 +904,18 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
     }
   });
 
-  const activeValue = activeCounter === 'cash' ? count : floatCount;
-  const setActiveValue = activeCounter === 'cash' ? setCount : setFloatCount;
+  const setUseCounter = (on: boolean) => {
+    setUseCounterState(on);
+    try { localStorage.setItem(USE_COUNTER_KEY, on ? '1' : '0'); } catch { /* storage may be unavailable */ }
+  };
+  // Copies the counted notes into Float or Cash on hand. It replaces that line, never adds to it.
+  const applyCountTo = (target: 'float' | 'cash') => {
+    const totals = cashCountTotals(scratch, rate);
+    if (totals.usd === 0 && totals.khr === 0) { toast.error('Count the notes first.'); return; }
+    (target === 'float' ? setFloatCount : setCount)({ ...scratch, method: 'denominations' });
+    setScratch(emptyCashCount());
+    toast.success((target === 'float' ? 'Float' : 'Cash on hand') + ' set to ' + formatUsdCents(totals.usd) + (totals.khr ? ' + ' + formatKhr(totals.khr) : ''));
+  };
   const sales = report?.sales;
 
   return (
@@ -989,7 +1037,8 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
           <section className="overflow-hidden rounded-xl border bg-card">
             <h2 className="bg-emerald-50 px-4 py-3 text-lg font-bold">Step 2 · Count the cash</h2>
             <CloseLine n={1} label="Cash sales" hint="(from POS)" value={formatUsdCents(cashSales)} />
-            <CloseLine n={2} label="Float" hint={`(counted · start ${formatUsdCents(openingCombined)})`} value={formatUsdCents(floatCountCombined)} />
+            <CloseLine n={2} label="Float" hint={`(start ${formatUsdCents(openingCombined)})`} value={formatUsdCents(floatCountCombined)} />
+            {!useCounter && <TotalsInput label="Float" value={floatCount} onChange={setFloatCount} />}
             <div className="border-b">
               <CloseLine n={3} label="Cash payouts" value={'−' + formatUsdCents(payoutTotal)} tone="minus">
                 <button type="button" onClick={() => setAddingPayout(true)}
@@ -1012,6 +1061,7 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
             </div>
             <div className="bg-emerald-50">
               <CloseLine n={4} label="Cash on hand" hint="(without float)" value={formatUsdCents(countTotals.combined)} />
+              {!useCounter && <TotalsInput label="Cash on hand" value={count} onChange={setCount} />}
             </div>
             <CloseLine n={5} label="Difference" value={signedUsd(difference)} tone={difference === 0 ? 'good' : 'bad'} />
             <p className="-mt-2 px-4 pb-3 ps-[3.75rem] text-sm text-muted-foreground">
@@ -1038,20 +1088,39 @@ function SimpleClose({ header, sessionId, rate, openedBy, openedAt, closingAs, o
         </main>
 
         <aside className="rounded-xl border border-emerald-300 bg-card p-3">
-          <div className="mb-2 grid grid-cols-2 gap-2">
-            <button type="button" aria-pressed={activeCounter === 'cash'} onClick={() => setActiveCounter('cash')}
-              className={'rounded-lg px-3 py-3 text-sm font-bold ' + (activeCounter === 'cash' ? 'bg-emerald-700 text-white' : 'bg-muted text-foreground')}>
-              Cash on hand
-            </button>
-            <button type="button" aria-pressed={activeCounter === 'float'} onClick={() => setActiveCounter('float')}
-              className={'rounded-lg px-3 py-3 text-sm font-bold ' + (activeCounter === 'float' ? 'bg-emerald-700 text-white' : 'bg-muted text-foreground')}>
-              Float
-            </button>
-          </div>
-          <CashCounter value={activeValue} onChange={setActiveValue} rate={rate} title={activeCounter === 'cash' ? 'Cash on hand (without float)' : 'Float (stays in drawer)'} />
-          <div className="mt-2 rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground">
-            Count the cash you take out here. Count the float that stays in the drawer on the Float tab.
-          </div>
+          <button type="button" role="switch" aria-checked={useCounter} onClick={() => setUseCounter(!useCounter)}
+            data-testid="close-use-counter"
+            className="mb-3 flex w-full items-center justify-between gap-3 rounded-xl border-2 border-slate-300 bg-white px-4 py-3 text-start">
+            <span>
+              <span className="block text-lg font-bold">{useCounter ? 'Count notes' : 'Type totals'}</span>
+              <span className="block text-sm text-muted-foreground">{useCounter ? 'Turn off to type the totals in Step 2' : 'Turn on to count note by note'}</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              <span className="text-sm font-bold">Counter</span>
+              <span className={'relative inline-flex h-8 w-14 items-center rounded-full transition-colors ' + (useCounter ? 'bg-emerald-600' : 'bg-slate-300')}>
+                <span className={'inline-block size-6 rounded-full bg-white shadow transition-transform ' + (useCounter ? 'translate-x-7' : 'translate-x-1')} />
+              </span>
+              <span className={'w-9 text-sm font-extrabold ' + (useCounter ? 'text-emerald-700' : 'text-slate-500')}>{useCounter ? 'ON' : 'OFF'}</span>
+            </span>
+          </button>
+          {useCounter ? (
+            <>
+              <CashCounter value={scratch} onChange={setScratch} rate={rate} title="Count the notes" allowManual={false} />
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => applyCountTo('float')} data-testid="close-use-for-float"
+                  className="rounded-xl bg-sky-700 px-3 py-3 text-base font-bold text-white">Use for Float</button>
+                <button type="button" onClick={() => applyCountTo('cash')} data-testid="close-use-for-cash"
+                  className="rounded-xl bg-emerald-700 px-3 py-3 text-base font-bold text-white">Use for Cash on hand</button>
+              </div>
+              <p className="mt-2 rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground">
+                Count the float that stays in the drawer, press Use for Float. Then count the cash you take out, press Use for Cash on hand. Each press replaces that line.
+              </p>
+            </>
+          ) : (
+            <p className="rounded-lg bg-muted/50 p-3 text-sm text-muted-foreground">
+              Type the Float and Cash on hand totals in Step 2.
+            </p>
+          )}
         </aside>
       </div>
       {addingPayout && (

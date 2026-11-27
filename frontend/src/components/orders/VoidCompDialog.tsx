@@ -101,17 +101,19 @@ export function VoidCompDialog({ order, itemId, action: initialAction, onClose, 
           ))}
         </div>
 
-        <h3 className="mt-4 mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reason</h3>
-        <div className="flex flex-wrap gap-2">
+        <h3 className="mt-4 mb-2 text-lg font-bold">Reason</h3>
+        <div className="grid grid-cols-2 gap-2">
           {REASONS[action].map(([key, label]) => (
             <button key={key} type="button" onClick={() => setReason(key)} aria-pressed={reason === key}
-              className={`rounded-full border px-3 py-1.5 text-sm font-semibold ${reason === key ? 'border-foreground bg-foreground text-background' : 'border-border hover:bg-muted'}`}>
+              className={`min-h-14 rounded-xl border-2 px-3 py-2 text-start text-lg font-bold leading-tight ${reason === key ? 'border-foreground bg-foreground text-background' : 'border-border hover:bg-muted'}`}>
               {label}
             </button>
           ))}
         </div>
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" maxLength={200}
-          className="mt-3 w-full rounded-lg border-2 border-border bg-background px-3 py-2 text-sm" />
+        {/* A textarea, not a text box: Chrome put the saved login email into a text box next to the PIN. */}
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" maxLength={200} rows={1}
+          name="item-note" autoComplete="off" data-1p-ignore data-lpignore="true"
+          className="mt-3 w-full resize-none rounded-lg border-2 border-border bg-background px-3 py-3 text-lg" />
 
         {withinAllowance ? (
           <button type="button" disabled={!ready || busy} onClick={() => execute({})}

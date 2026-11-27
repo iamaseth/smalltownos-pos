@@ -899,7 +899,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                       value={discountReason}
                       onChange={(e) => setDiscountReason(e.target.value)}
                       placeholder="Reason (required): who it's for and why"
-                      className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                      className="w-full min-h-14 px-3 py-2 text-lg font-semibold border-2 border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                     />
                     {discountRequiresApproval && parseFloat(discountValue) > 0 && (
                       <input
