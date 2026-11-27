@@ -34,13 +34,13 @@
   function store(key, value) { try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); } catch (e) { void e; /* private mode */ } }
   function read(key) { try { return localStorage.getItem(key); } catch (e) { void e; return null; } }
 
-  // A new link from Settings arrives as /mini.html#t=TOKEN; keep it and tidy the address bar.
+  // A new link from Settings arrives as /mini.html#t=TOKEN. Keep it in the address too: an icon
+  // saved to the Home Screen or desktop opens with its own empty storage and needs the link.
   (function takeTokenFromLink() {
     var m = /[#&]t=([A-Za-z0-9_-]{20,200})/.exec(location.hash || '');
-    if (m) {
-      store(TOKEN_KEY, m[1]);
-      if (history.replaceState) history.replaceState(null, '', location.pathname);
-    }
+    if (m) { store(TOKEN_KEY, m[1]); return; }
+    var saved = read(TOKEN_KEY);
+    if (saved && history.replaceState) history.replaceState(null, '', location.pathname + '#t=' + saved);
   })();
 
   var toastTimer = null;
@@ -67,7 +67,7 @@
         return res.text().then(function (text) {
           var data = {};
           try { data = text ? JSON.parse(text) : {}; } catch (e) { void e; data = {}; }
-          if (res.status === 401) { store(TOKEN_KEY, null); showConnect(); throw new Error(data.error || 'Not connected'); }
+          if (res.status === 401) { store(TOKEN_KEY, null); if (history.replaceState) history.replaceState(null, '', location.pathname); showConnect(); throw new Error(data.error || 'Not connected'); }
           if (!res.ok) throw new Error(data.error || ('Error ' + res.status));
           return data;
         });
