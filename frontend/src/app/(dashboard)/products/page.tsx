@@ -85,9 +85,7 @@ export default function ProductsPage() {
   const { currentTenant } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabType>('products');
   const [productSearch, setProductSearch] = useState('');
-  // BackStreet: search the add-on group list and the group picker in the item form.
-  const [addonSearch, setAddonSearch] = useState('');
-  const [pickerSearch, setPickerSearch] = useState('');
+  // BackStreet: search for the add-on group list and the group picker in the item form.
   const groupMatches = (group: { name?: string; addons?: { name?: string }[] }, query: string) => {
     const q = query.trim().toLowerCase();
     if (!q) return true;
@@ -141,6 +139,10 @@ export default function ProductsPage() {
   const [showBulkTaxModal, setShowBulkTaxModal] = useState(false);
   const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
+  // BackStreet: declared after every other state on this page, so tests that fake state by
+  // position (tests/payment-modal-currency-adapter.test.ts) still line up.
+  const [addonSearch, setAddonSearch] = useState('');
+  const [pickerSearch, setPickerSearch] = useState('');
 
   const currency = getCurrencySymbol(currentTenant?.currency || '', getCountryByCode(currentTenant?.country ?? '')?.locale);
   const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency || '', currentTenant?.country);
