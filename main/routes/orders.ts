@@ -212,7 +212,8 @@ function resolveItemAddons(
       throw new Error(`Add-on group "${group.name}" does not allow multiple quantities`);
     }
 
-    if (group.max_selection !== null && group.max_selection !== undefined && selection.totalQty > group.max_selection) {
+    // 0 or empty means "no limit", the same as the till (AddonModal) and the menu screens.
+    if (Number(group.max_selection) > 0 && selection.totalQty > Number(group.max_selection)) {
       throw new Error(`Total add-on quantity for group "${group.name}" exceeds maximum allowed (${group.max_selection})`);
     }
 

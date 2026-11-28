@@ -174,6 +174,11 @@ function validateImageUrl(imageUrl: any): { valid: boolean; error?: string } {
 }
 
 /** Batch loads category and addon group relations for a list of products. */
+type Sortable = { name?: unknown; sort_order?: unknown; is_required?: unknown };
+function byOrderThenName(a: Sortable, b: Sortable): number {
+  return (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0) || String(a.name ?? '').localeCompare(String(b.name ?? ''));
+}
+
 function loadProductRelationsBatch(db: any, products: any[]) {
   if (products.length === 0) return new Map();
 
@@ -243,9 +248,12 @@ function loadProductRelationsBatch(db: any, products: any[]) {
       .map((agId: string) => {
         const ag = addonGroupMap.get(agId);
         if (!ag) return null;
-        return { ...ag, addons: addonMap.get(agId) || [] };
+        const addons = (addonMap.get(agId) || []).slice().sort(byOrderThenName);
+        return { ...ag, addons };
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      // BackStreet: the main choice (required groups) first, then extras such as drinks and juice.
+      .sort((a: Sortable, b: Sortable) => (Number(b.is_required) || 0) - (Number(a.is_required) || 0) || byOrderThenName(a, b));
 
     result.set(p.id, { category, addon_groups });
   }

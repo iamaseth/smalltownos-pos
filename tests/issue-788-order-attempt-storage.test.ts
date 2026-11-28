@@ -20,6 +20,7 @@ const {
   PREPAID_ATTEMPT_STORAGE_KEY,
   OrderAttemptStorageError,
   classifyOrderRequestFailure,
+  orderRejectionReason,
   clearOrderAttempt,
   getPrepaidOrderAttemptStorageKey,
   readOrderAttempt,
@@ -269,6 +270,11 @@ function main() {
   assert.equal(rejected.code, 'order.place.rejected', 'a backend rejection is classified as a rejection');
   assert.equal(rejected.status, 400, 'the rejection status is preserved for support');
   assert.ok(!rejected.detail.includes('secret'), 'the rejection detail never echoes the response payload');
+  assert.equal(orderRejectionReason({ response: { status: 400, data: { error: 'Add-on "Orange juice" is not available' } } }), 'Add-on "Orange juice" is not available', 'the cashier sees the server reason for a refused order');
+  assert.equal(orderRejectionReason({ response: { status: 500, data: { error: 'Internal server error' } } }), null, 'server crashes show no reason');
+  assert.equal(orderRejectionReason({ response: { status: 400, data: {} } }), null, 'no reason when the server gave none');
+  assert.equal(orderRejectionReason({ isAxiosError: true }), null, 'no reason when the server was not reached');
+  assert.equal(String(orderRejectionReason({ response: { status: 400, data: { error: 'x'.repeat(500) } } })).length, 160, 'long reasons are cut short');
   const unreachable = classifyOrderRequestFailure({ isAxiosError: true, message: 'Network Error' });
   assert.equal(unreachable.code, 'order.place.unreachable', 'a transport failure is classified separately');
   assert.equal(unreachable.status, null, 'an unreachable request has no HTTP status');

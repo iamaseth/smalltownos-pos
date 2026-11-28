@@ -141,6 +141,21 @@ export function clearOrderAttempt(
   return removalVerified || markerPersisted;
 }
 
+/**
+ * BackStreet: the server's short reason for refusing an order (e.g. "Add-on "Orange juice" is not
+ * available"), so the cashier knows which item to change. Shown on screen only: never added to
+ * diagnostics or support payloads.
+ */
+export function orderRejectionReason(error: unknown): string | null {
+  const response = (error as { response?: { status?: unknown; data?: { error?: unknown } } })?.response;
+  const status = Number(response?.status);
+  if (!Number.isInteger(status) || status < 400 || status >= 500) return null;
+  const reason = response?.data?.error;
+  if (typeof reason !== 'string') return null;
+  const clean = reason.replace(/\s+/g, ' ').trim();
+  return clean ? clean.slice(0, 160) : null;
+}
+
 /** Bounded, payload-free classification of a failed order request. */
 export function classifyOrderRequestFailure(error: unknown): { code: string; detail: string; status: number | null } {
   const status = Number((error as { response?: { status?: unknown } })?.response?.status);

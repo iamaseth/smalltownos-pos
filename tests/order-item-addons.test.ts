@@ -310,6 +310,40 @@ async function main() {
       db.exec('ALTER TABLE order_items DROP COLUMN addons');
     }
 
+    // ── Test 5: add-on group limits match the till ──
+    console.log('\n5. Add-on group limits: 0 means no limit, like the till');
+    {
+      db.prepare(`INSERT INTO addon_groups (id, name, min_selection, max_selection) VALUES (?, ?, ?, ?)`).run('ag-nolimit', 'Breakfast extras', 0, 0);
+      db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES (?, ?, ?, ?, ?)`).run('addon-coffee', 'ag-nolimit', 'Coffee', 0, 1);
+      db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES (?, ?, ?, ?, ?)`).run('addon-oj', 'ag-nolimit', 'Orange juice', 0, 1);
+      db.prepare(`INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)`).run('prod-addon-norm', 'ag-nolimit');
+      const both = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: JSON.stringify({ type: 'takeaway', items: [{ product_id: 'prod-addon-norm', quantity: 1, addons: [{ id: 'addon-coffee' }, { id: 'addon-oj' }] }] }),
+      });
+      assertEqual(both.status, 201, `a group with max 0 (no limit) accepts two choices (got ${both.status} ${JSON.stringify(both.data)})`);
+
+      db.prepare(`UPDATE addon_groups SET max_selection = 1 WHERE id = 'ag-nolimit'`).run();
+      const tooMany = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: JSON.stringify({ type: 'takeaway', items: [{ product_id: 'prod-addon-norm', quantity: 1, addons: [{ id: 'addon-coffee' }, { id: 'addon-oj' }] }] }),
+      });
+      assertEqual(tooMany.status, 400, 'a real limit of 1 still refuses two choices');
+      assert(/Breakfast extras/.test(String(tooMany.data.error)), 'and the reason names the group');
+
+      db.prepare(`UPDATE addons SET is_active = 0 WHERE id = 'addon-oj'`).run();
+      const off = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: JSON.stringify({ type: 'takeaway', items: [{ product_id: 'prod-addon-norm', quantity: 1, addons: [{ id: 'addon-oj' }] }] }),
+      });
+      assertEqual(off.status, 400, 'a switched-off add-on is refused');
+      assert(/Orange juice/.test(String(off.data.error)), 'and the reason names the add-on');
+      db.prepare(`DELETE FROM addon_group_product WHERE addon_group_id = 'ag-nolimit'`).run();
+    }
+
   } finally {
     server.close();
     closeDatabase();

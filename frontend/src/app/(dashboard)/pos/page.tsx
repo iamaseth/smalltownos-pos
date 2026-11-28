@@ -62,6 +62,7 @@ import {
   PREPAID_ATTEMPT_STORAGE_KEY,
   OrderAttemptStorageError,
   classifyOrderRequestFailure,
+  orderRejectionReason,
   clearOrderAttempt,
   getPrepaidOrderAttemptStorageKey,
   persistOrderAttempt,
@@ -393,7 +394,8 @@ export default function POSPage() {
 
   const reportOrderRequestFailure = (error: unknown, title: string) => {
     const { code, detail, status } = classifyOrderRequestFailure(error);
-    reportOrderFailure({ code, title, message: title, detail, status });
+    const reason = orderRejectionReason(error);
+    reportOrderFailure({ code, title, message: reason ? `${title}: ${reason}` : title, detail, status });
   };
 
   const currency = getCurrencySymbol(currentTenant?.currency || '', getCountryByCode(currentTenant?.country ?? '')?.locale);

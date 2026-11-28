@@ -116,6 +116,24 @@ async function main() {
     });
     assertEqual(res.status, 200, 'C3: empty add-on group list clears links');
     assertEqual(linkedGroupIds(db, 'prod-244'), '', 'C3: links are cleared');
+
+    console.log('\n─── Scenario D: the main (required) choice is shown first ───');
+    seedCategory(db, 'cat-244-bk', 'Breakfast');
+    seedProduct(db, 'prod-244-bk', 'cat-244-bk', 'Royal Breakfast', 5.75);
+    seedAddonGroup(db, 'ag-244-juice', 'Juice');
+    seedAddonGroup(db, 'ag-244-drink', 'Hot drink');
+    seedAddonGroup(db, 'ag-244-main', 'Royal Breakfast');
+    db.prepare(`UPDATE addon_groups SET is_required = 1, min_selection = 1, max_selection = 1 WHERE id = 'ag-244-main'`).run();
+    for (const g of ['ag-244-juice', 'ag-244-drink', 'ag-244-main']) {
+      db.prepare('INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)').run('prod-244-bk', g);
+    }
+    db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order) VALUES ('a-tea', 'ag-244-drink', 'Tea', 0, 1, 2), ('a-coffee', 'ag-244-drink', 'Coffee', 0, 1, 1)`).run();
+    res = await api(baseUrl, '/api/products/prod-244-bk', { headers: authHeader });
+    const groupNames = (res.data.addon_groups || res.data.product?.addon_groups || []).map((g: any) => g.name);
+    assertEqual(groupNames[0], 'Royal Breakfast', `D1: the required main choice comes first (${groupNames.join(', ')})`);
+    assertEqual(groupNames.slice(1).join(','), 'Hot drink,Juice', 'D2: the extras follow');
+    const drink = (res.data.addon_groups || res.data.product?.addon_groups || []).find((g: any) => g.name === 'Hot drink');
+    assertEqual(drink.addons.map((a: any) => a.name).join(','), 'Coffee,Tea', 'D3: options inside a group follow their order');
   } finally {
     server.close();
     closeDatabase();
