@@ -536,7 +536,18 @@ export default function SettingsPage() {
 
     if (pinGate.mode === 'backup-custom') {
       if (!window.electronAPI?.backupDatabase) {
-        return { success: false, error: tCommon('notAvailable') };
+        // Browser (e.g. the POS on Railway): make a fresh backup on the server, then download it.
+        try {
+          const response = await api.post('/db/backup', { master_pin: pin });
+          const fileName = response.data?.filename as string | undefined;
+          if (!fileName) throw new Error('no file name');
+          await saveBackupFile(fileName, pin);
+          setPinGate(null);
+          fetchBackups();
+          return { success: true };
+        } catch {
+          return { success: false, error: t('backupFailedGeneric') };
+        }
       }
       const result = await window.electronAPI.backupDatabase(pin);
       if (result.success) {
@@ -691,7 +702,13 @@ export default function SettingsPage() {
     }
     if (!masterPinStatus.available) {
       if (!window.electronAPI?.backupDatabase) {
-        toast.error(tCommon('notAvailable'));
+        try {
+          const response = await api.post('/db/backup', {});
+          await saveBackupFile(response.data.filename);
+          fetchBackups();
+        } catch {
+          toast.error(t('backupFailed'));
+        }
         return;
       }
       const result = await window.electronAPI.backupDatabase('');

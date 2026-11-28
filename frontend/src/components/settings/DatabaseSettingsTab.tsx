@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   FileText,
   Database,
@@ -38,6 +38,7 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import api from '@/lib/api';
 import { ClearTestSalesCard } from './ClearTestSalesCard';
 import { BackupFolderCard } from './BackupFolderCard';
+import { BackupDriveCard } from './BackupDriveCard';
 import toast from 'react-hot-toast';
 
 export type BackupInfo = {
@@ -233,6 +234,11 @@ export function DatabaseSettingsTab({
   const [tableInfo, setTableInfo] = useState<Array<{ name: string; rows: number }>>([]);
   const [retentionInput, setRetentionInput] = useState<string | null>(null);
   const [copiedFolder, setCopiedFolder] = useState(false);
+  // The desktop app can open a "save to folder" window; a browser can only download.
+  const [hasFolderPicker, setHasFolderPicker] = useState(false);
+  useEffect(() => {
+    queueMicrotask(() => setHasFolderPicker(Boolean(window.electronAPI?.backupDatabase)));
+  }, []);
 
   const handleCopyFolder = () => {
     if (!googleDriveStatus.destination_folder_name) return;
@@ -305,7 +311,8 @@ export function DatabaseSettingsTab({
               onClick={onChooseBackupLocation}
               className="px-5 py-2 text-sm bg-muted text-foreground rounded-lg hover:bg-muted font-medium"
             >
-              {t('chooseBackupLocation')}
+              {/* In a browser there is no folder picker: this makes a fresh backup and downloads it. */}
+              {hasFolderPicker ? t('chooseBackupLocation') : 'Back up and download'}
             </button>
           </div>
         </div>
@@ -313,6 +320,8 @@ export function DatabaseSettingsTab({
         {isOwner && onSaveBackupFolder && (
           <BackupFolderCard onSave={onSaveBackupFolder} version={backupFolderVersion} />
         )}
+
+        {isOwner && <BackupDriveCard />}
 
         {/* Backup History */}
         <div className="bg-card rounded-xl border border-border p-6">

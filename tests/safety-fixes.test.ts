@@ -15,7 +15,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const { initTestDb, assert, assertEqual, getResults, closeDatabase, now } = require('./helpers/test-setup');
-const { nightlyBackupDue, nightlyBackupsToPrune, runNightlyBackupIfDue } = require('../main/services/nightly-backup');
+const { nightlyBackupDue, nightlyBackupsToPrune, backupsToPrune, runNightlyBackupIfDue } = require('../main/services/nightly-backup');
 const { pinClientKey } = require('../main/middleware/security');
 const { isChunkLoadError } = require('../frontend/src/lib/chunk-reload');
 const { listBackups } = require('../main/db');
@@ -33,8 +33,24 @@ async function main(): Promise<void> {
     assertEqual(nightlyBackupDue(new Date('2026-11-25T19:00:00Z'), tz, []), null, 'not before 04:00 (02:00 local)');
     const names = Array.from({ length: 16 }, (_, i) => `flo-backup-nightly-2026-11-${String(i + 1).padStart(2, '0')}.db`);
     const pruned = nightlyBackupsToPrune([...names, 'flo-backup-2026-11-01-manual.db', 'flo-backup-x-pre-v110.db']);
-    assert(pruned.length === 2 && pruned[0].endsWith('11-01.db') && pruned[1].endsWith('11-02.db'), 'keeps the newest 14 nightly backups, removes the oldest');
-    assert(!pruned.some((n: string) => !n.startsWith('flo-backup-nightly-')), 'manual and pre-update backups are never removed');
+    assert(pruned.length === 9 && pruned[0].endsWith('11-01.db') && pruned[8].endsWith('11-09.db'), 'keeps the newest 7 nightly backups, removes the oldest');
+    assert(!pruned.some((n: string) => !n.startsWith('flo-backup-nightly-')), 'the nightly rule only touches nightly files');
+
+    const files = [
+      ...names.map((name, i) => ({ name, mtimeMs: 1000 + i })),
+      ...Array.from({ length: 5 }, (_, i) => ({ name: `flo-backup-2026-11-0${i + 1}T01-00-00-000Z-pre-v10${i}-to-v10${i + 1}.db`, mtimeMs: 2000 + i })),
+      ...Array.from({ length: 8 }, (_, i) => ({ name: `flo-backup-2026-11-1${i}T01-00-00-000Z-ab${i}.db`, mtimeMs: 3000 + i })),
+      { name: 'flo-database.db', mtimeMs: 1 }, { name: 'notes.txt', mtimeMs: 1 }, { name: '.flo-backup-x.db.tmp-1', mtimeMs: 1 },
+    ];
+    const gone = backupsToPrune(files);
+    const kept = files.map((f) => f.name).filter((n) => !gone.includes(n));
+    assertEqual(kept.filter((n) => n.startsWith('flo-backup-nightly-')).length, 7, '7 nightly backups are kept');
+    assertEqual(kept.filter((n) => n.includes('-pre-v')).length, 3, '3 pre-update backups are kept');
+    assert(kept.includes('flo-backup-2026-11-05T01-00-00-000Z-pre-v104-to-v105.db') && !kept.includes('flo-backup-2026-11-01T01-00-00-000Z-pre-v100-to-v101.db'), 'the newest pre-update backups are the ones kept');
+    assertEqual(kept.filter((n) => /-ab\d\.db$/.test(n)).length, 5, '5 manual backups are kept');
+    assert(kept.includes('flo-backup-2026-11-17T01-00-00-000Z-ab7.db') && !kept.includes('flo-backup-2026-11-10T01-00-00-000Z-ab0.db'), 'the newest manual backups are the ones kept');
+    assert(kept.includes('flo-database.db') && kept.includes('notes.txt') && kept.includes('.flo-backup-x.db.tmp-1'), 'files that are not backups are never touched');
+    assertEqual(backupsToPrune(files.slice(0, 3)).length, 0, 'nothing is removed when there are only a few backups');
 
     const saved = await runNightlyBackupIfDue(new Date('2026-11-25T21:30:00Z'));
     assert(!!saved && fs.existsSync(saved), 'the nightly backup file is written');

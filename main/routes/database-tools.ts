@@ -11,6 +11,7 @@ import {
 import { clearJWTSecretCache } from '../security/jwt-secret';
 import { getHttpRequestSignal } from '../shutdown';
 import { googleDrive } from '../services/google-drive';
+import { backupDriveConfigured, getBackupDriveStatus, sendBackupToDrive } from '../services/backup-drive';
 import { BACKUP_FOLDER_SETTING, backupFolderAvailable, checkBackupFolder, copyBackupToFolder, getBackupFolderStatus } from '../services/backup-folder';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
 
@@ -106,6 +107,22 @@ router.post('/backup-folder', requirePermission('database.manage'), requireMaste
   console.log('[BackupFolder] Folder', folder ? `set to ${folder}` : 'cleared');
   res.json(getBackupFolderStatus());
 });
+
+// BackStreet: nightly backups also go to the owner's Google Drive (set up with Railway variables).
+router.get('/backup-drive', requirePermission('database.manage'), (_req: Request, res: Response) => {
+  res.json(getBackupDriveStatus());
+});
+
+// Send the newest backup to Google Drive now, to check it works without waiting for the night.
+router.post('/backup-drive/send-now', requirePermission('database.manage'), asyncHandler(async (_req: Request, res: Response) => {
+  if (!backupDriveConfigured()) return res.status(409).json({ error: 'Google Drive is not set up yet' });
+  const newest = listBackups().sort((a, b) => a.createdAt.localeCompare(b.createdAt)).pop();
+  if (!newest) return res.status(404).json({ error: 'No backup yet. Create one first.' });
+  const sent = await sendBackupToDrive(newest.path, { nightly: false });
+  const after = getBackupDriveStatus();
+  if (!sent) return res.status(500).json({ error: after.lastError || 'Sending failed', status: after });
+  res.json(after);
+}));
 
 // Copy the newest backup now, to check the whole path works without waiting for the night.
 router.post('/backup-folder/copy-now', requirePermission('database.manage'), (_req: Request, res: Response) => {
