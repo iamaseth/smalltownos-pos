@@ -108,7 +108,7 @@ router.post('/backup-folder', requirePermission('database.manage'), requireMaste
   res.json(getBackupFolderStatus());
 });
 
-// BackStreet: nightly backups also go to the owner's Google Drive (set up with Railway variables).
+// BackStreet: nightly backups also go to the owner's Google Drive (through an Apps Script, set up with Railway variables).
 router.get('/backup-drive', requirePermission('database.manage'), (_req: Request, res: Response) => {
   res.json(getBackupDriveStatus());
 });

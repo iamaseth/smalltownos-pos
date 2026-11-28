@@ -3,7 +3,7 @@
 /**
  * BackStreet: nightly backups are also sent to the owner's Google Drive by the server.
  * Shows whether it is set up, when the last copy was sent, and a "Send newest backup now" button.
- * The Google login itself is set in Railway variables, never here.
+ * The Apps Script link and key are set in Railway variables, never here.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CloudUpload } from 'lucide-react';
@@ -59,12 +59,12 @@ export function BackupDriveCard() {
       </div>
       <p className="text-sm text-muted-foreground mb-4">
         Every night&apos;s backup is sent to the folder <b>{status.folderName}</b> in the owner&apos;s Google Drive.
-        It keeps the last 30 nights plus one backup per month.
+        They are compressed (.db.gz). It keeps the last 30 nights plus one backup per month.
       </p>
 
       {!status.configured ? (
         <p className="text-sm text-muted-foreground rounded-lg bg-muted px-3 py-2">
-          Not set up yet. The Google Drive login is added once in the Railway settings.
+          Not set up yet. The Apps Script link and key are added once in the Railway settings.
         </p>
       ) : (
         <>
