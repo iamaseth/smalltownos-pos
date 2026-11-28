@@ -85,6 +85,14 @@ export default function ProductsPage() {
   const { currentTenant } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabType>('products');
   const [productSearch, setProductSearch] = useState('');
+  // BackStreet: search the add-on group list and the group picker in the item form.
+  const [addonSearch, setAddonSearch] = useState('');
+  const [pickerSearch, setPickerSearch] = useState('');
+  const groupMatches = (group: { name?: string; addons?: { name?: string }[] }, query: string) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (group.name || '').toLowerCase().includes(q) || (group.addons || []).some((a) => (a.name || '').toLowerCase().includes(q));
+  };
   const [products, setProducts] = useState<Product[]>([]);
   const [stockBusy, setStockBusy] = useState(false);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -1123,8 +1131,15 @@ export default function ProductsPage() {
               {isRestaurant && addonGroups.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">{t('fieldAddonGroups')}</label>
+                  {addonGroups.length > 6 && (
+                    <input
+                      type="text" value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)}
+                      placeholder={tCommon('search')} aria-label={tCommon('search')}
+                      className="w-full mb-2 px-3 py-2 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none text-sm"
+                    />
+                  )}
                   <div className="space-y-2 max-h-40 overflow-y-auto border border-border rounded-lg p-3">
-                    {addonGroups.map((group) => {
+                    {addonGroups.filter((group) => form.addon_group_ids.includes(group.id) || groupMatches(group, pickerSearch)).map((group) => {
                       const isChecked = form.addon_group_ids.includes(group.id);
                       return (
                         <div key={group.id} className="flex items-center gap-2">
@@ -1308,7 +1323,15 @@ export default function ProductsPage() {
 
       {activeTab === 'addons' && isRestaurant && (
         <>
-          <div className="flex justify-end gap-2 mb-4">
+          <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
+            <div className="relative flex-1 min-w-48">
+              <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text" value={addonSearch} onChange={(e) => setAddonSearch(e.target.value)}
+                placeholder={tCommon('search')} aria-label={tCommon('search')}
+                className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+              />
+            </div>
             <Button variant="outline" onClick={() => openCsvModal('addons')}>
               <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
@@ -1328,7 +1351,7 @@ export default function ProductsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {addonGroups.map((group) => (
+                {addonGroups.filter((group) => groupMatches(group, addonSearch)).map((group) => (
                   <tr key={group.id} className="hover:bg-muted">
                     <td className="p-4 font-medium text-foreground">{group.name}</td>
                     <td className="p-4 text-center">
