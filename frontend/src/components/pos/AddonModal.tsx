@@ -1,10 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Plus, Minus, Check } from 'lucide-react';
+import { X, Plus, Minus } from 'lucide-react';
 
-const SELECTED_ROW = 'border-2 border-brand bg-brand/15 ring-2 ring-brand/30 shadow-sm text-brand dark:text-indigo-300';
-const UNSELECTED_ROW = 'border border-border hover:border-gray-300 hover:bg-muted/50 dark:border-border';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
@@ -67,6 +65,15 @@ export default function AddonModal({
   };
 
   const groups = product.addon_groups || [];
+  const tProducts = useTranslations('products');
+
+  /** "American Breakfast — Egg style" → "Egg style": the item name is already at the top. */
+  const shortGroupName = (name: string): string => {
+    const prefix = product.name.trim();
+    const rest = name.startsWith(prefix) ? name.slice(prefix.length).replace(/^\s*[—–:-]\s*/, '').trim() : '';
+    return rest || name;
+  };
+  const groupRequiredMin = (g: AddonGroup): number => (Boolean(g.is_required) ? Math.max(1, g.min_selection || 1) : (g.min_selection || 0));
 
   const getGroupTotalQuantity = (groupId: string | number): number => {
     const list = selected[groupId] || [];
@@ -112,16 +119,6 @@ export default function AddonModal({
     else if (qty === 1) updateAddonQuantity(group, addon, -1);
   };
 
-  const toggleAddonCheckbox = (group: AddonGroup, addon: Addon) => {
-    const currentList = selected[group.id] || [];
-    const exists = currentList.some((a) => a.id === addon.id);
-    if (exists) {
-      updateAddonQuantity(group, addon, -1);
-    } else {
-      updateAddonQuantity(group, addon, 1);
-    }
-  };
-
   const getAddonQuantity = (groupId: string | number, addonId: string | number): number => {
     const list = selected[groupId] || [];
     const item = list.find((a) => a.id === addonId);
@@ -139,6 +136,8 @@ export default function AddonModal({
     if (g.max_selection && count > g.max_selection) return false;
     return true;
   });
+
+  const missingGroup = groups.find((g) => getGroupTotalQuantity(g.id) < groupRequiredMin(g));
 
   const handleAdd = () => {
     if (!isValid) return;
@@ -168,94 +167,39 @@ export default function AddonModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {groups.map((group) => {
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {groups.map((group, index) => {
             const count = getGroupTotalQuantity(group.id);
             const activeAddons = (group.addons || []).filter((a) => a.is_active);
             const allowMultiple = Boolean(group.allow_multiple_quantities);
+            const requiredMin = groupRequiredMin(group);
+            const chosen = (selected[group.id] || []).map((a) => ((a.quantity || 1) > 1 ? `${a.quantity}× ${a.name}` : a.name));
+            const done = count > 0 && count >= requiredMin;
 
             return (
-              <div key={group.id}>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-semibold text-sm text-foreground">{group.name}</h3>
-                  <span className="flex items-center gap-2">
-                    {Boolean(group.is_required) && (
-                      <span className="text-xs font-medium text-red-500 dark:text-red-400">{t('required')}</span>
-                    )}
-                    {group.max_selection ? (() => {
-                      const remaining = Math.max(0, group.max_selection - count);
-                      const isZero = remaining === 0;
-                      return (
-                        <span className={`font-semibold transition-all ${
-                          isZero
-                            ? 'text-sm text-amber-500'
-                            : 'text-xs text-sky-500'
-                        }`}>
-                          {isZero ? t('selectionComplete') : t('remainingCount', { count: remaining })}
-                        </span>
-                      );
-                    })() : null}
+              <section key={group.id} className="rounded-xl border-2 border-border overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-2.5 bg-muted">
+                  <span className="shrink-0 w-7 h-7 rounded-full bg-brand text-white flex items-center justify-center text-sm font-bold tabular-nums" aria-hidden>{index + 1}</span>
+                  <h3 className="font-bold text-base text-foreground">{shortGroupName(group.name)}</h3>
+                  <span
+                    data-testid="addon-group-status"
+                    className={`ms-auto shrink min-w-0 truncate rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                      done
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+                        : requiredMin > 0
+                          ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                          : 'bg-card text-muted-foreground'
+                    }`}
+                  >
+                    {done ? `✓ ${chosen.join(', ')}` : requiredMin > 0 ? t('selectAtLeast', { count: requiredMin }) : tProducts('optional')}
                   </span>
                 </div>
-                {group.description && <p className="text-xs text-muted-foreground mb-2">{group.description}</p>}
-                <div className="space-y-1">
+                {group.description && <p className="px-4 pt-2 text-xs text-muted-foreground">{group.description}</p>}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3">
                   {activeAddons.map((addon) => {
                     const addonQty = getAddonQuantity(group.id, addon.id);
                     const isSel = addonQty > 0;
-
-                    if (allowMultiple) {
-                      return (
-                        <div
-                          key={addon.id}
-                          role="button"
-                          tabIndex={0}
-                          aria-pressed={isSel}
-                          onClick={() => tapAddonRow(group, addon, addonQty)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tapAddonRow(group, addon, addonQty); } }}
-                          className={`w-full min-h-14 flex cursor-pointer select-none items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors active:scale-[0.99] ${
-                            isSel ? SELECTED_ROW : UNSELECTED_ROW
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            {isSel && <Check size={16} className="shrink-0 text-brand dark:text-indigo-300" aria-hidden />}
-                            <span className={`text-foreground ${isSel ? 'font-bold' : 'font-medium'}`}>{addon.name}</span>
-                            <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
-                              {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                            {isSel ? (
-                              <div className="flex items-center gap-1.5 bg-card border border-brand rounded-lg p-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => updateAddonQuantity(group, addon, -1)}
-                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
-                                >
-                                  <Minus size={14} />
-                                </button>
-                                <span className="text-sm font-bold w-5 text-center text-brand dark:text-indigo-300 tabular-nums">{addonQty}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => updateAddonQuantity(group, addon, 1)}
-                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
-                                >
-                                  <Plus size={14} />
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => updateAddonQuantity(group, addon, 1)}
-                                className="touch-target rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted active:bg-muted"
-                              >
-                                <Plus size={14} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }
-
+                    const price = Number(addon.price);
                     return (
                       <div
                         key={addon.id}
@@ -264,60 +208,28 @@ export default function AddonModal({
                         aria-pressed={isSel}
                         onClick={() => tapAddonRow(group, addon, addonQty)}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tapAddonRow(group, addon, addonQty); } }}
-                        className={`w-full min-h-14 flex cursor-pointer select-none items-center justify-between gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors active:scale-[0.99] ${
-                          isSel ? SELECTED_ROW : UNSELECTED_ROW
+                        className={`min-h-16 flex flex-col items-center justify-center gap-0.5 rounded-xl border-2 px-2 py-2.5 text-center cursor-pointer select-none transition-colors active:scale-[0.98] ${
+                          isSel ? 'border-brand bg-brand text-white' : 'border-border bg-card text-foreground hover:border-gray-400'
                         }`}
                       >
-                        <div className="flex items-center gap-2">
-                          {isSel && <Check size={16} className="shrink-0 text-brand dark:text-indigo-300" aria-hidden />}
-                            <span className={`text-foreground ${isSel ? 'font-bold' : 'font-medium'}`}>{addon.name}</span>
-                          <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
-                            {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
+                        <span className="text-base font-bold leading-tight">{addon.name}</span>
+                        {price !== 0 && (
+                          <span className={`text-xs font-semibold ${isSel ? 'text-white' : 'text-muted-foreground'}`}>+{fmt(price)}</span>
+                        )}
+                        {allowMultiple && isSel && (
+                          <span className="mt-1 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <button type="button" onClick={() => updateAddonQuantity(group, addon, -1)} aria-label={t('remove')}
+                              className="w-8 h-8 rounded-full bg-white/25 flex items-center justify-center"><Minus size={14} /></button>
+                            <span className="w-6 text-center text-sm font-bold tabular-nums">{addonQty}</span>
+                            <button type="button" onClick={() => updateAddonQuantity(group, addon, 1)} aria-label={t('addItems')}
+                              className="w-8 h-8 rounded-full bg-white/25 flex items-center justify-center"><Plus size={14} /></button>
                           </span>
-                        </div>
-                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          {isSel ? (
-                            <div className="flex items-center gap-1.5 bg-card border border-brand rounded-lg p-0.5">
-                              <button
-                                type="button"
-                                onClick={() => toggleAddonCheckbox(group, addon)}
-                                className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
-                              >
-                                <Minus size={14} />
-                              </button>
-                              <span className="text-sm font-bold w-5 text-center text-brand dark:text-indigo-300 tabular-nums">1</span>
-                              <button
-                                type="button"
-                                disabled
-                                className="touch-target rounded flex items-center justify-center text-muted-foreground cursor-not-allowed opacity-50"
-                              >
-                                <Plus size={14} />
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => toggleAddonCheckbox(group, addon)}
-                              className="touch-target rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-muted active:bg-muted"
-                            >
-                              <Plus size={14} />
-                            </button>
-                          )}
-                        </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
-                {(() => {
-                  const requiredMin = Boolean(group.is_required) ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
-                  if (requiredMin > 0 && count < requiredMin) {
-                    return (
-                      <p className="mt-1 text-xs text-red-500 dark:text-red-400">{t('selectAtLeast', { count: requiredMin })}</p>
-                    );
-                  }
-                  return null;
-                })()}
-              </div>
+              </section>
             );
           })}
 
@@ -393,7 +305,9 @@ export default function AddonModal({
             </button>
           </div>
           <Button onClick={handleAdd} disabled={!isValid} className="w-full" size="lg">
-            {mode === 'edit'
+            {!isValid && missingGroup
+              ? t('selectName', { name: shortGroupName(missingGroup.name) })
+              : mode === 'edit'
               ? t('saveItemChanges', { total: fmt(itemTotal) })
               : t('addToCart', { total: fmt(itemTotal) })}
           </Button>
